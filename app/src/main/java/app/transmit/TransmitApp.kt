@@ -19,6 +19,7 @@ import app.transmit.data.SettingsRepository
 import app.transmit.data.db.AppDatabase
 import app.transmit.notify.IncomingWorker
 import app.transmit.notify.Notifier
+import app.transmit.smart.SmartLinks
 import app.transmit.telephony.IncomingHandler
 import app.transmit.telephony.MediaEncoder
 import app.transmit.telephony.MessagingRepository
@@ -51,6 +52,7 @@ class AppContainer(val context: Context) {
     val tutor = Tutor(ai, settings, budget, dao)
     val translations = TranslationManager(dao, tutor, policy, messaging, settings, contacts)
     val notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations)
+    val smart = SmartLinks()
 
     val incoming = IncomingHandler(context, messaging, mmsStore, downloader, subscriptions) { threadId, key ->
         notifier.showThread(threadId, alert = true)

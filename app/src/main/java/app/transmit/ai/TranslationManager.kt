@@ -7,6 +7,7 @@ import app.transmit.data.SettingsRepository
 import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.data.db.TransmitDao
+import app.transmit.smart.Otp
 import app.transmit.telephony.Message
 import app.transmit.telephony.MessagingRepository
 import app.transmit.telephony.Reactions
@@ -48,9 +49,15 @@ class TranslationManager(
         return m.body.replace(URL, " ").any { it.isLetter() }
     }
 
+    /**
+     * Automatic translation skips verification codes: they're needed at once rather than after a round trip,
+     * and they shouldn't reach the AI provider. A tap still translates one.
+     */
+    fun isAutoTranslatable(m: Message): Boolean = isTranslatable(m) && Otp.find(m.body) == null
+
     /** The messages automatic translation covers: the newest few translatable ones. */
     fun autoCandidates(messages: List<Message>, s: AppSettings): List<Message> = messages
-        .filter { isTranslatable(it) && (!it.outgoing || s.translateOutgoing) }
+        .filter { isAutoTranslatable(it) && (!it.outgoing || s.translateOutgoing) }
         .sortedByDescending { it.date }
         .take(s.backfillCount)
 
@@ -65,7 +72,7 @@ class TranslationManager(
         val message = repo.message(key) ?: return
         val s = settings.current()
         val eff = policy.effective(threadId, s)
-        if (!eff.autoTranslate || !isTranslatable(message)) return
+        if (!eff.autoTranslate || !isAutoTranslatable(message)) return
         val recent = repo.messages(threadId, s.contextMessages + 2)
         translate(threadId, listOf(message), recent, eff.target, s, auto = true)
     }

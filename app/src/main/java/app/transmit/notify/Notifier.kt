@@ -29,6 +29,7 @@ import app.transmit.data.ContactsRepository
 import app.transmit.data.NotificationContent
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.TransmitDao
+import app.transmit.smart.Otp
 import app.transmit.telephony.Message
 import app.transmit.telephony.MessagingRepository
 import app.transmit.telephony.Reactions
@@ -108,6 +109,13 @@ class Notifier(
             .setLocusId(LocusIdCompat(shortcutId))
             .setContentIntent(openThreadIntent(threadId))
             .setWhen(unread.last().date)
+        // The newest verification code gets a one-tap copy, ahead of the other actions. On Android 16 the system
+        // offers its own copy chip too; one button is enough, and ours also marks the code read.
+        unread.asReversed().firstNotNullOfOrNull { Otp.find(it.body) }?.let {
+            builder.addAction(copyCodeAction(threadId, it.code, showCode = s.notificationContent != NotificationContent.HIDDEN))
+            builder.setAllowSystemGeneratedContextualActions(false)
+        }
+        builder
             .addAction(replyAction(threadId))
             .addAction(markReadAction(threadId))
         if (!alert) builder.setSilent(true)
@@ -137,7 +145,7 @@ class Notifier(
             NotificationContent.ORIGINAL -> m.body
             NotificationContent.TRANSLATED -> when {
                 translation != null -> translation
-                auto && translations.isTranslatable(m) -> "🌐 …"
+                auto && translations.isAutoTranslatable(m) -> "🌐 …"
                 else -> m.body
             }
         }
@@ -215,6 +223,17 @@ class Notifier(
             .addRemoteInput(input)
             .setAllowGeneratedReplies(false)
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+    }
+
+    private fun copyCodeAction(threadId: Long, code: String, showCode: Boolean): NotificationCompat.Action {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(NotificationActionReceiver.ACTION_COPY_CODE)
+            .putExtra(NotificationActionReceiver.EXTRA_THREAD, threadId)
+            .putExtra(NotificationActionReceiver.EXTRA_CODE, code)
+        val pi = PendingIntent.getBroadcast(context, notificationId(threadId), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return NotificationCompat.Action.Builder(R.drawable.ic_stat_message, if (showCode && code.length <= 10) "Copy $code" else "Copy code", pi)
             .setShowsUserInterface(false)
             .build()
     }

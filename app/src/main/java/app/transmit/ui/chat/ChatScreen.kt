@@ -1,5 +1,6 @@
 package app.transmit.ui.chat
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -67,6 +68,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.data.ContactInfo
+import app.transmit.smart.SmartActions
+import app.transmit.smart.SmartEntity
 import app.transmit.telephony.Attachment
 import app.transmit.telephony.PhoneNumbers
 import app.transmit.ui.components.Avatar
@@ -151,6 +154,7 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
                                     sender = item.message.sender?.let { people[it] ?: ContactInfo(it, null, null, null) },
                                     target = target,
                                     downloading = item.key in downloading,
+                                    smart = vm.smart,
                                     onTap = { vm.toggleOriginal(item) },
                                     onLongPress = { vm.sheet.value = Sheet.Actions(item) },
                                     onReaction = { vm.react(item, it) },
@@ -159,6 +163,11 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
                                     onAttachment = { a ->
                                         if (a.isImage) viewing = a else scope.launch { MediaActions.open(context, a) }
                                     },
+                                    onLink = { link, all ->
+                                        val from = item.message.sender?.let { (people[it] ?: ContactInfo(it, null, null, null)).displayName }
+                                        openLink(context, link, all, item, from)
+                                    },
+                                    onCopyCode = { SmartActions.copyCode(context, it) },
                                 )
                             }
                             if (item.newDay) {
@@ -231,6 +240,7 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
             onDetails = { vm.sheet.value = Sheet.Details(s.item) },
             onRetry = { vm.retry(s.item.message) },
             onDelete = { vm.delete(s.item.message) },
+            onCopyCode = { SmartActions.copyCode(context, it) },
         )
         is Sheet.Emoji -> EmojiSheet(onDismiss = { vm.sheet.value = null }, onPick = { vm.react(s.item, it) })
         is Sheet.Details -> DetailsSheet(s.item, people, recipients, vm.simLabel(s.item.message.subId), onDismiss = { vm.sheet.value = null })
@@ -286,6 +296,28 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
     }
 
     viewing?.let { ImageViewer(it) { viewing = null } }
+}
+
+/** Opens what a tapped link in [item] points at. [all] is every link in the bubble. */
+private fun openLink(context: Context, link: SmartEntity, all: List<SmartEntity>, item: MessageUi, from: String?) {
+    when (link) {
+        is SmartEntity.Code -> SmartActions.copyCode(context, link.code)
+        is SmartEntity.Address -> SmartActions.openMap(context, link.address)
+        is SmartEntity.Phone -> SmartActions.dial(context, link.number)
+        is SmartEntity.Email -> SmartActions.email(context, link.address)
+        is SmartEntity.Date -> {
+            val text = item.displayText
+            val description = buildString {
+                if (from != null) append(from).append(": ")
+                append(item.message.body)
+                if (item.showingTranslation) append("\n\n").append(text)
+            }
+            val location = all.firstNotNullOfOrNull { (it as? SmartEntity.Address)?.address }
+            SmartActions.addToCalendar(context, link.time, SmartActions.eventTitle(text, link.start, link.end), description, location)
+        }
+        // Web links open through the text's own link handling.
+        is SmartEntity.Url -> Unit
+    }
 }
 
 @Composable

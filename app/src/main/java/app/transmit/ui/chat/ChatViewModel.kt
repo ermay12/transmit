@@ -17,6 +17,8 @@ import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.DraftEntity
 import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
+import app.transmit.smart.Otp
+import app.transmit.smart.SmartLinks
 import app.transmit.telephony.AttachmentTooLargeException
 import app.transmit.telephony.DeliveryStatus
 import app.transmit.telephony.Message
@@ -85,6 +87,10 @@ data class MessageUi(
     val translatable: Boolean,
     /** An incoming message whose translation is on its way; it stays hidden unless tapped. */
     val awaiting: Boolean,
+    /** A verification code in an incoming message. */
+    val code: String? = null,
+    /** Offer a "Copy code" chip: the conversation's newest code, while it's fresh. */
+    val codeChip: Boolean = false,
 ) {
     val key get() = message.key
     /** True when the bubble currently shows the target-language text. */
@@ -126,6 +132,8 @@ class ChatViewModel(
     private val reloads = Channel<Unit>(Channel.CONFLATED)
 
     val settings = c.settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** Finds addresses, dates and codes in bubbles as they're drawn. */
+    val smart: SmartLinks get() = c.smart
     val chat = MutableStateFlow<EffectiveChat?>(null)
     val showOriginal = MutableStateFlow<Set<String>>(emptySet())
     val compose = MutableStateFlow(ComposeUi(native = initialText.orEmpty(), attachments = initialAttachments))
@@ -300,6 +308,10 @@ class ChatViewModel(
         fun grouped(a: Message, b: Message) =
             a.outgoing == b.outgoing && sameSender(a.sender, b.sender) && kotlin.math.abs(b.date - a.date) < RUN_GAP && sameDay(a.date, b.date)
 
+        val codes = HashMap<String, String>()
+        for (m in visible) if (!m.outgoing) Otp.find(m.body)?.let { codes[m.key] = it.code }
+        val chipKey = visible.lastOrNull { it.key in codes }?.takeIf { System.currentTimeMillis() - it.date < CODE_CHIP_MS }?.key
+
         return visible.mapIndexed { i, m ->
             val prev = visible.getOrNull(i - 1)
             val next = visible.getOrNull(i + 1)
@@ -315,6 +327,8 @@ class ChatViewModel(
                 newDay = prev == null || !sameDay(prev.date, m.date),
                 translatable = translatable,
                 awaiting = tr[m.key] == null && translatable && (m.key in pending || m.key in expected),
+                code = codes[m.key],
+                codeChip = m.key == chipKey,
             )
         }
     }
@@ -572,5 +586,6 @@ class ChatViewModel(
         const val FIRST_SCREEN = 30
         const val ME = "me"
         const val RUN_GAP = 5 * 60_000L
+        const val CODE_CHIP_MS = 60 * 60_000L
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.ContactPage
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
@@ -38,15 +39,19 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +84,8 @@ import app.transmit.data.ContactInfo
 import app.transmit.data.Language
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.notify.Avatars
+import app.transmit.smart.SmartEntity
+import app.transmit.smart.SmartLinks
 import app.transmit.telephony.Attachment
 import app.transmit.telephony.DeliveryStatus
 import app.transmit.telephony.Reactions
@@ -97,12 +104,16 @@ fun MessageBubble(
     sender: ContactInfo?,
     target: Language,
     downloading: Boolean,
+    smart: SmartLinks,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onReaction: (String) -> Unit,
     onRetry: () -> Unit,
     onDownload: () -> Unit,
     onAttachment: (Attachment) -> Unit,
+    /** A tapped link, with the bubble's other links (a date's event takes its location from an address). */
+    onLink: (SmartEntity, List<SmartEntity>) -> Unit,
+    onCopyCode: (String) -> Unit,
 ) {
     val m = item.message
     val out = m.outgoing
@@ -130,7 +141,7 @@ fun MessageBubble(
                         .clip(RoundedCornerShape(18.dp))
                         .combinedClickable(onClick = onTap, onLongClick = onLongPress),
                 ) {
-                    BubbleBody(item, target, downloading, onDownload, onAttachment, onLongPress)
+                    BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink)
                 }
                 if (item.reactions.isNotEmpty()) {
                     Row(
@@ -151,6 +162,13 @@ fun MessageBubble(
                             }
                         }
                     }
+                }
+                if (item.codeChip && item.code != null) {
+                    AssistChip(
+                        onClick = { onCopyCode(item.code) },
+                        label = { Text("Copy code") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null, Modifier.size(AssistChipDefaults.IconSize)) },
+                    )
                 }
             }
         }
@@ -194,9 +212,11 @@ private fun BubbleBody(
     item: MessageUi,
     target: Language,
     downloading: Boolean,
+    smart: SmartLinks,
     onDownload: () -> Unit,
     onAttachment: (Attachment) -> Unit,
     onLongPress: () -> Unit,
+    onLink: (SmartEntity, List<SmartEntity>) -> Unit,
 ) {
     val m = item.message
     val out = m.outgoing
@@ -213,6 +233,8 @@ private fun BubbleBody(
     }
     val text = item.displayText
     val emojiOnly = m.attachments.isEmpty() && text.length <= 12 && Reactions.isEmoji(text.trim()) && !m.mmsPending
+    // Text hidden while its translation is on its way gets no links, so a tap can't open one unseen.
+    val links = rememberLinks(smart, item, enabled = !emojiOnly && !(item.awaiting && !item.showOriginal))
 
     Column(horizontalAlignment = if (out) Alignment.End else Alignment.Start) {
         if (m.mmsPending) {
@@ -227,14 +249,14 @@ private fun BubbleBody(
             Text(text.trim(), fontSize = 40.sp, lineHeight = 46.sp, modifier = Modifier.padding(horizontal = 4.dp))
         } else if (text.isNotBlank() || !m.subject.isNullOrBlank()) {
             Box(Modifier.background(bg, RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                BubbleText(item, fg, target)
+                BubbleText(item, fg, target, links) { onLink(it, links) }
             }
         }
     }
 }
 
 @Composable
-private fun BubbleText(item: MessageUi, color: Color, target: Language) {
+private fun BubbleText(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, onLink: (SmartEntity) -> Unit) {
     val m = item.message
     val tr = item.translation
     // A message awaiting its translation is drawn as placeholder bars until tapped.
@@ -248,14 +270,14 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language) {
         else -> null
     }
     val textColor = if (hidden) Color.Transparent else color
-    val content = remember(item.displayText, m.subject, marker, hidden, color) {
+    val currentOnLink by rememberUpdatedState(onLink)
+    val content = remember(item.displayText, m.subject, marker, hidden, color, links) {
         buildAnnotatedString {
             m.subject?.takeIf { it.isNotBlank() }?.let {
                 pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold)); append(it); pop()
                 if (item.displayText.isNotBlank()) append('\n')
             }
-            // Hidden text gets no links, so a tap can't open one unseen.
-            if (hidden) append(item.displayText) else appendLinkified(item.displayText, color)
+            if (hidden) append(item.displayText) else appendLinks(item.displayText, links, color) { currentOnLink(it) }
             if (marker != null) {
                 append("  ")
                 appendInlineContent(marker, "·")
@@ -299,17 +321,33 @@ private fun DrawScope.drawRedaction(layout: TextLayoutResult, color: Color) {
     }
 }
 
-private val urlRe = Regex("(https?://|www\\.)[^\\s<>\"]+[^\\s<>\".,;:!?)\\]]", RegexOption.IGNORE_CASE)
+/** Tappable parts of a bubble's text: links and codes at once, the classifier's finds once it answers. */
+@Composable
+private fun rememberLinks(smart: SmartLinks, item: MessageUi, enabled: Boolean): List<SmartEntity> {
+    val m = item.message
+    val text = item.displayText
+    // Keyed on the text, so a toggle between original and translation never pairs one text with the other's offsets.
+    val state = remember(text, m.date) { mutableStateOf(smart.cached(text, m.date) ?: smart.quick(text, item.code)) }
+    if (enabled && text.isNotBlank()) {
+        LaunchedEffect(text, m.date) { state.value = smart.detect(text, m.date, item.code) }
+    }
+    return state.value
+}
 
-private fun AnnotatedString.Builder.appendLinkified(text: String, color: Color) {
+private fun AnnotatedString.Builder.appendLinks(text: String, links: List<SmartEntity>, color: Color, onLink: (SmartEntity) -> Unit) {
+    val plain = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline))
+    val code = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.SemiBold))
     var last = 0
-    for (match in urlRe.findAll(text)) {
-        append(text.substring(last, match.range.first))
-        val url = match.value.let { if (it.startsWith("www.", true)) "https://$it" else it }
-        withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline)))) {
-            append(match.value)
+    for (e in links) {
+        if (e.start < last || e.end > text.length) continue
+        append(text.substring(last, e.start))
+        val link = when (e) {
+            is SmartEntity.Url -> LinkAnnotation.Url(e.url, plain)
+            is SmartEntity.Code -> LinkAnnotation.Clickable("code", code) { onLink(e) }
+            else -> LinkAnnotation.Clickable(e::class.simpleName.orEmpty(), plain) { onLink(e) }
         }
-        last = match.range.last + 1
+        withLink(link) { append(text.substring(e.start, e.end)) }
+        last = e.end
     }
     append(text.substring(last))
 }

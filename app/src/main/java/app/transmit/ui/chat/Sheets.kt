@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
@@ -106,6 +107,7 @@ fun ActionsSheet(
     onDetails: () -> Unit,
     onRetry: () -> Unit,
     onDelete: () -> Unit,
+    onCopyCode: (String) -> Unit,
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -143,6 +145,12 @@ fun ActionsSheet(
                         ActionTile(if (item.showOriginal) Icons.Default.Translate else Icons.AutoMirrored.Filled.Undo, if (item.showOriginal) "Translation" else "Original", onToggle)
                     }
                     ActionTile(Icons.Default.Refresh, if (tr == null) "Translate" else "Redo", onRetranslate)
+                }
+                item.code?.let { code ->
+                    ActionTile(Icons.Default.Password, "Copy code") {
+                        onCopyCode(code)
+                        onDismiss()
+                    }
                 }
                 if (item.message.body.isNotBlank()) {
                     ActionTile(Icons.Default.ContentCopy, "Copy") {
