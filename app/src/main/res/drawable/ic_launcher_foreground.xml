@@ -1,20 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Two overlapping speech bubbles: one plain, one with a translation glyph. -->
+<!-- Two speech bubbles: 文 in the back one, A in the front one. The glyphs (Noto Sans SC Black and Bold, SIL OFL)
+     are cut out of the bubbles, so this drawable also works as the monochrome (themed) icon layer. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#B3FFFFFF"
-        android:pathData="M30,34h30a8,8 0,0 1,8 8v14a8,8 0,0 1,-8 8H44l-9,8v-8h-5a8,8 0,0 1,-8 -8V42a8,8 0,0 1,8 -8z" />
+        android:fillColor="#C0FFFFFF"
+        android:pathData="M39.35 31.08H49.75C54.97 31.08 59.2 35.31 59.2 40.53V45.26H58.25Q53.36 45.26 49.9 48.72Q47.31 51.31 46.66 54.71H45.02L39.35 60.38V54.71C34.13 54.71 29.9 50.48 29.9 45.26V40.53C29.9 35.31 34.13 31.08 39.35 31.08ZM41.14 34.27C41.44 34.9 41.72 35.7 41.88 36.33H35.42V38.56H37.9C38.71 40.67 39.72 42.48 41.02 43.98C39.45 45.14 37.47 45.96 35.07 46.49C35.51 47.03 36.2 48.09 36.45 48.64C38.93 47.95 41 46.96 42.71 45.62C44.33 46.92 46.29 47.89 48.7 48.52C49.05 47.89 49.72 46.89 50.24 46.38C47.97 45.88 46.07 45.05 44.5 43.92C45.79 42.46 46.79 40.69 47.53 38.56H49.9V36.33H43.31L44.58 35.94C44.42 35.28 43.98 34.29 43.59 33.55ZM42.76 42.4C41.71 41.29 40.88 40 40.27 38.56H44.96C44.42 40.06 43.68 41.33 42.76 42.4Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M50,46h28a8,8 0,0 1,8 8v14a8,8 0,0 1,-8 8h-3v8l-9,-8H50a8,8 0,0 1,-8 -8V54a8,8 0,0 1,8 -8z" />
-    <path
-        android:fillColor="#FF3F51E8"
-        android:pathData="M55,52h6v2.5h4.5v3h-1.6c-0.7,2.8 -2,5.1 -3.8,7 1.3,1 2.9,1.7 4.6,2.2l-0.9,2.9c-2.2,-0.6 -4.1,-1.6 -5.8,-2.9 -1.7,1.3 -3.7,2.3 -6,2.9l-0.9,-2.9c1.8,-0.5 3.4,-1.2 4.8,-2.2 -1.2,-1.3 -2.2,-2.8 -2.9,-4.5l2.8,-1.1c0.5,1.2 1.2,2.3 2.1,3.3 1.2,-1.4 2.1,-3 2.6,-4.7H49.5v-3H55z" />
-    <path
-        android:fillColor="#FF3F51E8"
-        android:pathData="M72.5,56h3.2l5.3,14h-3.2l-1.2,-3.3h-5l-1.2,3.3h-3.2zM72.6,64h3.2l-1.6,-4.6z" />
+        android:pathData="M58.25 47.62H68.65C73.87 47.62 78.1 51.85 78.1 57.07V61.8C78.1 67.02 73.87 71.25 68.65 71.25V76.92L62.98 71.25H58.25C53.03 71.25 48.8 67.02 48.8 61.8V57.07C48.8 51.85 53.03 47.62 58.25 47.62ZM57.04 66.76H60L61.03 63H65.76L66.78 66.76H69.87L65.18 52.11H61.72ZM61.66 60.73 62.1 59.13C62.53 57.61 62.95 55.95 63.34 54.34H63.42C63.86 55.91 64.25 57.61 64.71 59.13L65.14 60.73Z" />
 </vector>
