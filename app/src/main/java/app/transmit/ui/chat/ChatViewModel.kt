@@ -60,7 +60,6 @@ data class ComposeUi(
     val attachments: List<OutgoingAttachment> = emptyList(),
     val busy: Busy? = null,
     val feedback: Feedback? = null,
-    val feedbackAttempt: String = "",
     /** The native text was just prepared from the target text; nudge the user to send. */
     val readyToSend: Boolean = false,
 ) {
@@ -430,8 +429,8 @@ class ChatViewModel(
         it.copy(native = value, nativeAi = false, stale = it.targetAi && it.target.isNotBlank(), readyToSend = false)
     }
 
-    // Feedback stays up while the user revises (it diffs against [ComposeUi.feedbackAttempt], the
-    // checked text); it goes away when dismissed, applied, re-checked, replaced by a translation, or sent.
+    // Feedback stays up while the user revises (the card diffs the live draft against the correction);
+    // it goes away when dismissed, applied, re-checked, replaced by a translation, or sent.
     fun onTargetChange(value: String) = compose.update {
         it.copy(target = value, targetAi = false, stale = false, readyToSend = false)
     }
@@ -469,7 +468,6 @@ class ChatViewModel(
                     val fillNative = (cur.native.isBlank() || cur.nativeAi) && r.feedback.translation.isNotBlank()
                     cur.copy(
                         feedback = r.feedback,
-                        feedbackAttempt = st.target,
                         native = if (fillNative) r.feedback.translation else cur.native,
                         nativeAi = if (fillNative) true else cur.nativeAi,
                     )
@@ -564,6 +562,7 @@ class ChatViewModel(
     fun setChatBudget(usd: Double?) = updateChat { it.copy(monthlyBudgetUsd = usd) }
     fun setPinned(value: Boolean) = updateChat { it.copy(pinned = value) }
     fun setMuted(value: Boolean) = updateChat { it.copy(muted = value) }
+    fun setChatName(value: String?) = updateChat { it.copy(name = value?.trim()?.takeIf(String::isNotEmpty)) }
 
     fun toggleAutoTranslate() {
         val now = chat.value?.autoTranslate ?: return
@@ -575,6 +574,8 @@ class ChatViewModel(
         viewModelScope.launch {
             c.messaging.deleteThread(threadId)
             c.dao.deleteDraft(threadId)
+            // Android can reuse a deleted thread's id; a new chat must not inherit this one's name or settings.
+            c.dao.deleteChatSettings(threadId)
             onDone()
         }
     }

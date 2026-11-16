@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.data.ContactInfo
+import app.transmit.data.chatTitle
 import app.transmit.smart.SmartActions
 import app.transmit.smart.SmartEntity
 import app.transmit.telephony.Attachment
@@ -130,6 +131,7 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
         topBar = {
             ChatTopBar(
                 people = recipients.map { people[it] ?: ContactInfo(it, null, null, null) },
+                customName = chat?.overrides?.name,
                 autoTranslate = chat?.autoTranslate == true,
                 flag = target?.flag ?: "🌐",
                 onBack = onBack,
@@ -259,6 +261,7 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
                     onBudget = vm::setChatBudget,
                     onPinned = vm::setPinned,
                     onMuted = vm::setMuted,
+                    onRename = vm::setChatName,
                     onDelete = { confirmDelete = true },
                 )
             }
@@ -323,6 +326,7 @@ private fun openLink(context: Context, link: SmartEntity, all: List<SmartEntity>
 @Composable
 private fun ChatTopBar(
     people: List<ContactInfo>,
+    customName: String?,
     autoTranslate: Boolean,
     flag: String,
     onBack: () -> Unit,
@@ -330,10 +334,15 @@ private fun ChatTopBar(
     onToggleTranslate: () -> Unit,
 ) {
     val context = LocalContext.current
-    val title = when (people.size) {
-        0 -> ""
-        1 -> people[0].displayName
-        else -> people.joinToString(", ") { it.shortName }
+    val title = chatTitle(people, customName)
+    val first = people.firstOrNull()
+    // A renamed chat keeps its people in view under the name.
+    val subtitle = when {
+        first == null -> null
+        people.size > 1 -> if (customName != null) chatTitle(people) else "${people.size} people"
+        customName != null && first.isContact -> "${first.displayName} · ${PhoneNumbers.format(first.address)}"
+        customName != null || first.isContact -> PhoneNumbers.format(first.address)
+        else -> null
     }
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -345,15 +354,12 @@ private fun ChatTopBar(
                 Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onInfo).padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val first = people.firstOrNull()
                 Avatar(title, first?.address ?: title, if (people.size == 1) first?.photoUri else null, size = 36.dp, group = people.size > 1)
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                    if (people.size > 1) {
-                        Text("${people.size} people", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (first != null && first.isContact) {
-                        Text(PhoneNumbers.format(first.address), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (subtitle != null) {
+                        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

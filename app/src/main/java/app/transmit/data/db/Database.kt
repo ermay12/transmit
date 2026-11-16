@@ -76,6 +76,8 @@ data class ChatSettingsEntity(
      * bring the chat back unless it is muted.
      */
     val archivedAt: Long? = null,
+    /** The user's name for the chat, shown only in Transmit; null = named after its people. */
+    val name: String? = null,
 ) {
     fun archived(latest: Long) = archivedAt != null && (muted || latest <= archivedAt)
 }
@@ -153,6 +155,9 @@ interface TransmitDao {
     @Upsert
     suspend fun upsertChatSettings(entity: ChatSettingsEntity)
 
+    @Query("DELETE FROM chat_settings WHERE threadId = :threadId")
+    suspend fun deleteChatSettings(threadId: Long)
+
     @Query("SELECT * FROM drafts WHERE threadId = :threadId")
     suspend fun draft(threadId: Long): DraftEntity?
 
@@ -168,9 +173,9 @@ interface TransmitDao {
 
 @Database(
     entities = [TranslationEntity::class, ExplanationEntity::class, UsageEntity::class, ChatSettingsEntity::class, DraftEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TransmitDao

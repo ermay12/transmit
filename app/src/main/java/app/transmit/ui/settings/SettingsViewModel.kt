@@ -161,7 +161,8 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
                 threads.map { t ->
                     val label = t.threadId?.let { id ->
                         val r = c.messaging.recipientsForThread(id)
-                        if (r.isEmpty()) "Deleted chat" else r.joinToString(", ") { c.contacts.lookup(it).displayName }
+                        if (r.isEmpty()) "Deleted chat"
+                        else c.dao.chatSettings(id)?.name ?: r.joinToString(", ") { c.contacts.lookup(it).displayName }
                     } ?: "Drafts & tools"
                     SpendRow(label, t.cost, t.calls)
                 }

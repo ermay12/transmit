@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
 import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
+import app.transmit.data.chatTitle
 import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.telephony.Conversation
 import app.transmit.telephony.Reactions
@@ -89,7 +90,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             ConversationUi(
                 conversation = conv,
                 people = people,
-                title = people.joinToString(", ") { if (people.size > 1) it.shortName else it.displayName },
+                title = chatTitle(people, settings?.name),
                 snippet = when {
                     reaction != null -> "${reaction.emoji} “${translation?.text ?: reaction.quoted ?: "📷"}”"
                     translation != null -> translation.text
@@ -112,6 +113,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val digits = needle.filter { it.isDigit() }
         list.filter { item ->
             item.title.lowercase().contains(needle) ||
+                item.people.any { it.name?.lowercase()?.contains(needle) == true } ||
                 item.snippet.lowercase().contains(needle) ||
                 item.conversation.snippet.lowercase().contains(needle) ||
                 (digits.length >= 3 && item.conversation.recipients.any { it.filter(Char::isDigit).contains(digits) })
@@ -165,7 +167,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     fun markSelectedRead() = forSelected { c.messaging.markThreadRead(it); c.notifier.cancel(it) }
 
-    fun deleteSelected() = forSelected { c.messaging.deleteThread(it); c.dao.deleteDraft(it) }
+    fun deleteSelected() = forSelected { c.messaging.deleteThread(it); c.dao.deleteDraft(it); c.dao.deleteChatSettings(it) }
 
     fun archiveSelected() {
         val ids = selection.value

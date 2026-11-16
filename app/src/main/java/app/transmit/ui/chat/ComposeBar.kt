@@ -89,7 +89,7 @@ fun ComposeBar(
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 4.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).animateContentSize()) {
             AnimatedVisibility(state.feedback != null) {
-                state.feedback?.let { FeedbackCard(it, state.feedbackAttempt, onApply, onDismissFeedback) }
+                state.feedback?.let { FeedbackCard(it, state.target, onApply, onDismissFeedback) }
             }
             if (state.attachments.isNotEmpty()) AttachmentStrip(state.attachments, onRemoveAttachment)
             Row(verticalAlignment = Alignment.Bottom) {
@@ -254,10 +254,11 @@ private fun FeedbackCard(fb: Feedback, attempt: String, onApply: (String) -> Uni
                     if (fb.verdict == Feedback.Verdict.PERFECT || corrected.trim() == attempt.trim()) {
                         Text(corrected, style = MaterialTheme.typography.bodyLarge)
                     } else {
-                        Text(
-                            Diff.annotated(attempt, corrected, add = colors.good, del = colors.bad),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        // Diffs against the live draft, so the highlights shrink as the user types the fixes in.
+                        val diff = remember(attempt, corrected, colors.good, colors.bad) {
+                            Diff.annotated(attempt, corrected, add = colors.good, del = colors.bad)
+                        }
+                        Text(diff, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
                 if (fb.verdict != Feedback.Verdict.PERFECT && fb.corrected.isNotBlank() && fb.corrected.trim() != attempt.trim()) {

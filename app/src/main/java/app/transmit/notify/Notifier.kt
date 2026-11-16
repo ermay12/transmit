@@ -87,8 +87,10 @@ class Notifier(
 
         val me = Person.Builder().setName("You").setKey("me").build()
         val style = NotificationCompat.MessagingStyle(me).setGroupConversation(isGroup)
-        val title = recipients.joinToString(", ") { contacts.lookup(it).displayName }
-        if (isGroup) style.conversationTitle = title
+        val customName = eff.overrides?.name
+        // The system titles conversation notifications with the shortcut's label, so a custom name shows for 1:1 chats too.
+        val title = customName ?: recipients.joinToString(", ") { contacts.lookup(it).displayName }
+        if (isGroup || customName != null) style.conversationTitle = title
         val people = HashMap<String, Person>()
         for (m in unread) {
             val address = m.sender ?: recipients.firstOrNull().orEmpty()
@@ -162,7 +164,8 @@ class Notifier(
         val threadId = context.contentResolver.query(messageUri, arrayOf(column), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getLong(0) else null
         } ?: return@withContext
-        val name = repo.recipientsForThread(threadId).joinToString(", ") { contacts.lookup(it).displayName }
+        val name = dao.chatSettings(threadId)?.name
+            ?: repo.recipientsForThread(threadId).joinToString(", ") { contacts.lookup(it).displayName }
         val n = NotificationCompat.Builder(context, CHANNEL_FAILURES)
             .setSmallIcon(R.drawable.ic_stat_message)
             .setContentTitle("Message not sent")

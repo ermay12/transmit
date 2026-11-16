@@ -29,6 +29,10 @@ data class ContactInfo(
     val shortName get() = name?.substringBefore(' ') ?: displayName
 }
 
+/** A conversation's title: the user's name for it if set, else its people (first names in a group). */
+fun chatTitle(people: List<ContactInfo>, customName: String? = null): String =
+    customName?.takeIf { it.isNotBlank() } ?: people.joinToString(", ") { if (people.size > 1) it.shortName else it.displayName }
+
 data class PhoneContact(
     val contactId: Long,
     val name: String,

@@ -13,15 +13,28 @@ object Diff {
     enum class Op { SAME, ADD, DEL }
     data class Piece(val text: String, val op: Op)
 
-    fun tokens(s: String): List<String> {
-        if (s.isEmpty()) return emptyList()
-        val spaced = s.count { it == ' ' } >= s.length / 12
-        return if (spaced) Regex("\\s+|[^\\s]+").findAll(s).map { it.value }.toList() else s.map { it.toString() }
+    private val unspacedScripts = setOf(
+        Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA,
+        Character.UnicodeScript.THAI, Character.UnicodeScript.LAO, Character.UnicodeScript.KHMER,
+        Character.UnicodeScript.MYANMAR, Character.UnicodeScript.TIBETAN,
+    )
+
+    /** Character-level for scripts written without spaces (or long text that has almost none), else word-level. */
+    fun charLevel(s: String): Boolean =
+        s.codePoints().anyMatch { Character.UnicodeScript.of(it) in unspacedScripts } ||
+            (s.length >= 12 && s.count { it == ' ' } < s.length / 12)
+
+    fun tokens(s: String, charLevel: Boolean = charLevel(s)): List<String> = when {
+        s.isEmpty() -> emptyList()
+        charLevel -> s.codePoints().toArray().map { String(Character.toChars(it)) }
+        else -> Regex("\\s+|[^\\s]+").findAll(s).map { it.value }.toList()
     }
 
     fun diff(before: String, after: String): List<Piece> {
-        val a = tokens(before)
-        val b = tokens(after)
+        // Both sides must be split the same way, or a one-character fix shows as the whole text replaced.
+        val charLevel = charLevel(before) || charLevel(after)
+        val a = tokens(before, charLevel)
+        val b = tokens(after, charLevel)
         val n = a.size
         val m = b.size
         if (n * m > 250_000) return listOf(Piece(after, Op.SAME))

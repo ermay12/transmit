@@ -1,10 +1,13 @@
 package app.transmit.ui.chat
 
 import android.content.ClipData
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
 import android.text.format.Formatter
+import android.view.MotionEvent
+import android.widget.FrameLayout
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,8 +41,10 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Savings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +63,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,16 +72,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.emoji2.emojipicker.EmojiPickerView
 import app.transmit.ai.EffectiveChat
@@ -83,6 +97,7 @@ import app.transmit.ai.usd
 import app.transmit.data.AppSettings
 import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
+import app.transmit.data.chatTitle
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.telephony.DeliveryStatus
 import app.transmit.telephony.MessageKind
@@ -183,9 +198,28 @@ private fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit) {
 fun EmojiSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         AndroidView(
-            factory = { ctx -> EmojiPickerView(ctx).apply { setOnEmojiPickedListener { onPick(it.emoji) } } },
+            factory = { ctx ->
+                TouchClaimingFrame(ctx).apply {
+                    addView(EmojiPickerView(ctx).apply { setOnEmojiPickedListener { onPick(it.emoji) } })
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(420.dp).navigationBarsPadding(),
         )
+    }
+}
+
+/**
+ * Compose shows each move to the sheet's drag gesture before an embedded View sees it, so the
+ * sheet would claim every vertical swipe and the picker's list could never scroll. Claiming the
+ * gesture on touch-down hands it to the picker; pulling down past the top of the list still drags
+ * the sheet through nested scrolling.
+ */
+private class TouchClaimingFrame(context: Context) : FrameLayout(context) {
+    init { isNestedScrollingEnabled = true } // AndroidView forwards nested scroll only when its root opts in.
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
+        return super.dispatchTouchEvent(ev)
     }
 }
 
@@ -294,10 +328,12 @@ fun ChatInfoSheet(
     onBudget: (Double?) -> Unit,
     onPinned: (Boolean) -> Unit,
     onMuted: (Boolean) -> Unit,
+    onRename: (String?) -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
     var pickLanguage by remember { mutableStateOf(false) }
+    var rename by remember { mutableStateOf(false) }
     val overrides = chat.overrides
     val defaults = if (chat.isKnown) settings.contactDefaults else settings.unknownDefaults
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -326,6 +362,24 @@ fun ChatInfoSheet(
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            // SMS has no shared chat name, so this one lives only in Transmit.
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { rename = true }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Edit, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Chat name", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        overrides?.name ?: "${chatTitle(people)} · default",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
 
             // Auto-translate: follow the default for known/unknown senders, or force on/off.
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -378,6 +432,13 @@ fun ChatInfoSheet(
             }
         }
     }
+    if (rename) {
+        RenameDialog(
+            current = overrides?.name, default = chatTitle(people),
+            onSave = { onRename(it); rename = false },
+            onDismiss = { rename = false },
+        )
+    }
     if (pickLanguage) {
         LanguagePickerDialog(
             title = "Practice language",
@@ -388,6 +449,35 @@ fun ChatInfoSheet(
             onDismiss = { pickLanguage = false },
         )
     }
+}
+
+@Composable
+private fun RenameDialog(current: String?, default: String, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(current.orEmpty().let { TextFieldValue(it, TextRange(it.length)) }) }
+    val focus = remember { FocusRequester() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Edit, null) },
+        title = { Text("Chat name") },
+        text = {
+            OutlinedTextField(
+                value = text, onValueChange = { text = it }, singleLine = true,
+                placeholder = { Text(default, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                supportingText = { Text("Only shown in Transmit. Leave empty to use their names.") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onSave(text.text) }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+            LaunchedEffect(Unit) { focus.requestFocus() }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text.text) }) { Text("Save") } },
+        dismissButton = {
+            Row {
+                if (current != null) TextButton(onClick = { onSave(null) }) { Text("Reset") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 @Composable
