@@ -430,11 +430,13 @@ class ChatViewModel(
         it.copy(native = value, nativeAi = false, stale = it.targetAi && it.target.isNotBlank(), readyToSend = false)
     }
 
+    // Feedback stays up while the user revises (it diffs against [ComposeUi.feedbackAttempt], the
+    // checked text); it goes away when dismissed, applied, re-checked, replaced by a translation, or sent.
     fun onTargetChange(value: String) = compose.update {
-        it.copy(target = value, targetAi = false, stale = false, readyToSend = false, feedback = if (value == it.feedbackAttempt) it.feedback else null)
+        it.copy(target = value, targetAi = false, stale = false, readyToSend = false)
     }
 
-    fun clearTarget() = compose.update { it.copy(target = "", targetAi = false, stale = false, feedback = null) }
+    fun clearTarget() = compose.update { it.copy(target = "", targetAi = false, stale = false) }
 
     fun clearNative() = compose.update { it.copy(native = "", nativeAi = false, readyToSend = false) }
 

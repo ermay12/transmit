@@ -144,6 +144,16 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             DefaultsRow(Icons.Outlined.HelpOutline, "Unknown numbers", s.unknownDefaults, vm::setUnknownDefaults)
 
             Section("Translation")
+            SwitchRow0(
+                Icons.Default.Contacts, "Auto-translate contacts", s.contactDefaults.autoTranslate,
+                { vm.setContactDefaults(s.contactDefaults.copy(autoTranslate = it)) },
+                subtitle = "Chats with people in your contacts",
+            )
+            SwitchRow0(
+                Icons.Outlined.HelpOutline, "Auto-translate unknown numbers", s.unknownDefaults.autoTranslate,
+                { vm.setUnknownDefaults(s.unknownDefaults.copy(autoTranslate = it)) },
+                subtitle = "Chats with numbers not in your contacts",
+            )
             StepperRow(Icons.Default.History, "Context messages", "Earlier messages sent with each request", s.contextMessages, 0..12, vm::setContextMessages)
             StepperRow(Icons.Default.DoneAll, "Translate on open", "Older messages translated when a chat opens", s.backfillCount, 0..50, vm::setBackfill, step = 4)
             SwitchRow0(Icons.Default.Send, "Translate my sent messages", s.translateOutgoing, vm::setTranslateOutgoing)
@@ -247,8 +257,8 @@ fun Row0(icon: ImageVector, title: String, subtitle: String?, trailing: @Composa
 }
 
 @Composable
-private fun SwitchRow0(icon: ImageVector, title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row0(icon, title, null, trailing = { Switch(checked, onChange) }) { onChange(!checked) }
+private fun SwitchRow0(icon: ImageVector, title: String, checked: Boolean, onChange: (Boolean) -> Unit, subtitle: String? = null) {
+    Row0(icon, title, subtitle, trailing = { Switch(checked, onChange) }) { onChange(!checked) }
 }
 
 @Composable
@@ -315,11 +325,6 @@ private fun DefaultsRow(icon: ImageVector, title: String, d: ChatDefaults, onCha
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text("Per chat, monthly", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        FilterChip(
-            selected = d.autoTranslate, onClick = { onChange(d.copy(autoTranslate = !d.autoTranslate)) },
-            label = { Icon(Icons.Default.Translate, if (d.autoTranslate) "Auto-translate on" else "Auto-translate off", Modifier.size(18.dp)) },
-        )
-        Spacer(Modifier.width(8.dp))
         MoneyField(d.monthlyBudgetUsd, { onChange(d.copy(monthlyBudgetUsd = it)) })
     }
 }
