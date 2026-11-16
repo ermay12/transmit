@@ -28,7 +28,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.transmit.data.ModelSlot
-import app.transmit.telephony.OutgoingAttachment
+import app.transmit.gm.BridgeService
+import app.transmit.messaging.OutgoingAttachment
 import app.transmit.ui.chat.ChatScreen
 import app.transmit.ui.chat.ChatViewModel
 import app.transmit.ui.home.HomeScreen
@@ -36,6 +37,7 @@ import app.transmit.ui.home.HomeViewModel
 import app.transmit.ui.newchat.NewChatScreen
 import app.transmit.ui.newchat.NewChatViewModel
 import app.transmit.ui.onboarding.OnboardingScreen
+import app.transmit.ui.pairing.PairingScreen
 import app.transmit.ui.settings.ModelPickerScreen
 import app.transmit.ui.settings.SettingsScreen
 import app.transmit.ui.settings.SettingsViewModel
@@ -71,6 +73,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Android only lets a visible app start the connection service; make sure it's running.
+        BridgeService.start(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -137,6 +145,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val MODELS = "models/{slot}"
     const val USAGE = "usage"
+    const val PAIR = "pair"
     fun chat(id: Long) = "chat/$id"
     fun models(slot: ModelSlot) = "models/${slot.name}"
 }
@@ -156,9 +165,10 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
         when (r) {
             is NavRequest.Thread -> nav.openChat(r.threadId)
             is NavRequest.Compose -> {
-                val id = withContext(Dispatchers.IO) { c.messaging.threadIdFor(r.recipients) }
                 pendingShare = r.share.takeUnless { it.isEmpty }
-                nav.openChat(id)
+                val id = runCatching { withContext(Dispatchers.IO) { c.messaging.threadIdFor(r.recipients) } }.getOrNull()
+                // Not connected to the phone yet: let the user pick (and retry) from the new-chat screen.
+                if (id != null) nav.openChat(id) else nav.navigate(Routes.NEW) { launchSingleTop = true }
             }
             is NavRequest.PickRecipient -> {
                 pendingShare = r.share.takeUnless { it.isEmpty }
@@ -173,7 +183,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
 
     NavHost(nav, startDestination = start) {
         composable(Routes.ONBOARDING) {
-            OnboardingScreen(viewModel { SettingsViewModel(c) }) {
+            OnboardingScreen(viewModel { SettingsViewModel(c) }, onPair = { nav.navigate(Routes.PAIR) }) {
                 nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
             }
         }
@@ -184,13 +194,25 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 onNew = { nav.navigate(Routes.NEW) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
                 onUsage = { nav.navigate(Routes.USAGE) },
+                onPair = { nav.navigate(Routes.PAIR) },
+            )
+        }
+        composable(Routes.PAIR) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            PairingScreen(
+                c.bridge,
+                onDone = {
+                    BridgeService.start(context)
+                    nav.popBackStack()
+                },
+                onBack = { nav.popBackStack() },
             )
         }
         composable(Routes.CHAT, arguments = listOf(navArgument("threadId") { type = NavType.LongType })) { entry ->
             val threadId = entry.arguments?.getLong("threadId") ?: return@composable
             val share = remember { pendingShare.also { pendingShare = null } }
             val vm = viewModel { ChatViewModel(c, threadId, share?.text, share?.attachments.orEmpty()) }
-            ChatScreen(vm, c::isDefaultSmsApp, onBack = { if (!nav.popBackStack()) onExit() })
+            ChatScreen(vm, onBack = { if (!nav.popBackStack()) onExit() }, onPair = { nav.navigate(Routes.PAIR) })
         }
         composable(Routes.NEW) {
             // Backing out abandons the share, so it can't leak into the next chat opened.
@@ -204,6 +226,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 onBack = { nav.popBackStack() },
                 onModels = { nav.navigate(Routes.models(it)) },
                 onUsage = { nav.navigate(Routes.USAGE) },
+                onPair = { nav.navigate(Routes.PAIR) },
             )
         }
         composable(Routes.MODELS, arguments = listOf(navArgument("slot") { type = NavType.StringType })) { entry ->

@@ -90,6 +90,36 @@ data class DraftEntity(
     val updatedAt: Long,
 )
 
+/**
+ * A Google Messages conversation as the phone last described it. [proto] holds the full
+ * `Conversation` message; the other columns are copies for querying. [threadId] is Transmit's id.
+ */
+@Entity(tableName = "gm_conversations", indices = [Index(value = ["conversationId"], unique = true)])
+class GmConversationEntity(
+    @PrimaryKey val threadId: Long,
+    val conversationId: String,
+    /** Milliseconds. */
+    val lastMessageAt: Long,
+    val unread: Boolean,
+    /** `ConversationStatus`: active, archived, deleted, spam... */
+    val status: Int,
+    val proto: ByteArray,
+)
+
+/** A message fetched from, or announced by, the phone. [proto] holds the full `Message`. */
+@Entity(tableName = "gm_messages", indices = [Index(value = ["threadId", "timestamp"]), Index("tmpId")])
+class GmMessageEntity(
+    @PrimaryKey val messageId: String,
+    val threadId: Long,
+    /** Milliseconds. */
+    val timestamp: Long,
+    val outgoing: Boolean,
+    val read: Boolean,
+    /** The id Transmit gave a message it sent, which the phone echoes back on the real message. */
+    val tmpId: String?,
+    val proto: ByteArray,
+)
+
 data class ThreadSpend(val threadId: Long?, val cost: Double, val calls: Int)
 data class PurposeSpend(val purpose: String, val cost: Double, val calls: Int, val inputTokens: Long, val outputTokens: Long)
 
@@ -115,6 +145,24 @@ interface TransmitDao {
 
     @Query("DELETE FROM translations WHERE msgKey = :key AND lang = :lang")
     suspend fun deleteTranslation(key: String, lang: String)
+
+    /**
+     * Gives a sent message's translations to the message that replaces its placeholder. Copied, not
+     * moved: the chat still shows the placeholder until its list reloads, and it must not lose its
+     * translation meanwhile (see [deleteOrphanPlaceholderTranslations]).
+     */
+    @Query(
+        "INSERT OR REPLACE INTO translations (msgKey, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt) " +
+            "SELECT :to, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt FROM translations WHERE msgKey = :from",
+    )
+    suspend fun copyTranslations(from: String, to: String)
+
+    /** Drops translations of placeholders that are gone. Message keys are "g" + the message id. */
+    @Query(
+        "DELETE FROM translations WHERE substr(msgKey, 1, length(:keyPrefix)) = :keyPrefix " +
+            "AND msgKey NOT IN (SELECT 'g' || messageId FROM gm_messages)",
+    )
+    suspend fun deleteOrphanPlaceholderTranslations(keyPrefix: String)
 
     @Query("SELECT * FROM explanations WHERE `key` = :key")
     suspend fun explanation(key: String): ExplanationEntity?
@@ -171,14 +219,87 @@ interface TransmitDao {
     suspend fun deleteDraft(threadId: Long)
 }
 
+@Dao
+interface GmDao {
+    @Query("SELECT * FROM gm_conversations WHERE status IN (0, 1, 2, 4) ORDER BY lastMessageAt DESC")
+    suspend fun conversations(): List<GmConversationEntity>
+
+    @Query("SELECT * FROM gm_conversations WHERE threadId = :threadId")
+    suspend fun conversation(threadId: Long): GmConversationEntity?
+
+    @Query("SELECT * FROM gm_conversations WHERE conversationId = :conversationId")
+    suspend fun conversationById(conversationId: String): GmConversationEntity?
+
+    @Upsert
+    suspend fun upsertConversations(list: List<GmConversationEntity>)
+
+    @Query("DELETE FROM gm_conversations WHERE threadId = :threadId")
+    suspend fun deleteConversation(threadId: Long)
+
+    /** Only touches unread rows: a no-op must not count as a change, or open chats would reload forever. */
+    @Query("UPDATE gm_conversations SET unread = 0 WHERE threadId = :threadId AND unread = 1")
+    suspend fun markConversationRead(threadId: Long)
+
+    @Query("SELECT * FROM gm_messages WHERE threadId = :threadId AND timestamp < :before ORDER BY timestamp DESC, messageId DESC LIMIT :limit")
+    suspend fun messages(threadId: Long, limit: Int, before: Long = Long.MAX_VALUE): List<GmMessageEntity>
+
+    @Query("SELECT COUNT(*) FROM gm_messages WHERE threadId = :threadId")
+    suspend fun messageCount(threadId: Long): Int
+
+    @Query("SELECT * FROM gm_messages WHERE messageId = :messageId")
+    suspend fun message(messageId: String): GmMessageEntity?
+
+    @Query("SELECT * FROM gm_messages WHERE tmpId = :tmpId")
+    suspend fun messagesWithTmpId(tmpId: String): List<GmMessageEntity>
+
+    @Upsert
+    suspend fun upsertMessages(list: List<GmMessageEntity>)
+
+    @Query("DELETE FROM gm_messages WHERE messageId = :messageId")
+    suspend fun deleteMessage(messageId: String)
+
+    @Query("DELETE FROM gm_messages WHERE threadId = :threadId")
+    suspend fun deleteThreadMessages(threadId: Long)
+
+    @Query("SELECT * FROM gm_messages WHERE threadId = :threadId AND read = 0 AND outgoing = 0 ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun unreadIncoming(threadId: Long, limit: Int): List<GmMessageEntity>
+
+    @Query("SELECT DISTINCT threadId FROM gm_messages WHERE read = 0 AND outgoing = 0")
+    suspend fun unreadThreadIds(): List<Long>
+
+    @Query("UPDATE gm_messages SET read = 1 WHERE threadId = :threadId AND read = 0")
+    suspend fun markThreadRead(threadId: Long)
+
+    /** The newest message of every conversation that has any cached. */
+    @Query(
+        "SELECT m.* FROM gm_messages m JOIN (SELECT threadId, MAX(timestamp) AS ts FROM gm_messages GROUP BY threadId) l " +
+            "ON m.threadId = l.threadId AND m.timestamp = l.ts",
+    )
+    suspend fun latestMessages(): List<GmMessageEntity>
+
+    /** Re-emits whenever either table changes. */
+    @Query("SELECT (SELECT COUNT(*) FROM gm_conversations) + (SELECT COUNT(*) FROM gm_messages)")
+    fun changes(): Flow<Int>
+
+    @Query("DELETE FROM gm_conversations")
+    suspend fun clearConversations()
+
+    @Query("DELETE FROM gm_messages")
+    suspend fun clearMessages()
+}
+
 @Database(
-    entities = [TranslationEntity::class, ExplanationEntity::class, UsageEntity::class, ChatSettingsEntity::class, DraftEntity::class],
-    version = 3,
+    entities = [
+        TranslationEntity::class, ExplanationEntity::class, UsageEntity::class, ChatSettingsEntity::class, DraftEntity::class,
+        GmConversationEntity::class, GmMessageEntity::class,
+    ],
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TransmitDao
+    abstract fun gmDao(): GmDao
 
     companion object {
         fun build(context: Context): AppDatabase =

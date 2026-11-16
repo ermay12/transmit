@@ -1,16 +1,18 @@
-package app.transmit.telephony
+package app.transmit.messaging
 
 import android.net.Uri
 
-enum class MessageKind { SMS, MMS }
+enum class MessageKind { SMS, MMS, RCS }
 
-enum class DeliveryStatus { RECEIVED, SENDING, SENT, DELIVERED, FAILED }
+enum class DeliveryStatus { RECEIVED, SENDING, SENT, DELIVERED, READ, FAILED }
 
 data class Attachment(
     val partId: Long,
     val uri: Uri,
     val mimeType: String,
     val name: String?,
+    /** Google Messages hasn't made the file available yet. */
+    val pending: Boolean = false,
 ) {
     val isImage get() = mimeType.startsWith("image/")
     val isVideo get() = mimeType.startsWith("video/")
@@ -18,7 +20,10 @@ data class Attachment(
     val isContactCard get() = mimeType.contains("vcard", ignoreCase = true)
 }
 
-/** A message from the system SMS/MMS store. [key] is stable: "s<id>" for SMS, "m<id>" for MMS. */
+/** A reaction Google Messages tracks on a message (RCS reactions, and SMS tapbacks it recognized). */
+data class NativeReaction(val emoji: String, val count: Int, val mine: Boolean)
+
+/** A message in a Google Messages conversation. [key] is stable: "g" + the phone's message id. */
 data class Message(
     val key: String,
     val id: Long,
@@ -26,7 +31,7 @@ data class Message(
     val threadId: Long,
     /** Sender for incoming messages; null for outgoing. */
     val sender: String?,
-    /** Recipients for outgoing messages (SMS: one; MMS: all To/Cc). */
+    /** The other people in the conversation, for outgoing messages. */
     val recipients: List<String>,
     val body: String,
     val date: Long,
@@ -37,18 +42,18 @@ data class Message(
     val subId: Int,
     val attachments: List<Attachment> = emptyList(),
     val subject: String? = null,
-    /** MMS notification that has not been downloaded yet. */
+    /** An MMS the phone hasn't downloaded yet. */
     val mmsPending: Boolean = false,
-    val mmsContentLocation: String? = null,
-    val mmsExpiry: Long = 0,
     val sizeBytes: Long = 0,
     val errorCode: Int = 0,
+    val reactions: List<NativeReaction> = emptyList(),
 ) {
     val hasText get() = body.isNotBlank()
+    /** The phone's id for this message. */
+    val messageId get() = key.removePrefix("g")
 
     companion object {
-        fun smsKey(id: Long) = "s$id"
-        fun mmsKey(id: Long) = "m$id"
+        fun key(messageId: String) = "g$messageId"
     }
 }
 
@@ -62,13 +67,21 @@ data class Conversation(
     val unread: Boolean,
     val messageCount: Int,
     val hasAttachment: Boolean,
+    /** The group's name in Google Messages; null for one-to-one chats. */
+    val groupName: String? = null,
+    val rcs: Boolean = false,
+    /** Archived in Google Messages on the phone. */
+    val archivedOnPhone: Boolean = false,
 ) {
     val isGroup get() = recipients.size > 1
 }
 
-/** Media chosen in the compose bar, before it is encoded into an MMS part. */
+/** Media chosen in the compose bar, before it is uploaded. */
 data class OutgoingAttachment(
     val uri: Uri,
     val mimeType: String,
     val name: String? = null,
 )
+
+class AttachmentTooLargeException(val name: String, val limitBytes: Int) :
+    Exception("$name is too large to send (limit ${limitBytes / 1_000_000} MB)")

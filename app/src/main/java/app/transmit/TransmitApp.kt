@@ -1,7 +1,6 @@
 package app.transmit
 
 import android.app.Application
-import android.app.role.RoleManager
 import android.content.Context
 import androidx.work.Configuration
 import coil3.ImageLoader
@@ -20,13 +19,11 @@ import app.transmit.data.db.AppDatabase
 import app.transmit.notify.IncomingWorker
 import app.transmit.notify.Notifier
 import app.transmit.smart.SmartLinks
-import app.transmit.telephony.IncomingHandler
-import app.transmit.telephony.MediaEncoder
-import app.transmit.telephony.MessagingRepository
-import app.transmit.telephony.MmsDownloader
-import app.transmit.telephony.MmsStore
-import app.transmit.telephony.Sender
-import app.transmit.telephony.Subscriptions
+import app.transmit.gm.BridgeService
+import app.transmit.gm.GmBridge
+import app.transmit.messaging.MessagingRepository
+import app.transmit.messaging.Sender
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,32 +32,33 @@ import kotlinx.coroutines.SupervisorJob
 class AppContainer(val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val subscriptions = Subscriptions(context)
-    val messaging = MessagingRepository(context, subscriptions)
     val contacts = ContactsRepository(context)
     val db = AppDatabase.build(context)
     val dao = db.dao()
     val settings = SettingsRepository(context)
     val secrets = SecretStore(context)
-    val mmsStore = MmsStore(context)
-    val sender = Sender(context, messaging, subscriptions, mmsStore, MediaEncoder(context)) { settings.current().deliveryReports }
-    val downloader = MmsDownloader(context, subscriptions)
+
+    /** The connection to Google Messages on the phone, which does the actual messaging. */
+    val bridge: GmBridge = GmBridge(
+        secrets, db.gmDao(), dao, contacts, File(context.cacheDir, "gm-media"), scope,
+        onIncoming = { threadId, key ->
+            notifier.showThread(threadId, alert = true)
+            IncomingWorker.enqueue(context, threadId, key)
+        },
+        onReadElsewhere = { threadId -> notifier.cancel(threadId) },
+        isOnScreen = { threadId -> notifier.activeThreadId == threadId },
+        onLoggedOut = { reason -> notifier.notifyLoggedOut(reason) },
+    )
+    val messaging: MessagingRepository = MessagingRepository(context, db, bridge)
+    val sender: Sender = Sender(context, db.gmDao(), dao, bridge, scope) { threadId -> notifier.notifySendFailed(threadId) }
 
     val ai = AiService(settings, secrets)
     val policy = ChatPolicy(dao, messaging, contacts)
     val budget = BudgetManager(dao, policy)
     val tutor = Tutor(ai, settings, budget, dao)
-    val translations = TranslationManager(dao, tutor, policy, messaging, settings, contacts)
-    val notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations)
+    val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, contacts)
+    val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations)
     val smart = SmartLinks()
-
-    val incoming = IncomingHandler(context, messaging, mmsStore, downloader, subscriptions) { threadId, key ->
-        notifier.showThread(threadId, alert = true)
-        IncomingWorker.enqueue(context, threadId, key)
-    }
-
-    fun isDefaultSmsApp(): Boolean =
-        context.getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_SMS) == true
 }
 
 class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -71,6 +69,7 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
         super.onCreate()
         container = AppContainer(this)
         container.notifier.createChannels()
+        BridgeService.start(this)
     }
 
     override val workManagerConfiguration: Configuration

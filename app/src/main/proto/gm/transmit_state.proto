@@ -1,0 +1,31 @@
+syntax = "proto3";
+package transmit;
+
+option java_package = "app.transmit.gm.proto";
+option java_multiple_files = true;
+option java_outer_classname = "TransmitStateProto";
+
+import "gm/authentication.proto";
+
+// Transmit's own record of a Google Messages pairing (not part of the protocol).
+message BridgeAuth {
+    bytes aesKey = 1;
+    bytes hmacKey = 2;
+    // P-256 key that signs token refreshes: PKCS#8 private and X.509 public encodings.
+    bytes refreshPrivateKey = 3;
+    bytes refreshPublicKey = 4;
+    authentication.Device browser = 5;
+    authentication.Device mobile = 6;
+    bytes tachyonAuthToken = 7;
+    int64 tachyonExpiryMs = 8;
+    int64 tachyonTtlMicros = 9;
+
+    // Google-account pairing only (empty for QR pairing).
+    // Random id this browser registered under ("messages-web-<hex>").
+    bytes sessionId = 10;
+    // The phone's registration id; every request names it as the destination.
+    string destRegId = 11;
+    // Google sign-in cookies from the in-app sign-in; requests are authorized with them.
+    map<string, string> cookies = 12;
+    string pairingId = 13;
+}

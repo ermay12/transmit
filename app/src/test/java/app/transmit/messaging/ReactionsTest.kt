@@ -1,4 +1,4 @@
-package app.transmit.telephony
+package app.transmit.messaging
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

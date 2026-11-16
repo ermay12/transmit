@@ -64,7 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.AppContainer
 import app.transmit.Share
 import app.transmit.data.PhoneContact
-import app.transmit.telephony.PhoneNumbers
+import app.transmit.messaging.PhoneNumbers
 import app.transmit.ui.components.Avatar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

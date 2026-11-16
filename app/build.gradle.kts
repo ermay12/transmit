@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.protobuf)
 }
 
 android {
@@ -10,11 +11,12 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.transmit"
+        // The Google Messages bridge installs as its own app beside the SMS build of Transmit.
+        applicationId = "app.transmit.bridge"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "0.2.3-bridge"
     }
 
     buildTypes {
@@ -59,6 +61,21 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// The Google Messages protocol (app/src/main/proto/gm, from libgm). Full protobuf-java rather than
+// lite: the pblite JSON encoding the servers use is driven by field descriptors.
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get().toString()
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java")
+            }
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -87,6 +104,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.anthropic.java)
+    implementation(libs.protobuf.java)
+    implementation(libs.zxing.core)
+    implementation(libs.androidx.webkit)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

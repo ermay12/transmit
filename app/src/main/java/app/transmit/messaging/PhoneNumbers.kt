@@ -1,4 +1,4 @@
-package app.transmit.telephony
+package app.transmit.messaging
 
 import android.telephony.PhoneNumberUtils
 import java.util.Locale

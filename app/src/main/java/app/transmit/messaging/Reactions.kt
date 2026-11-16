@@ -1,4 +1,4 @@
-package app.transmit.telephony
+package app.transmit.messaging
 
 /**
  * Reactions travel over SMS/MMS as "tapback" text, e.g. `Loved “See you soon”`. iPhones and

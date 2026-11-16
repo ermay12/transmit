@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.transmit.ai.Feedback
 import app.transmit.data.Language
-import app.transmit.telephony.OutgoingAttachment
+import app.transmit.messaging.OutgoingAttachment
 import app.transmit.ui.components.Diff
 import app.transmit.ui.components.MarkdownText
 import app.transmit.ui.theme.LocalTransmitColors

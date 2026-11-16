@@ -19,12 +19,14 @@ import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.smart.Otp
 import app.transmit.smart.SmartLinks
-import app.transmit.telephony.AttachmentTooLargeException
-import app.transmit.telephony.DeliveryStatus
-import app.transmit.telephony.Message
-import app.transmit.telephony.OutgoingAttachment
-import app.transmit.telephony.PhoneNumbers
-import app.transmit.telephony.Reactions
+import app.transmit.gm.NotConnectedException
+import app.transmit.gm.PhoneNotRespondingException
+import app.transmit.messaging.AttachmentTooLargeException
+import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.Message
+import app.transmit.messaging.OutgoingAttachment
+import app.transmit.messaging.PhoneNumbers
+import app.transmit.messaging.Reactions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -255,11 +257,11 @@ class ChatViewModel(
         reload()
     }
 
+    /**
+     * Clears the conversation's unread state whenever it's on screen. Not only when a loaded message is
+     * unread: the phone's unread flag for the conversation can be set while every message is read.
+     */
     private fun markRead() {
-        if (raw.value.none { !it.read && !it.outgoing }) {
-            c.notifier.cancel(threadId)
-            return
-        }
         viewModelScope.launch {
             c.messaging.markThreadRead(threadId)
             c.notifier.cancel(threadId)
@@ -317,8 +319,12 @@ class ChatViewModel(
             val translatable = c.translations.isTranslatable(m)
             MessageUi(
                 message = m,
-                reactions = reactions[m.key].orEmpty().filterValues { it.isNotEmpty() }
-                    .map { (emoji, who) -> ReactionUi(emoji, who.size, ME in who) },
+                reactions = m.reactions.map { ReactionUi(it.emoji, it.count, it.mine) }.let { native ->
+                    // Google Messages tracks reactions itself; tapback texts it didn't recognize add to those.
+                    native + reactions[m.key].orEmpty().filterValues { it.isNotEmpty() }
+                        .filterKeys { e -> native.none { it.emoji == e } }
+                        .map { (emoji, who) -> ReactionUi(emoji, who.size, ME in who) }
+                },
                 translation = tr[m.key],
                 showOriginal = m.key in orig,
                 firstInRun = prev == null || !grouped(prev, m),
@@ -357,11 +363,8 @@ class ChatViewModel(
 
     fun react(item: MessageUi, emoji: String) {
         sheet.value = null
-        val mine = item.reactions.firstOrNull { it.mine }
-        val m = item.message
-        val text = Reactions.format(emoji, m.body, targetIsMedia = m.attachments.isNotEmpty(), remove = mine?.emoji == emoji)
         viewModelScope.launch {
-            runCatching { c.sender.send(recipients.value, text) }.onFailure { toast(sendError(it)) }
+            runCatching { c.sender.react(item.message, emoji) }.onFailure { toast(sendError(it)) }
         }
     }
 
@@ -408,7 +411,7 @@ class ChatViewModel(
 
     fun delete(m: Message) {
         sheet.value = null
-        viewModelScope.launch { c.messaging.deleteMessage(m) }
+        viewModelScope.launch { runCatching { c.messaging.deleteMessage(m) }.onFailure { toast(sendError(it, "delete")) } }
     }
 
     fun retry(m: Message) {
@@ -416,12 +419,16 @@ class ChatViewModel(
         viewModelScope.launch { runCatching { c.sender.retry(m) }.onFailure { toast(sendError(it)) } }
     }
 
+    /** MMS downloads happen on the phone; Google Messages for Web can't trigger one. */
     fun download(m: Message) {
-        downloading.update { it + m.key }
-        c.incoming.retryDownload(m)
+        toast("Open Google Messages on your phone to download this message")
     }
 
-    fun simLabel(subId: Int): String? = c.subscriptions.label(subId)
+    fun simLabel(subId: Int): String? = null
+
+    val bridge = c.bridge.state
+
+    fun useHere() = c.bridge.useHere()
 
     // ---- compose -------------------------------------------------------------------------------
 
@@ -495,14 +502,14 @@ class ChatViewModel(
             }
             return
         }
-        val to = recipients.value
-        if (to.isEmpty()) return
         compose.update { it.copy(busy = Busy.SEND) }
         viewModelScope.launch {
             try {
-                val result = c.sender.send(to, st.native, st.attachments)
                 val targetText = st.target.takeIf { it.isNotBlank() && !st.stale }
-                if (targetText != null && eff != null) c.translations.storeSelf(result.key, threadId, eff.target, targetText)
+                // Stored before the message appears, so it never shows untranslated first.
+                c.sender.sendToThread(threadId, st.native, st.attachments) { key ->
+                    if (targetText != null && eff != null) c.translations.storeSelf(key, threadId, eff.target, targetText)
+                }
                 compose.value = ComposeUi()
                 c.dao.deleteDraft(threadId)
             } catch (e: Exception) {
@@ -512,10 +519,11 @@ class ChatViewModel(
         }
     }
 
-    private fun sendError(e: Throwable): String = when {
-        e is AttachmentTooLargeException -> e.message.orEmpty()
-        e is SecurityException || !c.isDefaultSmsApp() -> "Make Transmit your default SMS app to send messages"
-        else -> "Couldn't send: ${e.message}"
+    private fun sendError(e: Throwable, verb: String = "send"): String = when (e) {
+        is AttachmentTooLargeException -> e.message.orEmpty()
+        is NotConnectedException -> "Not connected to Google Messages"
+        is PhoneNotRespondingException -> e.message.orEmpty()
+        else -> "Couldn't $verb: ${e.message}"
     }
 
     private fun runAi(busy: Busy, retry: () -> Unit, block: suspend () -> Unit) {
@@ -572,7 +580,12 @@ class ChatViewModel(
 
     fun deleteConversation(onDone: () -> Unit) {
         viewModelScope.launch {
-            c.messaging.deleteThread(threadId)
+            try {
+                c.messaging.deleteThread(threadId)
+            } catch (e: Exception) {
+                toast(sendError(e, "delete"))
+                return@launch
+            }
             c.dao.deleteDraft(threadId)
             // Android can reuse a deleted thread's id; a new chat must not inherit this one's name or settings.
             c.dao.deleteChatSettings(threadId)

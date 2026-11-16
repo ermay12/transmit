@@ -7,8 +7,8 @@ import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
 import app.transmit.data.chatTitle
 import app.transmit.data.db.ChatSettingsEntity
-import app.transmit.telephony.Conversation
-import app.transmit.telephony.Reactions
+import app.transmit.messaging.Conversation
+import app.transmit.messaging.Reactions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -46,7 +46,7 @@ data class ConversationUi(
 class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val query = MutableStateFlow("")
     private val conversations = MutableStateFlow<List<Conversation>?>(null)
-    val isDefault = MutableStateFlow(c.isDefaultSmsApp())
+    val bridge = c.bridge.state
     val canRead = MutableStateFlow(c.messaging.canRead())
     val selection = MutableStateFlow<Set<Long>>(emptySet())
     val showArchived = MutableStateFlow(false)
@@ -144,7 +144,6 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun refresh() {
-        isDefault.value = c.isDefaultSmsApp()
         canRead.value = c.messaging.canRead()
         // The first load reads the latest state anyway; restarting it would only delay the list.
         if (conversations.value == null && loadJob?.isActive == true) return
@@ -156,6 +155,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             complete.value = true
         }
     }
+
+    fun useHere() = c.bridge.useHere()
 
     fun toggleSelect(threadId: Long) {
         selection.value = selection.value.let { if (threadId in it) it - threadId else it + threadId }
@@ -208,7 +209,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val ids = selection.value
         selection.value = emptySet()
         viewModelScope.launch(Dispatchers.IO) {
-            ids.forEach { block(it) }
+            ids.forEach { id -> runCatching { block(id) }.onFailure { android.util.Log.w("Home", "Action on $id failed", it) } }
             refresh()
         }
     }

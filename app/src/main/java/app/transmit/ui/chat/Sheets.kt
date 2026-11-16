@@ -99,10 +99,10 @@ import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
 import app.transmit.data.chatTitle
 import app.transmit.data.db.TranslationOrigin
-import app.transmit.telephony.DeliveryStatus
-import app.transmit.telephony.MessageKind
-import app.transmit.telephony.PhoneNumbers
-import app.transmit.telephony.Reactions
+import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.MessageKind
+import app.transmit.messaging.PhoneNumbers
+import app.transmit.messaging.Reactions
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.LanguagePickerDialog
 import app.transmit.ui.components.MarkdownText
@@ -235,6 +235,7 @@ fun DetailsSheet(item: MessageUi, people: Map<String, ContactInfo>, recipients: 
             Spacer(Modifier.height(12.dp))
             val rows = buildList {
                 add("Type" to when {
+                    m.kind == MessageKind.RCS -> "RCS"
                     m.kind == MessageKind.SMS -> "SMS"
                     m.attachments.isNotEmpty() || m.mmsPending -> "MMS"
                     else -> "MMS (text)"

@@ -80,20 +80,16 @@ import app.transmit.data.Level
 import app.transmit.data.ModelSlot
 import app.transmit.data.NotificationContent
 import app.transmit.ui.components.LanguagePickerDialog
-import app.transmit.ui.rememberDefaultSmsRequest
+import app.transmit.gm.BridgeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSlot) -> Unit, onUsage: () -> Unit) {
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSlot) -> Unit, onUsage: () -> Unit, onPair: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val spent by vm.spent.collectAsStateWithLifecycle()
     vm.keyVersion.collectAsStateWithLifecycle().value // recompose when keys change
-    var isDefault by remember { mutableStateOf(vm.isDefaultSmsApp()) }
-    val requestDefault = rememberDefaultSmsRequest { isDefault = it }
-    LifecycleResumeEffect(Unit) {
-        isDefault = vm.isDefaultSmsApp()
-        onPauseOrDispose { }
-    }
+    val bridge by vm.bridge.collectAsStateWithLifecycle()
+    var confirmUnpair by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf<String?>(null) }
     var keyDialog by remember { mutableStateOf(false) }
 
@@ -159,10 +155,23 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             SwitchRow0(Icons.Default.Send, "Translate my sent messages", s.translateOutgoing, vm::setTranslateOutgoing)
 
             Section("Messages")
-            Row0(Icons.Default.Sms, "Default SMS app", if (isDefault) "Transmit" else "Not set", trailing = {
-                if (isDefault) Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                else TextButton(onClick = requestDefault) { Text("Set") }
-            }) { if (!isDefault) requestDefault() }
+            val paired = bridge !is BridgeState.Unpaired && bridge !is BridgeState.LoggedOut
+            val status = when (val b = bridge) {
+                BridgeState.Unpaired -> "Not paired"
+                is BridgeState.LoggedOut -> "Disconnected · pair again"
+                is BridgeState.Pairing -> "Pairing…"
+                BridgeState.Connecting -> "Connecting…"
+                is BridgeState.Connected -> when {
+                    b.inactive -> "Paired · Messages for Web is open elsewhere"
+                    !b.phoneResponding -> "Paired · phone not responding"
+                    b.trouble != null -> "Paired · ${b.trouble}"
+                    else -> "Connected"
+                }
+            }
+            Row0(Icons.Default.Sms, "Google Messages", status, trailing = {
+                if (paired) TextButton(onClick = { confirmUnpair = true }) { Text("Unpair") }
+                else TextButton(onClick = onPair) { Text("Pair") }
+            }) { if (!paired) onPair() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(16.dp))
@@ -176,7 +185,6 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
                     ) { Text(v.label, maxLines = 1) }
                 }
             }
-            SwitchRow0(Icons.Default.DoneAll, "Delivery reports", s.deliveryReports, vm::setDeliveryReports)
 
             Spacer(Modifier.height(16.dp))
             Text(
@@ -190,6 +198,15 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             "target" -> LanguagePickerDialog("Practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
         }
         if (keyDialog) KeyDialog(vm, s.provider) { keyDialog = false }
+        if (confirmUnpair) {
+            AlertDialog(
+                onDismissRequest = { confirmUnpair = false },
+                title = { Text("Unpair from Google Messages?") },
+                text = { Text("Transmit stops sending and receiving until you pair again. Your messages stay on your phone.") },
+                confirmButton = { TextButton(onClick = { confirmUnpair = false; vm.unpair() }) { Text("Unpair") } },
+                dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Cancel") } },
+            )
+        }
     }
 }
 

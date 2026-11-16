@@ -86,9 +86,9 @@ import app.transmit.data.db.TranslationOrigin
 import app.transmit.notify.Avatars
 import app.transmit.smart.SmartEntity
 import app.transmit.smart.SmartLinks
-import app.transmit.telephony.Attachment
-import app.transmit.telephony.DeliveryStatus
-import app.transmit.telephony.Reactions
+import app.transmit.messaging.Attachment
+import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.Reactions
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
 import coil3.compose.AsyncImage
@@ -357,6 +357,21 @@ private fun AnnotatedString.Builder.appendLinks(text: String, links: List<SmartE
 private fun AttachmentView(a: Attachment, onClick: () -> Unit, onLongPress: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     when {
+        a.pending -> Surface(
+            shape = shape, color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.widthIn(max = 240.dp).combinedClickable(onClick = {}, onLongClick = onLongPress),
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Spacer(Modifier.width(10.dp))
+                val kind = when {
+                    a.isImage -> "photo"
+                    a.isVideo -> "video"
+                    else -> "attachment"
+                }
+                Text("Waiting for $kind…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        }
         a.isImage || a.isVideo -> Box(
             Modifier.widthIn(max = 240.dp).heightIn(min = 72.dp, max = 320.dp).clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -393,7 +408,7 @@ private fun AttachmentView(a: Attachment, onClick: () -> Unit, onLongPress: () -
 private fun PendingMms(item: MessageUi, downloading: Boolean, onDownload: () -> Unit) {
     val m = item.message
     val context = LocalContext.current
-    val expired = m.mmsExpiry in 1..<System.currentTimeMillis()
+    val expired = false
     Surface(
         onClick = onDownload, enabled = !downloading && !expired, shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest,

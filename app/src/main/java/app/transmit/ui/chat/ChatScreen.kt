@@ -71,18 +71,18 @@ import app.transmit.data.ContactInfo
 import app.transmit.data.chatTitle
 import app.transmit.smart.SmartActions
 import app.transmit.smart.SmartEntity
-import app.transmit.telephony.Attachment
-import app.transmit.telephony.PhoneNumbers
+import app.transmit.messaging.Attachment
+import app.transmit.messaging.PhoneNumbers
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
 import app.transmit.ui.media.ImageViewer
 import app.transmit.ui.media.MediaActions
-import app.transmit.ui.rememberDefaultSmsRequest
+import app.transmit.ui.pairing.BridgeBanner
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> Unit) {
+fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val items by vm.items.collectAsStateWithLifecycle()
@@ -97,10 +97,9 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
     val banner by vm.banner.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val spent by vm.spent.collectAsStateWithLifecycle()
-    var isDefault by remember { mutableStateOf(isDefaultSmsApp()) }
+    val bridge by vm.bridge.collectAsStateWithLifecycle()
     var viewing by remember { mutableStateOf<Attachment?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val requestDefault = rememberDefaultSmsRequest { isDefault = it }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) vm.addAttachments(uris)
     }
@@ -110,7 +109,6 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
 
     LifecycleResumeEffect(vm) {
         vm.active = true
-        isDefault = isDefaultSmsApp()
         onPauseOrDispose { vm.active = false }
     }
     LaunchedEffect(vm) {
@@ -197,29 +195,20 @@ fun ChatScreen(vm: ChatViewModel, isDefaultSmsApp: () -> Boolean, onBack: () -> 
                     }
                 }
             }
-            if (!isDefault) {
-                Surface(color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Sms, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Set Transmit as your SMS app to send", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                        FilledTonalButton(onClick = requestDefault) { Text("Set") }
-                    }
-                }
-            }
+            BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere)
             val s = settings
             if (s != null && target != null) {
                 ComposeBar(
                     state = compose,
                     native = s.native,
                     target = target,
-                    // Drafting and practice work without the SMS role; only sending needs it.
+                    // Drafting and practice work offline; only sending needs the phone.
                     enabled = true,
                     onNative = vm::onNativeChange,
                     onTarget = vm::onTargetChange,
                     onClearTarget = vm::clearTarget,
                     onAi = { vm.onAi() },
-                    onSend = { if (isDefault) vm.send() else requestDefault() },
+                    onSend = { vm.send() },
                     onAttach = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                     onRemoveAttachment = vm::removeAttachment,
                     onApply = vm::applyCorrection,

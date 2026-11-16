@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.ContactsContract
 import android.telephony.PhoneNumberUtils
-import app.transmit.telephony.PhoneNumbers
+import app.transmit.messaging.PhoneNumbers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +22,7 @@ data class ContactInfo(
     val photoUri: Uri?,
     val lookupUri: Uri?,
 ) {
-    val isContact get() = name != null
+    val isContact get() = lookupUri != null
     /** Formatting a number is slow enough to matter across a long conversation list, so it's done once. */
     val displayName: String by lazy { name ?: PhoneNumbers.format(address) }
     /** For group titles: a contact's first name, or the whole number ("+1 555…" must not shrink to "+1"). */
@@ -49,6 +49,22 @@ class ContactsRepository(private val context: Context) {
 
     private var observing = false
 
+    /** Names Google Messages knows for numbers that aren't in this phone's address book. */
+    private val fallbackNames = ConcurrentHashMap<String, String>()
+
+    fun addNames(names: List<Pair<String, String>>) {
+        var changed = false
+        for ((address, name) in names) {
+            if (address.isBlank() || name.isBlank() || PhoneNumbers.format(address) == name) continue
+            val key = PhoneNumbers.matchKey(address)
+            if (fallbackNames.put(key, name) != name) {
+                if (cache[key]?.isContact == false) cache.remove(key)
+                changed = true
+            }
+        }
+        if (changed) _version.value++
+    }
+
     fun canRead() = context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
     private fun observeIfNeeded() {
@@ -70,7 +86,7 @@ class ContactsRepository(private val context: Context) {
         val key = PhoneNumbers.matchKey(address)
         cache[key]?.let { return it }
         observeIfNeeded()
-        val info = if (!canRead() || address.isBlank()) {
+        val found = if (!canRead() || address.isBlank()) {
             ContactInfo(address, null, null, null)
         } else {
             runCatching {
@@ -91,6 +107,7 @@ class ContactsRepository(private val context: Context) {
                 }
             }.getOrNull() ?: ContactInfo(address, null, null, null)
         }
+        val info = if (found.name == null) found.copy(name = fallbackNames[key]) else found
         cache[key] = info
         return info
     }
@@ -124,7 +141,8 @@ class ContactsRepository(private val context: Context) {
         }.onFailure { return }
         for (a in todo) {
             val match = index[a.filter { it.isDigit() }.takeLast(7)]?.firstOrNull { PhoneNumberUtils.compare(it.number, a) }
-            cache[PhoneNumbers.matchKey(a)] = match?.info?.copy(address = a) ?: ContactInfo(a, null, null, null)
+            val key = PhoneNumbers.matchKey(a)
+            cache[key] = match?.info?.copy(address = a) ?: ContactInfo(a, fallbackNames[key], null, null)
         }
     }
 

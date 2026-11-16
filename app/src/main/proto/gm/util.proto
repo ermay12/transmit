@@ -1,0 +1,11 @@
+syntax = "proto3";
+package util;
+
+option go_package = "../gmproto";
+option java_package = "app.transmit.gm.proto";
+option java_multiple_files = true;
+option java_outer_classname = "UtilProto";
+
+message EmptyArr {
+
+}

@@ -96,7 +96,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
-import app.transmit.ui.rememberDefaultSmsRequest
+import app.transmit.gm.BridgeState
+import app.transmit.ui.pairing.BridgeBanner
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -111,10 +112,12 @@ fun HomeScreen(
     onNew: () -> Unit,
     onSettings: () -> Unit,
     onUsage: () -> Unit,
+    onPair: () -> Unit,
 ) {
     val items by vm.filtered.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
-    val isDefault by vm.isDefault.collectAsStateWithLifecycle()
+    val bridge by vm.bridge.collectAsStateWithLifecycle()
+    val paired = bridge !is BridgeState.Unpaired && bridge !is BridgeState.LoggedOut
     val canRead by vm.canRead.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsStateWithLifecycle()
     val spent by vm.spent.collectAsStateWithLifecycle()
@@ -131,7 +134,6 @@ fun HomeScreen(
     val list = items
     val archivedRow = !showArchived && archivedCount > 0 && query.isBlank()
     if (atTop) SideEffect { listState.requestScrollToItem(0) }
-    val requestDefault = rememberDefaultSmsRequest { vm.refresh() }
     var confirmDelete by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -180,7 +182,7 @@ fun HomeScreen(
             }
         },
         floatingActionButton = {
-            if (isDefault && !showArchived) {
+            if (paired && !showArchived) {
                 ExtendedFloatingActionButton(
                     onClick = onNew,
                     expanded = expandedFab,
@@ -191,8 +193,8 @@ fun HomeScreen(
         },
     ) { padding ->
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (!isDefault && !showArchived) {
-                item("default-banner") { DefaultAppBanner(onClick = requestDefault) }
+            if (!showArchived) {
+                item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
             }
             if (archivedRow) {
                 item("archived") { ArchivedRow(archivedCount, onClick = { vm.clearSelection(); vm.showArchived.value = true }) }
@@ -411,26 +413,6 @@ private fun SelectionBar(
             if (archived) Icon(Icons.Outlined.Unarchive, "Move to inbox") else Icon(Icons.Outlined.Archive, "Archive")
         }
         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") }
-    }
-}
-
-@Composable
-private fun DefaultAppBanner(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Sms, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Make Transmit your SMS app", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text("Needed to send and receive", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            }
-            FilledTonalButton(onClick = onClick) { Text("Set") }
-        }
     }
 }
 

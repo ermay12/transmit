@@ -52,7 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.Permissions
 import app.transmit.ui.components.LanguagePickerDialog
-import app.transmit.ui.rememberDefaultSmsRequest
+import app.transmit.gm.BridgeState
 import app.transmit.ui.rememberPermissionsRequest
 import app.transmit.ui.settings.KeyDialog
 import app.transmit.ui.settings.LevelSelector
@@ -61,7 +61,7 @@ import app.transmit.ui.settings.SettingsViewModel
 import android.Manifest
 
 @Composable
-fun OnboardingScreen(vm: SettingsViewModel, onDone: () -> Unit) {
+fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onDone: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     vm.keyVersion.collectAsStateWithLifecycle().value
     var step by remember { mutableIntStateOf(0) }
@@ -80,7 +80,7 @@ fun OnboardingScreen(vm: SettingsViewModel, onDone: () -> Unit) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 when (st) {
                     0 -> LanguagesStep(vm, s.nativeLang, s.targetLang, s.native.flag, s.target.flag, s.native.nativeName, s.target.nativeName, s.level)
-                    1 -> PhoneStep()
+                    1 -> PhoneStep(vm, onPair)
                     else -> AiStep(vm, s)
                 }
             }
@@ -139,16 +139,17 @@ private fun BigLanguage(label: String, flag: String, name: String, onClick: () -
 }
 
 @Composable
-private fun PhoneStep() {
+private fun PhoneStep(vm: SettingsViewModel, onPair: () -> Unit) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(Permissions.missing(context).isEmpty()) }
-    var isDefault by remember {
-        mutableStateOf(context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_SMS))
-    }
+    val bridge by vm.bridge.collectAsStateWithLifecycle()
+    val paired = bridge is BridgeState.Connecting || bridge is BridgeState.Connected
     val requestPerms = rememberPermissionsRequest { granted = Permissions.missing(context).isEmpty() }
-    val requestDefault = rememberDefaultSmsRequest { isDefault = it }
-    Title("Your messages", "Transmit replaces your texting app. Turn off chat features (RCS) in your old app first so friends' messages come through as SMS.")
-    StepCard(Icons.Default.Sms, "Default SMS app", isDefault) { requestDefault() }
+    Title(
+        "Your messages",
+        "Transmit links to Google Messages on your phone, like Messages for Web. Keep Google Messages as your SMS app; RCS chats keep working.",
+    )
+    StepCard(Icons.Default.Sms, "Pair with Google Messages", paired, action = "Pair", onClick = onPair)
     Spacer(Modifier.height(10.dp))
     StepCard(Icons.Default.Contacts, "Contacts & notifications", granted) { requestPerms(Permissions.runtime) }
     if (!Permissions.has(context, Manifest.permission.POST_NOTIFICATIONS)) {

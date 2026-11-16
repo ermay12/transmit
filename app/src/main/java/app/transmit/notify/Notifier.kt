@@ -11,7 +11,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
-import android.provider.Telephony
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -30,9 +29,9 @@ import app.transmit.data.NotificationContent
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.TransmitDao
 import app.transmit.smart.Otp
-import app.transmit.telephony.Message
-import app.transmit.telephony.MessagingRepository
-import app.transmit.telephony.Reactions
+import app.transmit.messaging.Message
+import app.transmit.messaging.MessagingRepository
+import app.transmit.messaging.Reactions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -58,6 +57,10 @@ class Notifier(
                     .setName("Messages").setDescription("Incoming messages").build(),
                 NotificationChannelCompat.Builder(CHANNEL_FAILURES, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Failed messages").setDescription("Messages that could not be sent").build(),
+                NotificationChannelCompat.Builder(CHANNEL_CONNECTION, NotificationManagerCompat.IMPORTANCE_MIN)
+                    .setName("Connection").setDescription("Shown while Transmit stays connected to Google Messages").build(),
+                NotificationChannelCompat.Builder(CHANNEL_PAIRING, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                    .setName("Pairing").setDescription("When Transmit needs to be paired with Google Messages again").build(),
             ),
         )
     }
@@ -158,12 +161,8 @@ class Notifier(
         nm.cancel(notificationId(threadId))
     }
 
-    suspend fun notifySendFailed(messageUri: Uri) = withContext(Dispatchers.IO) {
-        if (!canPost()) return@withContext
-        val column = if (messageUri.authority == "mms") Telephony.Mms.THREAD_ID else Telephony.Sms.THREAD_ID
-        val threadId = context.contentResolver.query(messageUri, arrayOf(column), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getLong(0) else null
-        } ?: return@withContext
+    suspend fun notifySendFailed(threadId: Long) = withContext(Dispatchers.IO) {
+        if (!canPost() || threadId == activeThreadId) return@withContext
         val name = dao.chatSettings(threadId)?.name
             ?: repo.recipientsForThread(threadId).joinToString(", ") { contacts.lookup(it).displayName }
         val n = NotificationCompat.Builder(context, CHANNEL_FAILURES)
@@ -174,6 +173,31 @@ class Notifier(
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(notificationId(threadId) + 1, n) }
+    }
+
+    /** The ongoing notification the connection service runs under. */
+    fun connectionNotification(text: String): android.app.Notification =
+        NotificationCompat.Builder(context, CHANNEL_CONNECTION)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setContentTitle("Connected to Google Messages")
+            .setContentText(text)
+            .setContentIntent(PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build()
+
+    fun notifyLoggedOut(reason: String) {
+        if (!canPost()) return
+        val n = NotificationCompat.Builder(context, CHANNEL_PAIRING)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setContentTitle("Transmit is disconnected")
+            .setContentText(reason)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
+            .setContentIntent(PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(LOGGED_OUT_ID, n) }
     }
 
     private fun person(address: String): Person {
@@ -255,6 +279,10 @@ class Notifier(
     companion object {
         const val CHANNEL_MESSAGES = "messages"
         const val CHANNEL_FAILURES = "failures"
+        const val CHANNEL_CONNECTION = "connection"
+        const val CHANNEL_PAIRING = "pairing"
+        const val CONNECTION_ID = Int.MAX_VALUE - 1
+        const val LOGGED_OUT_ID = Int.MAX_VALUE - 3
         fun notificationId(threadId: Long) = (threadId % 1_000_000).toInt() * 2
     }
 }

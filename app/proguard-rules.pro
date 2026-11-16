@@ -16,3 +16,8 @@
 # Only the SDK's structured-output schema generator (unused here) touches these; Android lacks them.
 -dontwarn java.lang.reflect.AnnotatedType
 -dontwarn java.lang.reflect.AnnotatedParameterizedType
+# Google Messages protocol: pblite encoding walks message fields reflectively by descriptor, and
+# full protobuf-java finds accessors by name (its own descriptor protos included), so keep it whole.
+-keep class app.transmit.gm.proto.** { *; }
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**

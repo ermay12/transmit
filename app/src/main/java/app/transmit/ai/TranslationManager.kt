@@ -8,9 +8,9 @@ import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.data.db.TransmitDao
 import app.transmit.smart.Otp
-import app.transmit.telephony.Message
-import app.transmit.telephony.MessagingRepository
-import app.transmit.telephony.Reactions
+import app.transmit.messaging.Message
+import app.transmit.messaging.MessagingRepository
+import app.transmit.messaging.Reactions
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow

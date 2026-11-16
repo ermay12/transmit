@@ -52,7 +52,12 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val spent: StateFlow<Double> = c.dao.spentSinceFlow(c.budget.periodStart())
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    fun isDefaultSmsApp() = c.isDefaultSmsApp()
+    val bridge = c.bridge.state
+    val isPaired get() = c.bridge.isPaired
+
+    fun unpair() {
+        viewModelScope.launch { c.bridge.unpair() }
+    }
     fun hasKey(p: ProviderType) = c.ai.hasKey(p)
 
     /** Key preview that never reveals more than the last four characters. */

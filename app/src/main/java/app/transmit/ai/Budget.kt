@@ -6,7 +6,7 @@ import app.transmit.data.Language
 import app.transmit.data.Languages
 import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.TransmitDao
-import app.transmit.telephony.MessagingRepository
+import app.transmit.messaging.MessagingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
