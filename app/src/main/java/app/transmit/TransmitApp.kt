@@ -27,6 +27,9 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 
 /** Manual dependency graph; one instance per process. */
 class AppContainer(val context: Context) {
@@ -37,6 +40,8 @@ class AppContainer(val context: Context) {
     val dao = db.dao()
     val settings = SettingsRepository(context)
     val secrets = SecretStore(context)
+    /** Kept warm so language pickers open already sorted. */
+    val recentLanguages: StateFlow<List<String>> = settings.recentLanguages.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /** The connection to Google Messages on the phone, which does the actual messaging. */
     val bridge: GmBridge = GmBridge(

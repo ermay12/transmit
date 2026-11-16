@@ -14,6 +14,7 @@ import app.transmit.ai.Effort
 import app.transmit.ai.Price
 import app.transmit.ai.ProviderType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
@@ -92,6 +93,7 @@ class SettingsRepository(private val context: Context) {
         val notificationContent = stringPreferencesKey("notification_content")
         val deliveryReports = booleanPreferencesKey("delivery_reports")
         val prices = stringPreferencesKey("price_overrides")
+        val recentLangs = stringPreferencesKey("recent_langs")
         fun modelCache(p: ProviderType) = stringPreferencesKey("model_cache_${p.name}")
     }
 
@@ -102,6 +104,20 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { p -> read(p) }
 
     suspend fun current(): AppSettings = settings.first()
+
+    /**
+     * Language codes picked in any language picker, most recent first. Until the first pick, the
+     * languages the user set up with.
+     */
+    val recentLanguages: Flow<List<String>> = context.dataStore.data.map(::recentLanguages).distinctUntilChanged()
+
+    private fun recentLanguages(p: Preferences): List<String> =
+        p[K.recentLangs]?.split(',')?.filter { it.isNotEmpty() }
+            ?: listOf(p[K.targetLang] ?: defaults.targetLang, p[K.nativeLang] ?: defaults.nativeLang)
+
+    suspend fun noteLanguageUsed(code: String) = edit { p ->
+        p[K.recentLangs] = Languages.used(recentLanguages(p), code).joinToString(",")
+    }
 
     private fun read(p: Preferences): AppSettings {
         val provider = p[K.provider]?.let { runCatching { ProviderType.valueOf(it) }.getOrNull() } ?: defaults.provider

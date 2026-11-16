@@ -62,6 +62,24 @@ object Languages {
 
     fun get(code: String?): Language = byCode[code] ?: all.first()
 
+    /** How many recently used languages pickers show above the full list. */
+    const val RECENT_SHOWN = 5
+    private const val RECENT_KEPT = 8
+
+    /**
+     * The picker's two sections: the [recent] codes (most recent first, at most [RECENT_SHOWN]) and
+     * every other language in the usual order. [exclude] appears in neither.
+     */
+    fun sections(recent: List<String>, exclude: String? = null): Pair<List<Language>, List<Language>> {
+        val top = recent.asSequence().distinct().mapNotNull { byCode[it] }.filter { it.code != exclude }.take(RECENT_SHOWN).toList()
+        val codes = top.mapTo(HashSet()) { it.code }
+        return top to all.filter { it.code != exclude && it.code !in codes }
+    }
+
+    /** [recent] after using [code]: it moves to the front. */
+    fun used(recent: List<String>, code: String): List<String> =
+        (listOf(code) + recent.filter { it != code }).take(RECENT_KEPT)
+
     fun deviceDefault(): Language {
         val locale = Locale.getDefault()
         if (locale.language == "zh") return get(if (locale.script == "Hant" || locale.country in setOf("TW", "HK", "MO")) "zh-Hant" else "zh-Hans")
