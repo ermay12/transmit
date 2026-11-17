@@ -11,6 +11,40 @@ data class Language(
     /** Two-letter badge shown next to input boxes and bubbles. */
     val badge: String get() = code.substringBefore('-').uppercase(Locale.ROOT)
 
+    /**
+     * The language tag text boxes hint to the keyboard, so it switches to this language (when the user
+     * has it enabled). Keyboards list Chinese by region rather than script.
+     */
+    val keyboardLocale: String
+        get() = when (code) {
+            "zh-Hans" -> "zh-CN"
+            "zh-Hant" -> "zh-TW"
+            else -> code
+        }
+
+    /**
+     * The Latin-alphabet spelling learners can read this language in, shown under or instead of its own
+     * script (see [ScriptDisplay]). Null for languages written in Latin letters, and for those Transmit
+     * doesn't romanize.
+     */
+    val romanization: Romanization?
+        get() = when (code.substringBefore('-')) {
+            "zh" -> Romanization.PINYIN
+            "ja" -> Romanization.ROMAJI
+            else -> null
+        }
+
+    /** What the language's own writing is called in the script display setting. */
+    val scriptName: String
+        get() = when (code) {
+            "zh-Hans" -> "汉字"
+            "zh-Hant" -> "漢字"
+            else -> nativeName
+        }
+
+    /** Written in Latin letters, so its keyboard can type pinyin or romaji. */
+    val latinScript: Boolean get() = code.substringBefore('-') !in NON_LATIN
+
     /** Pronunciation aid the tutor adds for non-Latin scripts. */
     val readingAid: String?
         get() = when (code.substringBefore('-')) {
@@ -24,6 +58,32 @@ data class Language(
             else -> null
         }
 }
+
+/** A way to write a language in Latin letters; [style] tells the AI how. */
+enum class Romanization(val label: String, val style: String) {
+    PINYIN(
+        "Pinyin",
+        "Hanyu Pinyin with tone marks (nǐ hǎo), each word's syllables written together as in standard pinyin orthography " +
+            "(Běijīng, xiànzài), and sentences starting with a capital",
+    ),
+    ROMAJI(
+        "Romaji",
+        "Hepburn romaji with spaces between words, long vowels marked with macrons (Tōkyō, arigatō), particles written as " +
+            "pronounced (wa, e, o), and sentences starting with a capital",
+    ),
+}
+
+/** How text in a language with a [Romanization] is shown. */
+enum class ScriptDisplay {
+    /** The language's own script; tapping a message adds its romanization. */
+    CHARACTERS,
+    /** The script with its romanization underneath. */
+    BOTH,
+    /** Only the romanization. The user also writes in it, and corrections stay in it. */
+    ROMANIZED,
+}
+
+private val NON_LATIN = setOf("ru", "uk", "el", "ja", "ko", "zh", "th", "hi")
 
 enum class Level(val label: String, val promptDescription: String) {
     BEGINNER("Beginner", "beginner (A1–A2)"),

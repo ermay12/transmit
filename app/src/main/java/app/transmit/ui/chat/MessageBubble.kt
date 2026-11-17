@@ -114,10 +114,15 @@ fun MessageBubble(
     /** A tapped link, with the bubble's other links (a date's event takes its location from an address). */
     onLink: (SmartEntity, List<SmartEntity>) -> Unit,
     onCopyCode: (String) -> Unit,
+    /** The translation's romanization should show but isn't stored yet. */
+    onRomanize: () -> Unit,
 ) {
     val m = item.message
     val out = m.outgoing
     val context = LocalContext.current
+    if (item.romanizesOnSight) {
+        LaunchedEffect(item.key, item.translation?.text) { onRomanize() }
+    }
     Column(
         Modifier.fillMaxWidth().padding(top = if (item.firstInRun) 6.dp else 1.dp, start = 8.dp, end = 8.dp),
         horizontalAlignment = if (out) Alignment.End else Alignment.Start,
@@ -302,9 +307,37 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language, links: L
     } else {
         Modifier
     }
+    Column {
+        Text(
+            content, color = textColor, style = MaterialTheme.typography.bodyLarge, inlineContent = inline,
+            onTextLayout = { layout = it }, modifier = redaction,
+        )
+        // Pinyin or romaji under the characters.
+        val subtext = item.subtext
+        if (!hidden && subtext != null) {
+            Text(
+                subtext, color = color.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        } else if (!hidden && item.subtextPending) {
+            PendingLine(item.displayText, color)
+        }
+    }
+}
+
+/** A pulsing bar about as long as [text], where its romanization will go. */
+@Composable
+private fun PendingLine(text: String, color: Color) {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val pulse = rememberInfiniteTransition(label = "romanizing")
+    val alpha by pulse.animateFloat(0.14f, 0.3f, infiniteRepeatable(tween(750), RepeatMode.Reverse), label = "alpha")
     Text(
-        content, color = textColor, style = MaterialTheme.typography.bodyLarge, inlineContent = inline,
-        onTextLayout = { layout = it }, modifier = redaction,
+        text, color = Color.Transparent, style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+        onTextLayout = { layout = it },
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .clearAndSetSemantics { contentDescription = "Romanizing" }
+            .drawBehind { layout?.let { drawRedaction(it, color.copy(alpha = alpha)) } },
     )
 }
 

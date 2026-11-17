@@ -2,6 +2,8 @@ package app.transmit.ai
 
 import app.transmit.data.Languages
 import app.transmit.data.Level
+import app.transmit.data.Romanization
+import app.transmit.data.ScriptDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -94,5 +96,68 @@ class PromptsTest {
         assertTrue(!OpenAiCompatClient.isOpenAiChatModel("gpt-4o-realtime-preview"))
         assertTrue(!OpenAiCompatClient.isOpenAiChatModel("text-embedding-3-small"))
         assertEquals(listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH), OpenAiCompatClient.openAiEfforts("o3"))
+    }
+
+    @Test
+    fun romanizationPromptNamesTheSystem() {
+        val zh = Prompts.romanizeSystem(Languages.get("zh-Hans"), Romanization.PINYIN)
+        assertTrue(zh.contains("in Pinyin"))
+        assertTrue(zh.contains("tone marks"))
+        assertTrue(zh.contains("reading it has in this sentence"))
+        val ja = Prompts.romanizeSystem(Languages.get("ja"), Romanization.ROMAJI)
+        assertTrue(ja.contains("Hepburn"))
+        assertTrue(ja.contains("no Japanese characters"))
+    }
+
+    @Test
+    fun charactersPromptStaysWithTheSyllables() {
+        val zh = Prompts.charactersSystem(Languages.get("zh-Hans"), Romanization.PINYIN)
+        assertTrue(zh.contains("wrote text messages in Pinyin instead of Chinese (Simplified) script"))
+        assertTrue(zh.contains("Stay true to the Pinyin"))
+        assertTrue(zh.contains("don't add, drop or reorder words"))
+        assertTrue(zh.contains("isn't Pinyin at all, return it unchanged"))
+        val ja = Prompts.charactersSystem(Languages.get("ja"), Romanization.ROMAJI)
+        assertTrue(ja.contains("in Japanese script"))
+        // Each message is followed by the one that went out, on one line.
+        assertEquals(
+            "<m id=\"1\">ta1 lai2 le</m>\n<sent id=\"1\">She's here. See you</sent>\n<m id=\"2\">dui4</m>\n",
+            Prompts.charactersUser(listOf("1" to "ta1 lai2 le", "2" to "dui4"), mapOf("1" to "She's here.\nSee you", "2" to " ")),
+        )
+    }
+
+    @Test
+    fun feedbackCorrectsIntoTheScriptTheLearnerReads() {
+        val en = Languages.get("en")
+        val zh = Languages.get("zh-Hans")
+        // Pinyin only: corrections stay in pinyin, with the learner's tone notation.
+        val roman = Prompts.feedbackSystem(en, zh, Level.BEGINNER, ScriptDisplay.ROMANIZED)
+        assertTrue(roman.contains("Write \"corrected\" and \"natural\" in Pinyin too, never in Chinese (Simplified) script"))
+        assertTrue(roman.contains("tone numbers (dui4)"))
+        assertTrue(!roman.contains("corrected_romanized"))
+        // Characters: typed pinyin is corrected into characters, which come with their pinyin.
+        for (display in listOf(ScriptDisplay.BOTH, ScriptDisplay.CHARACTERS)) {
+            val chars = Prompts.feedbackSystem(en, zh, Level.BEGINNER, display)
+            assertTrue(chars.contains("always write \"corrected\" and \"natural\" in Chinese (Simplified) script"))
+            assertTrue(chars.contains("\"corrected_romanized\""))
+        }
+        val ja = Prompts.feedbackSystem(en, Languages.get("ja"), Level.BEGINNER, ScriptDisplay.ROMANIZED)
+        assertTrue(ja.contains("in Romaji too") && !ja.contains("tone numbers"))
+        // Languages without a romanization are unchanged.
+        assertEquals(Prompts.feedbackSystem(en, Languages.get("fr"), Level.BEGINNER), Prompts.feedbackSystem(en, Languages.get("fr"), Level.BEGINNER, null))
+        assertTrue(!Prompts.feedbackSystem(en, Languages.get("fr"), Level.BEGINNER).contains("romaniz"))
+    }
+
+    @Test
+    fun parsesRomanizedCorrections() {
+        val f = Prompts.parseFeedback(
+            """{"verdict":"good","corrected":"对不起","natural":"不好意思","corrected_romanized":"duìbuqǐ","natural_romanized":"bù hǎoyìsi","translation":"Sorry","notes":"- ok"}""",
+        )
+        assertEquals("对不起", f.corrected)
+        assertEquals("duìbuqǐ", f.correctedRomanized)
+        assertEquals("bù hǎoyìsi", f.naturalRomanized)
+        // No natural version: no romanization for it either.
+        val g = Prompts.parseFeedback("""{"verdict":"perfect","corrected":"对","natural":"对","corrected_romanized":"duì","natural_romanized":"duì"}""")
+        assertEquals("", g.naturalRomanized)
+        assertEquals("", Prompts.parseFeedback("""{"verdict":"perfect","corrected":"Hola"}""").correctedRomanized)
     }
 }

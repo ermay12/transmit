@@ -28,6 +28,8 @@ import app.transmit.data.ContactsRepository
 import app.transmit.data.NotificationContent
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.TransmitDao
+import app.transmit.data.db.shown
+import app.transmit.data.db.shownWithReading
 import app.transmit.smart.Otp
 import app.transmit.messaging.Message
 import app.transmit.messaging.MessagingRepository
@@ -98,7 +100,9 @@ class Notifier(
         for (m in unread) {
             val address = m.sender ?: recipients.firstOrNull().orEmpty()
             val person = people.getOrPut(address) { person(address) }
-            val translation = translated[reactionTargets[m.key] ?: m.key]?.text
+            val display = s.scriptDisplay(eff.target)
+            // A reaction quotes in one line; a message gets its pinyin or romaji under it.
+            val translation = reactionTargets[m.key]?.let { translated[it]?.shown(display) } ?: translated[m.key]?.shownWithReading(display)
             style.addMessage(notificationText(m, translation, s.notificationContent, eff.autoTranslate), m.date, person)
         }
 

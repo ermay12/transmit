@@ -98,6 +98,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     val downloading by vm.downloading.collectAsStateWithLifecycle()
     val spent by vm.spent.collectAsStateWithLifecycle()
     val bridge by vm.bridge.collectAsStateWithLifecycle()
+    val script by vm.script.collectAsStateWithLifecycle()
     var viewing by remember { mutableStateOf<Attachment?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
@@ -168,6 +169,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                                         openLink(context, link, all, item, from)
                                     },
                                     onCopyCode = { SmartActions.copyCode(context, it) },
+                                    onRomanize = { vm.romanizeOnSight(item.key) },
                                 )
                             }
                             if (item.newDay) {
@@ -202,6 +204,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                     state = compose,
                     native = s.native,
                     target = target,
+                    script = script,
                     // Drafting and practice work offline; only sending needs the phone.
                     enabled = true,
                     onNative = vm::onNativeChange,
@@ -226,7 +229,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
             onReact = { vm.react(s.item, it) },
             onMoreEmoji = { vm.sheet.value = Sheet.Emoji(s.item) },
             onExplain = { vm.sheet.value = null; vm.explain(s.item) },
-            onToggle = { vm.sheet.value = null; vm.toggleOriginal(s.item) },
+            onToggle = { vm.sheet.value = null; vm.setShowOriginal(s.item, !s.item.showOriginal) },
             onRetranslate = { vm.sheet.value = null; vm.translate(s.item.message, refresh = true) },
             onDetails = { vm.sheet.value = Sheet.Details(s.item) },
             onRetry = { vm.retry(s.item.message) },
@@ -251,6 +254,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                     onPinned = vm::setPinned,
                     onMuted = vm::setMuted,
                     onRename = vm::setChatName,
+                    onScriptDisplay = vm::setScriptDisplay,
                     onDelete = { confirmDelete = true },
                 )
             }

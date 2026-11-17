@@ -79,7 +79,9 @@ import app.transmit.data.ChatDefaults
 import app.transmit.data.Level
 import app.transmit.data.ModelSlot
 import app.transmit.data.NotificationContent
+import app.transmit.data.ScriptDisplay
 import app.transmit.ui.components.LanguagePickerDialog
+import app.transmit.ui.components.ScriptDisplaySelector
 import app.transmit.gm.BridgeState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,6 +112,13 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             }
             Spacer(Modifier.height(10.dp))
             LevelSelector(s.level, vm::setLevel, Modifier.padding(horizontal = 16.dp))
+            s.target.romanization?.let { r ->
+                Spacer(Modifier.height(14.dp))
+                ScriptDisplaySelector(
+                    s.target, s.scriptDisplay(s.target) ?: ScriptDisplay.BOTH, { vm.setScriptDisplay(r, it) },
+                    Modifier.padding(horizontal = 16.dp),
+                )
+            }
 
             Section("AI provider")
             ProviderChips(s.provider, vm::setProvider, Modifier.padding(horizontal = 16.dp))

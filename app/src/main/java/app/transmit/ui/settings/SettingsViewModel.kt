@@ -13,6 +13,8 @@ import app.transmit.data.ChatDefaults
 import app.transmit.data.Level
 import app.transmit.data.ModelSlot
 import app.transmit.data.NotificationContent
+import app.transmit.data.Romanization
+import app.transmit.data.ScriptDisplay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -150,6 +152,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     fun setBackfill(n: Int) = launch { c.settings.setBackfill(n) }
     fun setNotificationContent(v: NotificationContent) = launch { c.settings.setNotificationContent(v) }
     fun setDeliveryReports(v: Boolean) = launch { c.settings.setDeliveryReports(v) }
+    fun setScriptDisplay(r: Romanization, v: ScriptDisplay) = launch { c.settings.setScriptDisplay(r, v) }
     fun setOnboarded() = launch { c.settings.setOnboarded(true) }
 
     suspend fun price(model: String): Price? {
@@ -186,6 +189,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         "TRANSLATE_INCOMING" -> "Incoming translations"
         "TRANSLATE_OUTGOING" -> "Sent-message translations"
         "TRANSLATE_DRAFT" -> "Compose translations"
+        "ROMANIZE" -> "Pinyin & romaji"
         "EXPLAIN" -> "Explanations"
         "FEEDBACK" -> "Feedback"
         else -> p

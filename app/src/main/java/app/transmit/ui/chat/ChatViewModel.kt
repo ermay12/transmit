@@ -11,8 +11,13 @@ import app.transmit.ai.ContextLine
 import app.transmit.ai.EffectiveChat
 import app.transmit.ai.Feedback
 import app.transmit.ai.Purpose
+import app.transmit.ai.TranslationManager
 import app.transmit.data.ContactInfo
 import app.transmit.data.Language
+import app.transmit.data.Languages
+import app.transmit.data.Romanization
+import app.transmit.data.ScriptDisplay
+import app.transmit.data.Scripts
 import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.DraftEntity
 import app.transmit.data.db.TranslationEntity
@@ -27,19 +32,24 @@ import app.transmit.messaging.Message
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.messaging.PhoneNumbers
 import app.transmit.messaging.Reactions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -64,7 +74,16 @@ data class ComposeUi(
     val feedback: Feedback? = null,
     /** The native text was just prepared from the target text; nudge the user to send. */
     val readyToSend: Boolean = false,
+    /** A practice-language text and its romanization, which shows under the box. */
+    val reading: Pair<String, String>? = null,
+    /** The romanization of the current practice-language text is on its way. */
+    val readingBusy: Boolean = false,
 ) {
+    /** The romanization under the practice-language box: the previous text's, dimmed, while the new one is on its way. */
+    val targetReading: String?
+        get() = reading?.takeIf { target.isNotBlank() && (it.first == target || readingBusy) }?.second?.takeIf { it != target.trim() }
+    val readingStale get() = reading != null && reading.first != target
+
     val aiMode: AiMode
         get() = when {
             target.isNotBlank() && !targetAi -> AiMode.FEEDBACK
@@ -92,11 +111,42 @@ data class MessageUi(
     val code: String? = null,
     /** Offer a "Copy code" chip: the conversation's newest code, while it's fresh. */
     val codeChip: Boolean = false,
+    /** How the chat's practice language is shown; null when it has no romanization. */
+    val script: ScriptDisplay? = null,
+    /** Tapped to show the romanization under the characters (with [ScriptDisplay.CHARACTERS]). */
+    val showRoman: Boolean = false,
+    /** The last try at romanizing the translation failed, so the characters show without it. */
+    val romanFailed: Boolean = false,
+    /** The user's own text is in pinyin or romaji though the chat shows characters; a tap writes it in them. */
+    val needsCharacters: Boolean = false,
 ) {
     val key get() = message.key
     /** True when the bubble currently shows the target-language text. */
     val showingTranslation get() = translation != null && !showOriginal && translation.origin != TranslationOrigin.SAME
-    val displayText get() = if (showingTranslation) translation!!.text else message.body
+
+    private val romanWanted get() = script == ScriptDisplay.BOTH || script == ScriptDisplay.ROMANIZED || (script == ScriptDisplay.CHARACTERS && showRoman)
+
+    /** The translation's romanization is wanted on screen and hasn't arrived. */
+    val romanMissing: Boolean
+        get() = romanWanted && translation != null && translation.origin != TranslationOrigin.SAME && translation.romanized == null && !romanFailed
+
+    /** Romanized as soon as it's on screen; with characters only, a tap asks for it instead. */
+    val romanizesOnSight get() = romanMissing && script != ScriptDisplay.CHARACTERS
+
+    private val romanUnder get() = showingTranslation && (script == ScriptDisplay.BOTH || (script == ScriptDisplay.CHARACTERS && showRoman))
+
+    val displayText: String
+        get() = when {
+            !showingTranslation -> message.body
+            script == ScriptDisplay.ROMANIZED -> translation!!.romanized ?: translation.text
+            else -> translation!!.text
+        }
+
+    /** The romanization shown under [displayText]. */
+    val subtext: String? get() = if (romanUnder) translation!!.romanized?.takeIf { it != translation.text } else null
+
+    /** The romanization would show under the text but is on its way. */
+    val subtextPending get() = romanUnder && romanMissing
 }
 
 sealed interface Sheet {
@@ -137,6 +187,16 @@ class ChatViewModel(
     val smart: SmartLinks get() = c.smart
     val chat = MutableStateFlow<EffectiveChat?>(null)
     val showOriginal = MutableStateFlow<Set<String>>(emptySet())
+    /** Messages tapped to show their romanization under the characters. */
+    private val showRoman = MutableStateFlow<Set<String>>(emptySet())
+    /** How the chat's practice language is shown; null when it has no romanization. */
+    val script: StateFlow<ScriptDisplay?> = combine(settings, chat) { s, eff -> eff?.target?.let { s?.scriptDisplay(it) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val romanRequests = Channel<String>(Channel.UNLIMITED)
+    /** Romanizations of compose-box texts, most recently used last. */
+    private val romanCache = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 100
+    }
     val compose = MutableStateFlow(ComposeUi(native = initialText.orEmpty(), attachments = initialAttachments))
     val sheet = MutableStateFlow<Sheet?>(null)
     val budgetPrompt = MutableStateFlow<BudgetPrompt?>(null)
@@ -169,9 +229,20 @@ class ChatViewModel(
             else c.translations.autoCandidates(list, s).filter { !it.outgoing && it.key !in failed }.mapTo(HashSet()) { it.key }
         }
 
+    /** How each message is shown, apart from its translation. */
+    private data class Views(
+        val original: Set<String>,
+        val roman: Set<String>,
+        val script: ScriptDisplay?,
+        val romanFailed: Set<String>,
+        val conversions: TranslationManager.Conversions,
+    )
+
+    private val views: Flow<Views> = combine(showOriginal, showRoman, script, c.translations.romanFailed, c.translations.conversions, ::Views)
+
     val items: StateFlow<List<MessageUi>> =
-        combine(raw, translations, c.translations.pending, showOriginal, expected) { list, tr, pending, orig, exp ->
-            build(list, tr, pending, orig, exp)
+        combine(raw, translations, c.translations.pending, views, expected) { list, tr, pending, v, exp ->
+            build(list, tr, pending, v, exp)
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
@@ -204,6 +275,30 @@ class ChatViewModel(
                     is app.transmit.ai.TranslationManager.Event.Failed -> e.error.message
                 }
             }
+        }
+        // Translations romanized as their bubbles come into view, a batch at a time.
+        viewModelScope.launch {
+            for (first in romanRequests) {
+                delay(120)
+                val keys = mutableSetOf(first)
+                while (true) keys += romanRequests.tryReceive().getOrNull() ?: break
+                val lang = chat.value?.target ?: continue
+                try {
+                    c.translations.romanize(threadId, keys, lang, auto = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Problems are reported through the translation events; keep serving later requests.
+                }
+            }
+        }
+        // A switch of how the practice language shows does what opening the chat does: with characters, the user's
+        // own pinyin among the newest messages is written in them.
+        viewModelScope.launch { script.filterNotNull().drop(1).collect { autoTranslate() } }
+        // The practice-language box always shows its romanization.
+        viewModelScope.launch {
+            combine(compose.map { it.target }.distinctUntilChanged(), chat.map { it?.target }.distinctUntilChanged(), ::Pair)
+                .collectLatest { (text, lang) -> updateReading(text, lang) }
         }
         viewModelScope.launch {
             compose.map { it.native to it.target }.distinctUntilChanged().debounce(600).collect { (n, t) ->
@@ -274,7 +369,7 @@ class ChatViewModel(
         desc: List<Message>,
         tr: Map<String, TranslationEntity>,
         pending: Set<String>,
-        orig: Set<String>,
+        views: Views,
         expected: Set<String>,
     ): List<MessageUi> {
         val asc = desc.asReversed()
@@ -317,6 +412,14 @@ class ChatViewModel(
             val prev = visible.getOrNull(i - 1)
             val next = visible.getOrNull(i + 1)
             val translatable = c.translations.isTranslatable(m)
+            val t = tr[m.key]
+            // Someone who reads only the romanization waits for it, as for the translation.
+            val romanWait = views.script == ScriptDisplay.ROMANIZED && !m.outgoing && t != null && t.origin != TranslationOrigin.SAME &&
+                t.romanized == null && m.key !in views.romanFailed
+            val r = t?.let { Languages.get(it.lang).romanization }
+            val converting = m.key in views.conversions.running
+            val needsCharacters = r != null && t.origin == TranslationOrigin.SELF && !converting && m.key !in views.conversions.tried &&
+                (views.script == ScriptDisplay.CHARACTERS || views.script == ScriptDisplay.BOTH) && Scripts.isRomanized(t.text, r)
             MessageUi(
                 message = m,
                 reactions = m.reactions.map { ReactionUi(it.emoji, it.count, it.mine) }.let { native ->
@@ -325,26 +428,87 @@ class ChatViewModel(
                         .filterKeys { e -> native.none { it.emoji == e } }
                         .map { (emoji, who) -> ReactionUi(emoji, who.size, ME in who) }
                 },
-                translation = tr[m.key],
-                showOriginal = m.key in orig,
+                translation = t,
+                showOriginal = m.key in views.original,
                 firstInRun = prev == null || !grouped(prev, m),
                 lastInRun = next == null || !grouped(m, next) || m.status == DeliveryStatus.FAILED,
                 newDay = prev == null || !sameDay(prev.date, m.date),
                 translatable = translatable,
-                awaiting = tr[m.key] == null && translatable && (m.key in pending || m.key in expected),
+                awaiting = (translatable && ((t == null && (m.key in pending || m.key in expected)) || romanWait)) || converting,
                 code = codes[m.key],
                 codeChip = m.key == chipKey,
+                script = views.script,
+                showRoman = m.key in views.roman,
+                romanFailed = m.key in views.romanFailed,
+                needsCharacters = needsCharacters,
             )
         }
     }
 
-    /** Tap on a bubble: switches between original and translation, reveals a hidden one, or translates. */
+    /**
+     * Tap on a bubble: switches between original and translation, reveals a hidden one, or translates. With
+     * characters only, the translation first gets its romanization underneath, then the original shows. The user's
+     * own pinyin or romaji, beyond the newest messages, is written in characters.
+     */
     fun toggleOriginal(item: MessageUi) {
         if (item.translation == null && item.translatable && !item.awaiting) {
             translate(item.message)
             return
         }
-        showOriginal.update { if (item.key in it) it - item.key else it + item.key }
+        if (item.needsCharacters && item.showingTranslation) {
+            toCharacters(item)
+            return
+        }
+        val key = item.key
+        val tr = item.translation
+        when {
+            item.script == ScriptDisplay.CHARACTERS && item.showingTranslation && !item.showRoman && tr != null && Scripts.needsReading(tr.text) -> {
+                showRoman.update { it + key }
+                if (tr.romanized == null) romanize(item)
+            }
+            item.showRoman -> {
+                showRoman.update { it - key }
+                showOriginal.update { it + key }
+            }
+            else -> showOriginal.update { if (key in it) it - key else it + key }
+        }
+    }
+
+    /** Shows the original text, or the translation (as the chat shows it), straight away. */
+    fun setShowOriginal(item: MessageUi, show: Boolean) {
+        showRoman.update { it - item.key }
+        showOriginal.update { if (show) it + item.key else it - item.key }
+    }
+
+    /** A bubble whose romanization should show came into view without one. */
+    fun romanizeOnSight(key: String) {
+        romanRequests.trySend(key)
+    }
+
+    private fun toCharacters(item: MessageUi, overrideBudget: Boolean = false) {
+        val lang = chat.value?.target ?: return
+        viewModelScope.launch {
+            try {
+                c.translations.toCharacters(threadId, listOf(item.key), lang, auto = false, overrideBudget = overrideBudget)
+            } catch (e: BudgetExceededException) {
+                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { toCharacters(item, true) }
+            } catch (e: AiException) {
+                toast(e.message)
+            }
+        }
+    }
+
+    private fun romanize(item: MessageUi, overrideBudget: Boolean = false) {
+        val lang = chat.value?.target ?: return
+        viewModelScope.launch {
+            try {
+                c.translations.romanize(threadId, listOf(item.key), lang, auto = false, overrideBudget = overrideBudget)
+            } catch (e: BudgetExceededException) {
+                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { romanize(item, true) }
+            } catch (e: AiException) {
+                toast(e.message)
+            }
+        }
     }
 
     fun translate(m: Message, refresh: Boolean = false, overrideBudget: Boolean = false) {
@@ -456,6 +620,44 @@ class ChatViewModel(
 
     fun applyCorrection(text: String) = compose.update { it.copy(target = text, targetAi = true, stale = false, feedback = null) }
 
+    /** Keeps the romanization under the practice-language box in step with its [text]. */
+    private suspend fun updateReading(text: String, lang: Language?) {
+        val r = lang?.romanization
+        if (r == null || text.isBlank()) {
+            compose.update { it.copy(reading = null, readingBusy = false) }
+            return
+        }
+        val known = Scripts.local(text.trim(), r) ?: romanCache[text.trim()]
+        if (known != null) {
+            compose.update { it.copy(reading = text to known, readingBusy = false) }
+            return
+        }
+        compose.update { it.copy(readingBusy = true) }
+        // Typing pauses before asking the AI; text it just wrote is romanized at once.
+        if (!compose.value.targetAi) delay(READING_DELAY_MS)
+        val reading = romanizeDraft(text, lang)
+        compose.update { it.copy(reading = reading?.let { v -> text to v }, readingBusy = false) }
+    }
+
+    /** [text]'s romanization from the device, the cache or the AI; null when it can't be had. */
+    private suspend fun romanizeDraft(text: String, lang: Language): String? {
+        val r = lang.romanization ?: return null
+        val key = text.trim()
+        Scripts.local(key, r)?.let { return it }
+        romanCache[key]?.let { return it }
+        return try {
+            c.tutor.romanize(listOf("1" to key), lang, threadId).texts["1"]?.also { romanCache[key] = it }
+        } catch (e: AiException) {
+            null
+        } catch (e: BudgetExceededException) {
+            null
+        }
+    }
+
+    private fun rememberReading(text: String, romanized: String) {
+        if (text.isNotBlank() && romanized.isNotBlank()) romanCache[text.trim()] = romanized.trim()
+    }
+
     fun dismissFeedback() = compose.update { it.copy(feedback = null) }
 
     fun onAi(overrideBudget: Boolean = false) {
@@ -466,11 +668,15 @@ class ChatViewModel(
             AiMode.TRANSLATE -> runAi(Busy.TRANSLATE, { onAi(true) }) {
                 val r = c.tutor.translate(listOf("1" to st.native.trim()), eff.target, contextLines(), threadId, Purpose.TRANSLATE_DRAFT, overrideBudget)
                 val text = r.texts.getValue("1")
-                compose.update { it.copy(target = text, targetAi = true, stale = false, feedback = null) }
+                // Someone who reads only the romanization gets the draft in it, characters if that fails.
+                val romanized = if (s.scriptDisplay(eff.target) == ScriptDisplay.ROMANIZED) romanizeDraft(text, eff.target) else null
+                compose.update { it.copy(target = romanized ?: text, targetAi = true, stale = false, feedback = null) }
             }
             AiMode.FEEDBACK -> runAi(Busy.FEEDBACK, { onAi(true) }) {
                 val intended = st.native.takeIf { it.isNotBlank() && !st.nativeAi }
-                val r = c.tutor.feedback(intended, st.target, eff.target, threadId, overrideBudget)
+                val r = c.tutor.feedback(intended, st.target, eff.target, threadId, overrideBudget, s.scriptDisplay(eff.target))
+                rememberReading(r.feedback.corrected, r.feedback.correctedRomanized)
+                rememberReading(r.feedback.natural, r.feedback.naturalRomanized)
                 compose.update { cur ->
                     val fillNative = (cur.native.isBlank() || cur.nativeAi) && r.feedback.translation.isNotBlank()
                     cur.copy(
@@ -506,9 +712,10 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 val targetText = st.target.takeIf { it.isNotBlank() && !st.stale }
+                val romanized = targetText?.let { st.reading?.takeIf { r -> r.first == st.target }?.second ?: romanCache[it.trim()] }
                 // Stored before the message appears, so it never shows untranslated first.
                 c.sender.sendToThread(threadId, st.native, st.attachments) { key ->
-                    if (targetText != null && eff != null) c.translations.storeSelf(key, threadId, eff.target, targetText)
+                    if (targetText != null && eff != null) c.translations.storeSelf(key, threadId, eff.target, targetText, romanized)
                 }
                 compose.value = ComposeUi()
                 c.dao.deleteDraft(threadId)
@@ -572,6 +779,11 @@ class ChatViewModel(
     fun setMuted(value: Boolean) = updateChat { it.copy(muted = value) }
     fun setChatName(value: String?) = updateChat { it.copy(name = value?.trim()?.takeIf(String::isNotEmpty)) }
 
+    /** For every chat in the languages written with [r]. */
+    fun setScriptDisplay(r: Romanization, value: ScriptDisplay) {
+        viewModelScope.launch { c.settings.setScriptDisplay(r, value) }
+    }
+
     fun toggleAutoTranslate() {
         val now = chat.value?.autoTranslate ?: return
         setAutoTranslate(!now)
@@ -603,5 +815,7 @@ class ChatViewModel(
         const val ME = "me"
         const val RUN_GAP = 5 * 60_000L
         const val CODE_CHIP_MS = 60 * 60_000L
+        /** A pause in typing this long asks for the draft's romanization. */
+        const val READING_DELAY_MS = 900L
     }
 }

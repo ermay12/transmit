@@ -55,6 +55,8 @@ data class AppSettings(
     val notificationContent: NotificationContent = NotificationContent.TRANSLATED,
     val deliveryReports: Boolean = false,
     val priceOverrides: Map<String, Price> = emptyMap(),
+    /** Per romanization; [ScriptDisplay.BOTH] when unset. */
+    val scriptDisplays: Map<Romanization, ScriptDisplay> = emptyMap(),
 ) {
     val native get() = Languages.get(nativeLang)
     val target get() = Languages.get(targetLang)
@@ -70,6 +72,12 @@ data class AppSettings(
     }
 
     fun priceOverride(provider: ProviderType, model: String) = priceOverrides["${provider.name}:$model"]
+
+    /** How [lang] is shown; null for languages without a romanization. */
+    fun scriptDisplay(lang: Language): ScriptDisplay? = lang.romanization?.let { scriptDisplays[it] ?: ScriptDisplay.BOTH }
+
+    /** Whether [lang] text gets romanized as it's translated, rather than only when asked. */
+    fun romanizesAutomatically(lang: Language): Boolean = scriptDisplay(lang).let { it != null && it != ScriptDisplay.CHARACTERS }
 }
 
 class SettingsRepository(private val context: Context) {
@@ -94,6 +102,7 @@ class SettingsRepository(private val context: Context) {
         val deliveryReports = booleanPreferencesKey("delivery_reports")
         val prices = stringPreferencesKey("price_overrides")
         val recentLangs = stringPreferencesKey("recent_langs")
+        fun scriptDisplay(r: Romanization) = stringPreferencesKey("script_display_${r.name}")
         fun modelCache(p: ProviderType) = stringPreferencesKey("model_cache_${p.name}")
     }
 
@@ -145,6 +154,9 @@ class SettingsRepository(private val context: Context) {
             notificationContent = p[K.notificationContent]?.let { runCatching { NotificationContent.valueOf(it) }.getOrNull() } ?: defaults.notificationContent,
             deliveryReports = p[K.deliveryReports] ?: defaults.deliveryReports,
             priceOverrides = p[K.prices]?.let(::decodePrices).orEmpty(),
+            scriptDisplays = Romanization.entries.mapNotNull { r ->
+                p[K.scriptDisplay(r)]?.let { v -> runCatching { r to ScriptDisplay.valueOf(v) }.getOrNull() }
+            }.toMap(),
         )
     }
 
@@ -186,6 +198,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setBackfill(n: Int) = edit { it[K.backfill] = n }
     suspend fun setNotificationContent(v: NotificationContent) = edit { it[K.notificationContent] = v.name }
     suspend fun setDeliveryReports(v: Boolean) = edit { it[K.deliveryReports] = v }
+    suspend fun setScriptDisplay(r: Romanization, v: ScriptDisplay) = edit { it[K.scriptDisplay(r)] = v.name }
 
     suspend fun setPriceOverride(provider: ProviderType, model: String, price: Price?) = edit { p ->
         val map = p[K.prices]?.let(::decodePrices).orEmpty().toMutableMap()

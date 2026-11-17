@@ -3,6 +3,8 @@ package app.transmit.ai
 import app.transmit.data.AppSettings
 import app.transmit.data.ContactsRepository
 import app.transmit.data.Language
+import app.transmit.data.ScriptDisplay
+import app.transmit.data.Scripts
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
@@ -40,6 +42,17 @@ class TranslationManager(
     private val _failed = MutableStateFlow<Set<String>>(emptySet())
     /** Message keys whose last translation attempt failed or came back empty, so the UI stops waiting for them. */
     val failed: StateFlow<Set<String>> = _failed
+    private val _romanFailed = MutableStateFlow<Set<String>>(emptySet())
+    /** Message keys whose last romanization attempt failed, so the UI shows the characters instead of waiting. */
+    val romanFailed: StateFlow<Set<String>> = _romanFailed
+    /** The user's own pinyin or romaji being written in characters, and what the AI already had. */
+    data class Conversions(
+        val running: Set<String> = emptySet(),
+        /** Message keys the AI wrote in characters this run, or left as they were: not pinyin or romaji after all. */
+        val tried: Set<String> = emptySet(),
+    )
+    private val _conversions = MutableStateFlow(Conversions())
+    val conversions: StateFlow<Conversions> = _conversions
     private val _events = MutableSharedFlow<Event>(extraBufferCapacity = 16)
     /** Problems hit by automatic translation, surfaced as unobtrusive banners. */
     val events: SharedFlow<Event> = _events
@@ -65,7 +78,13 @@ class TranslationManager(
         val s = settings.current()
         val eff = policy.effective(threadId, s)
         if (!eff.autoTranslate) return
-        translate(threadId, autoCandidates(messages, s), messages, eff.target, s, auto = true)
+        val candidates = autoCandidates(messages, s)
+        translate(threadId, candidates, messages, eff.target, s, auto = true)
+        // The user's own pinyin or romaji among as many of the newest messages, where the chat shows characters.
+        val newest = messages.filter { isTranslatable(it) }.sortedByDescending { it.date }.take(s.backfillCount)
+        toCharacters(threadId, newest.filter { it.outgoing }.map { it.key }, eff.target, auto = true)
+        // Also covers translations made before their romanization was shown.
+        if (s.romanizesAutomatically(eff.target)) romanize(threadId, candidates.map { it.key }, eff.target, auto = true)
     }
 
     suspend fun translateIncoming(threadId: Long, key: String) {
@@ -75,19 +94,111 @@ class TranslationManager(
         if (!eff.autoTranslate || !isAutoTranslatable(message)) return
         val recent = repo.messages(threadId, s.contextMessages + 2)
         translate(threadId, listOf(message), recent, eff.target, s, auto = true)
+        // Before the notification is updated, which shows the romanization when that's all the user reads.
+        if (s.romanizesAutomatically(eff.target)) romanize(threadId, listOf(key), eff.target, auto = true)
     }
 
     /** User-initiated translation. Throws [BudgetExceededException] / [AiException] for the UI to handle. */
     suspend fun translateNow(message: Message, all: List<Message>, lang: Language, overrideBudget: Boolean = false, refresh: Boolean = false) {
         if (!isTranslatable(message)) return
-        translate(message.threadId, listOf(message), all, lang, settings.current(), auto = false, overrideBudget = overrideBudget, refresh = refresh)
+        val s = settings.current()
+        translate(message.threadId, listOf(message), all, lang, s, auto = false, overrideBudget = overrideBudget, refresh = refresh)
+        // Reported as a banner if it fails: the translation itself worked, and a retry shouldn't redo it.
+        if (s.romanizesAutomatically(lang)) romanize(message.threadId, listOf(message.key), lang, auto = true, overrideBudget = overrideBudget)
     }
 
-    suspend fun storeSelf(key: String, threadId: Long, lang: Language, text: String) {
+    /** The user's own [text] in [lang] for a message they sent, with its [romanized] form when known. */
+    suspend fun storeSelf(key: String, threadId: Long, lang: Language, text: String, romanized: String? = null) {
         if (text.isBlank()) return
+        val roman = romanized ?: lang.romanization?.let { Scripts.local(text.trim(), it) }
         dao.upsertTranslation(
-            TranslationEntity(key, lang.code, threadId, 0, text.trim(), TranslationOrigin.SELF, null, 0.0, 0, 0, System.currentTimeMillis()),
+            TranslationEntity(key, lang.code, threadId, 0, text.trim(), TranslationOrigin.SELF, null, 0.0, 0, 0, System.currentTimeMillis(), roman),
         )
+    }
+
+    /**
+     * Writes the user's own [lang] texts of [keys] that are in pinyin or romaji in characters, when [lang] is shown
+     * with characters. The pinyin or romaji they wrote stays as the romanization, and the message that went out tells
+     * the AI which words they meant. [auto] work skips texts the AI already had and reports problems as [events];
+     * otherwise they're thrown.
+     */
+    suspend fun toCharacters(threadId: Long, keys: Collection<String>, lang: Language, auto: Boolean, overrideBudget: Boolean = false) {
+        val r = lang.romanization ?: return
+        if (keys.isEmpty() || settings.current().scriptDisplay(lang) == ScriptDisplay.ROMANIZED) return
+        val tried = _conversions.value.tried
+        val todo = dao.translations(keys.distinct(), lang.code).filter { t ->
+            t.origin == TranslationOrigin.SELF && (!auto || t.msgKey !in tried) && Scripts.isRomanized(t.text, r) &&
+                inFlight.add("${t.msgKey}|${t.lang}|c")
+        }
+        if (todo.isEmpty()) return
+        val keysTodo = todo.map { it.msgKey }.toSet()
+        _conversions.update { it.copy(running = it.running + keysTodo) }
+        try {
+            // Placeholders and deleted messages have no message to go by; a placeholder's replacement gets its turn.
+            val sent = todo.mapNotNull { t -> repo.message(t.msgKey)?.let { t to it.body } }
+            for (chunk in sent.chunked(12)) {
+                val ids = chunk.indices.map { (it + 1).toString() }
+                val batch = tutor.toCharacters(ids.zip(chunk.map { it.first.text }), ids.zip(chunk.map { it.second }).toMap(), lang, threadId, overrideBudget)
+                chunk.forEachIndexed { i, (t, _) ->
+                    _conversions.update { it.copy(tried = it.tried + t.msgKey) }
+                    val text = batch.texts[ids[i]]?.takeIf { Scripts.needsReading(it) } ?: return@forEachIndexed
+                    dao.setCharacters(t.msgKey, t.lang, t.text, text, t.romanized ?: Scripts.local(t.text, r) ?: t.text)
+                }
+            }
+        } catch (e: BudgetExceededException) {
+            if (!auto) throw e
+            _events.tryEmit(Event.BudgetReached(threadId, e.message.orEmpty()))
+        } catch (e: AiException) {
+            if (!auto) throw e
+            _events.tryEmit(Event.Failed(threadId, e))
+        } finally {
+            todo.forEach { inFlight.remove("${it.msgKey}|${it.lang}|c") }
+            _conversions.update { it.copy(running = it.running - keysTodo) }
+        }
+    }
+
+    /**
+     * Adds the romanization to the stored [lang] translations of [keys] that lack one. Text without characters to
+     * read is done on the device. [auto] work reports problems as [events]; otherwise they're thrown.
+     */
+    suspend fun romanize(threadId: Long, keys: Collection<String>, lang: Language, auto: Boolean, overrideBudget: Boolean = false) {
+        val r = lang.romanization ?: return
+        if (keys.isEmpty()) return
+        val rows = dao.translations(keys.distinct(), lang.code)
+            .filter { it.romanized == null && it.origin != TranslationOrigin.SAME && it.text.isNotBlank() }
+        val todo = rows.filter { inFlight.add("${it.msgKey}|${lang.code}|r") }
+        if (todo.isEmpty()) return
+        val keysTodo = todo.map { it.msgKey }.toSet()
+        val done = mutableSetOf<String>()
+        try {
+            val remote = mutableListOf<TranslationEntity>()
+            for (t in todo) {
+                val local = Scripts.local(t.text, r)
+                if (local != null) {
+                    dao.setRomanized(t.msgKey, lang.code, t.text, local)
+                    done += t.msgKey
+                } else {
+                    remote += t
+                }
+            }
+            for (chunk in remote.chunked(12)) {
+                val batch = tutor.romanize(chunk.mapIndexed { i, t -> (i + 1).toString() to t.text }, lang, threadId, overrideBudget)
+                chunk.forEachIndexed { i, t ->
+                    val text = batch.texts[(i + 1).toString()] ?: return@forEachIndexed
+                    dao.setRomanized(t.msgKey, lang.code, t.text, text)
+                    done += t.msgKey
+                }
+            }
+        } catch (e: BudgetExceededException) {
+            if (!auto) throw e
+            _events.tryEmit(Event.BudgetReached(threadId, e.message.orEmpty()))
+        } catch (e: AiException) {
+            if (!auto) throw e
+            _events.tryEmit(Event.Failed(threadId, e))
+        } finally {
+            todo.forEach { inFlight.remove("${it.msgKey}|${lang.code}|r") }
+            _romanFailed.update { it - done + (keysTodo - done) }
+        }
     }
 
     private suspend fun translate(
@@ -111,7 +222,7 @@ class TranslationManager(
             for (m in todo) {
                 val reuse = if (refresh) null else dao.translationBySource(m.body.trim().hashCode(), lang.code)
                 if (reuse != null) {
-                    save(m, lang, reuse.text, reuse.origin, reuse.model, 0.0, 0, 0)
+                    save(m, lang, reuse.text, reuse.origin, reuse.model, 0.0, 0, 0, reuse.romanized)
                     saved += m.key
                 } else {
                     remaining += m
@@ -145,11 +256,14 @@ class TranslationManager(
         }
     }
 
-    private suspend fun save(m: Message, lang: Language, text: String, origin: String, model: String?, cost: Double, inTok: Long, outTok: Long) {
+    private suspend fun save(
+        m: Message, lang: Language, text: String, origin: String, model: String?, cost: Double, inTok: Long, outTok: Long, romanized: String? = null,
+    ) {
         dao.upsertTranslation(
             TranslationEntity(
                 msgKey = m.key, lang = lang.code, threadId = m.threadId, sourceHash = m.body.trim().hashCode(), text = text,
                 origin = origin, model = model, costUsd = cost, inputTokens = inTok, outputTokens = outTok, createdAt = System.currentTimeMillis(),
+                romanized = romanized,
             ),
         )
     }

@@ -12,6 +12,7 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import app.transmit.data.ScriptDisplay
 import kotlinx.coroutines.flow.Flow
 
 object TranslationOrigin {
@@ -36,7 +37,18 @@ data class TranslationEntity(
     val inputTokens: Long,
     val outputTokens: Long,
     val createdAt: Long,
+    /** [text] in its language's romanization (pinyin, romaji); null until asked for, or for languages without one. */
+    val romanized: String? = null,
 )
+
+/** The translation as one line of text in [display]: just the romanization for someone who reads only that. */
+fun TranslationEntity.shown(display: ScriptDisplay?): String = if (display == ScriptDisplay.ROMANIZED) romanized ?: text else text
+
+/** With [ScriptDisplay.BOTH], [shown] plus the romanization on a line of its own. */
+fun TranslationEntity.shownWithReading(display: ScriptDisplay?): String {
+    val reading = romanized?.takeIf { display == ScriptDisplay.BOTH && it != text } ?: return shown(display)
+    return "$text\n$reading"
+}
 
 @Entity(tableName = "explanations")
 data class ExplanationEntity(
@@ -146,14 +158,22 @@ interface TransmitDao {
     @Query("DELETE FROM translations WHERE msgKey = :key AND lang = :lang")
     suspend fun deleteTranslation(key: String, lang: String)
 
+    /** Only while the translation is still [text]: a redone translation must not get the old one's romanization. */
+    @Query("UPDATE translations SET romanized = :romanized WHERE msgKey = :key AND lang = :lang AND text = :text")
+    suspend fun setRomanized(key: String, lang: String, text: String, romanized: String)
+
+    /** Replaces a translation's [was] text with [text], written in characters, keeping [romanized] as its romanization. */
+    @Query("UPDATE translations SET text = :text, romanized = :romanized WHERE msgKey = :key AND lang = :lang AND text = :was")
+    suspend fun setCharacters(key: String, lang: String, was: String, text: String, romanized: String)
+
     /**
      * Gives a sent message's translations to the message that replaces its placeholder. Copied, not
      * moved: the chat still shows the placeholder until its list reloads, and it must not lose its
      * translation meanwhile (see [deleteOrphanPlaceholderTranslations]).
      */
     @Query(
-        "INSERT OR REPLACE INTO translations (msgKey, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt) " +
-            "SELECT :to, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt FROM translations WHERE msgKey = :from",
+        "INSERT OR REPLACE INTO translations (msgKey, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt, romanized) " +
+            "SELECT :to, lang, threadId, sourceHash, text, origin, model, costUsd, inputTokens, outputTokens, createdAt, romanized FROM translations WHERE msgKey = :from",
     )
     suspend fun copyTranslations(from: String, to: String)
 
@@ -293,9 +313,11 @@ interface GmDao {
         TranslationEntity::class, ExplanationEntity::class, UsageEntity::class, ChatSettingsEntity::class, DraftEntity::class,
         GmConversationEntity::class, GmMessageEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5),
+    ],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TransmitDao

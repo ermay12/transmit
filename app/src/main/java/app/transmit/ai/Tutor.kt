@@ -3,13 +3,14 @@ package app.transmit.ai
 import app.transmit.data.AppSettings
 import app.transmit.data.Language
 import app.transmit.data.ModelSlot
+import app.transmit.data.ScriptDisplay
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.ExplanationEntity
 import app.transmit.data.db.TransmitDao
 import app.transmit.data.db.UsageEntity
 import java.util.Locale
 
-enum class Purpose { TRANSLATE_INCOMING, TRANSLATE_OUTGOING, TRANSLATE_DRAFT, EXPLAIN, FEEDBACK }
+enum class Purpose { TRANSLATE_INCOMING, TRANSLATE_OUTGOING, TRANSLATE_DRAFT, ROMANIZE, EXPLAIN, FEEDBACK }
 
 /** What one AI call cost, for display and for the usage ledger. */
 data class CallCost(val model: String, val inputTokens: Long, val outputTokens: Long, val costUsd: Double, val priced: Boolean)
@@ -64,6 +65,53 @@ class Tutor(
         return TranslationBatch(parsed, cost)
     }
 
+    /** Writes [items] (id to text in [lang]) in [lang]'s romanization, on the translation model. */
+    suspend fun romanize(
+        items: List<Pair<String, String>>,
+        lang: Language,
+        threadId: Long?,
+        overrideBudget: Boolean = false,
+    ): TranslationBatch {
+        val r = lang.romanization ?: throw IllegalArgumentException("${lang.name} has no romanization")
+        val s = settings.current()
+        val (text, cost) = run(
+            s, ModelSlot.TRANSLATE, threadId, Purpose.ROMANIZE, overrideBudget,
+            system = Prompts.romanizeSystem(lang, r),
+            prompt = Prompts.translateUser(items, emptyList()),
+            // Pinyin and romaji take several tokens per character.
+            maxTokens = 4096 + items.sumOf { it.second.length } * 6,
+            fast = true,
+        )
+        val parsed = Prompts.parseTranslations(text, items.map { it.first }).filterValues { it.isNotBlank() }
+        if (parsed.isEmpty()) throw AiException("The model returned no ${r.label}.", AiException.Kind.OTHER)
+        return TranslationBatch(parsed, cost)
+    }
+
+    /**
+     * Writes [items] (id to [lang] text written in its romanization) in [lang] script, staying with the syllables
+     * written. [sent] (id to the text message that went out) tells which words were meant.
+     */
+    suspend fun toCharacters(
+        items: List<Pair<String, String>>,
+        sent: Map<String, String>,
+        lang: Language,
+        threadId: Long?,
+        overrideBudget: Boolean = false,
+    ): TranslationBatch {
+        val r = lang.romanization ?: throw IllegalArgumentException("${lang.name} has no romanization")
+        val s = settings.current()
+        val (text, cost) = run(
+            s, ModelSlot.TRANSLATE, threadId, Purpose.ROMANIZE, overrideBudget,
+            system = Prompts.charactersSystem(lang, r),
+            prompt = Prompts.charactersUser(items, sent),
+            maxTokens = 4096 + items.sumOf { it.second.length } * 2,
+            fast = true,
+        )
+        val parsed = Prompts.parseTranslations(text, items.map { it.first }).filterValues { it.isNotBlank() }
+        if (parsed.isEmpty()) throw AiException("The model returned no ${lang.name}.", AiException.Kind.OTHER)
+        return TranslationBatch(parsed, cost)
+    }
+
     suspend fun explain(
         original: String,
         rendered: String,
@@ -96,11 +144,12 @@ class Tutor(
         target: Language,
         threadId: Long?,
         overrideBudget: Boolean = false,
+        display: ScriptDisplay? = null,
     ): FeedbackResult {
         val s = settings.current()
         val (text, cost) = run(
             s, ModelSlot.TUTOR, threadId, Purpose.FEEDBACK, overrideBudget,
-            system = Prompts.feedbackSystem(s.native, target, s.level),
+            system = Prompts.feedbackSystem(s.native, target, s.level, display),
             prompt = Prompts.feedbackUser(intended, attempt, s.native, target),
             maxTokens = 8000,
         )

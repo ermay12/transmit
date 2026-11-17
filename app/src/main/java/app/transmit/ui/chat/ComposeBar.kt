@@ -58,11 +58,13 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.transmit.ai.Feedback
 import app.transmit.data.Language
+import app.transmit.data.ScriptDisplay
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.ui.components.Diff
 import app.transmit.ui.components.MarkdownText
@@ -74,6 +76,8 @@ fun ComposeBar(
     state: ComposeUi,
     native: Language,
     target: Language,
+    /** How [target] is shown, when it has a romanization. */
+    script: ScriptDisplay?,
     enabled: Boolean,
     onNative: (String) -> Unit,
     onTarget: (String) -> Unit,
@@ -95,14 +99,24 @@ fun ComposeBar(
             Row(verticalAlignment = Alignment.Bottom) {
                 IconButton(onClick = onAttach, enabled = enabled) { Icon(Icons.Default.AddPhotoAlternate, "Attach") }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Someone who writes in pinyin or romaji gets a Latin keyboard: a Chinese or Japanese one would convert it.
+                    val romanizedOnly = script == ScriptDisplay.ROMANIZED && target.romanization != null
                     LanguageField(
                         value = state.target, onValue = onTarget, language = target,
+                        placeholder = if (romanizedOnly) "${target.nativeName} · ${target.romanization?.label}" else target.nativeName,
+                        keyboardLocale = when {
+                            !romanizedOnly -> target.keyboardLocale
+                            native.latinScript -> native.keyboardLocale
+                            else -> "en"
+                        },
                         tint = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
                         ai = state.targetAi, stale = state.stale, enabled = enabled,
                         onClear = onClearTarget, onRefresh = onAi,
+                        reading = state.targetReading, readingStale = state.readingStale || state.stale,
                     )
                     LanguageField(
                         value = state.native, onValue = onNative, language = native,
+                        placeholder = native.nativeName, keyboardLocale = native.keyboardLocale,
                         tint = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ai = state.nativeAi, stale = false, enabled = enabled,
                         onClear = { onNative("") }, onRefresh = null,
@@ -123,12 +137,18 @@ private fun LanguageField(
     value: String,
     onValue: (String) -> Unit,
     language: Language,
+    placeholder: String,
+    /** The keyboard language the box asks for. */
+    keyboardLocale: String,
     tint: Color,
     ai: Boolean,
     stale: Boolean,
     enabled: Boolean,
     onClear: () -> Unit,
     onRefresh: (() -> Unit)?,
+    /** The text's romanization, shown under it; dimmed when [readingStale] (it's for an earlier text). */
+    reading: String? = null,
+    readingStale: Boolean = false,
 ) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(tint).padding(start = 10.dp, end = 4.dp),
@@ -136,19 +156,32 @@ private fun LanguageField(
     ) {
         Text(language.flag, fontSize = 18.sp)
         Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
-            if (value.isEmpty()) {
-                Text(language.nativeName, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Box {
+                if (value.isEmpty()) {
+                    Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                }
+                BasicTextField(
+                    value = value, onValueChange = onValue, enabled = enabled, maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = if (stale) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
+                    ),
+                    // Like Google Translate: the keyboard switches to each box's language as it's focused.
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        hintLocales = remember(keyboardLocale) { LocaleList(keyboardLocale) },
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            BasicTextField(
-                value = value, onValueChange = onValue, enabled = enabled, maxLines = 5,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = if (stale) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
-                ),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (reading != null && value.isNotEmpty()) {
+                Text(
+                    reading, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (readingStale) 0.45f else 0.9f),
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
         when {
             stale && onRefresh != null -> IconButton(onClick = onRefresh, modifier = Modifier.size(32.dp)) {
@@ -259,6 +292,8 @@ private fun FeedbackCard(fb: Feedback, attempt: String, onApply: (String) -> Uni
                             Diff.annotated(attempt, corrected, add = colors.good, del = colors.bad)
                         }
                         Text(diff, style = MaterialTheme.typography.bodyLarge)
+                        // The box below already shows the draft's own romanization.
+                        Romanized(fb.correctedRomanized, corrected)
                     }
                 }
                 if (fb.verdict != Feedback.Verdict.PERFECT && fb.corrected.isNotBlank() && fb.corrected.trim() != attempt.trim()) {
@@ -272,7 +307,10 @@ private fun FeedbackCard(fb: Feedback, attempt: String, onApply: (String) -> Uni
                 Row(Modifier.padding(start = 28.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AutoAwesome, "More natural", Modifier.size(14.dp), tint = colors.aiTint)
                     Spacer(Modifier.width(6.dp))
-                    Text(fb.natural, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Column(Modifier.weight(1f)) {
+                        Text(fb.natural, style = MaterialTheme.typography.bodyMedium)
+                        Romanized(fb.naturalRomanized, fb.natural)
+                    }
                     IconButton(onClick = { onApply(fb.natural) }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Check, "Use this", Modifier.size(18.dp), tint = colors.good)
                     }
@@ -295,4 +333,11 @@ private fun FeedbackCard(fb: Feedback, attempt: String, onApply: (String) -> Uni
             }
         }
     }
+}
+
+/** [romanized], the romanization of [text], when there's one worth showing. */
+@Composable
+private fun Romanized(romanized: String, text: String) {
+    if (romanized.isBlank() || romanized.trim() == text.trim()) return
+    Text(romanized, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

@@ -97,6 +97,8 @@ import app.transmit.ai.usd
 import app.transmit.data.AppSettings
 import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
+import app.transmit.data.Romanization
+import app.transmit.data.ScriptDisplay
 import app.transmit.data.chatTitle
 import app.transmit.data.db.TranslationOrigin
 import app.transmit.messaging.DeliveryStatus
@@ -106,6 +108,7 @@ import app.transmit.messaging.Reactions
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.LanguagePickerDialog
 import app.transmit.ui.components.MarkdownText
+import app.transmit.ui.components.ScriptDisplaySelector
 import app.transmit.ui.components.Times
 import kotlinx.coroutines.launch
 
@@ -147,6 +150,9 @@ fun ActionsSheet(
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
                         Text(tr.text, style = MaterialTheme.typography.bodyMedium)
+                        tr.romanized?.takeIf { it != tr.text }?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Spacer(Modifier.height(6.dp))
                         Text(item.message.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -330,6 +336,7 @@ fun ChatInfoSheet(
     onPinned: (Boolean) -> Unit,
     onMuted: (Boolean) -> Unit,
     onRename: (String?) -> Unit,
+    onScriptDisplay: (Romanization, ScriptDisplay) -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -416,6 +423,12 @@ fun ChatInfoSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            chat.target.romanization?.let { r ->
+                ScriptDisplaySelector(
+                    chat.target, settings.scriptDisplay(chat.target) ?: ScriptDisplay.BOTH, { onScriptDisplay(r, it) },
+                    Modifier.padding(start = 36.dp, bottom = 14.dp), everyChat = true,
+                )
+            }
 
             BudgetEditor(
                 spent = spent, limit = chat.monthlyBudgetUsd, isDefault = overrides?.monthlyBudgetUsd == null,

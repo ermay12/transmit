@@ -7,6 +7,7 @@ import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
 import app.transmit.data.chatTitle
 import app.transmit.data.db.ChatSettingsEntity
+import app.transmit.data.db.shown
 import app.transmit.messaging.Conversation
 import app.transmit.messaging.Reactions
 import kotlinx.coroutines.Dispatchers
@@ -87,13 +88,14 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             // A reaction quotes its target in the original language; use the target's translation.
             val translatedKey = if (reaction != null) conv.snippetKey?.let(targets::get) else conv.snippetKey
             val translation = translatedKey?.let { key -> byKey[key]?.firstOrNull { it.lang == lang } }
+            val shown = translation?.shown(s.scriptDisplay(Languages.get(lang)))
             ConversationUi(
                 conversation = conv,
                 people = people,
                 title = chatTitle(people, settings?.name),
                 snippet = when {
-                    reaction != null -> "${reaction.emoji} “${translation?.text ?: reaction.quoted ?: "📷"}”"
-                    translation != null -> translation.text
+                    reaction != null -> "${reaction.emoji} “${shown ?: reaction.quoted ?: "📷"}”"
+                    shown != null -> shown
                     else -> conv.snippet
                 },
                 snippetTranslated = translation != null,
