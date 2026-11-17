@@ -8,6 +8,8 @@ import app.transmit.data.db.TransmitDao
 import app.transmit.gm.GmBridge
 import app.transmit.gm.GmException
 import app.transmit.gm.GmMapping
+import app.transmit.gm.proto.Conversation
+import app.transmit.gm.proto.ConversationType
 import app.transmit.gm.proto.MediaContent
 import app.transmit.gm.proto.MessageContent
 import app.transmit.gm.proto.MessageInfo
@@ -26,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import app.transmit.gm.proto.Message as GmMessage
 
 /**
@@ -47,14 +50,18 @@ class Sender(
     /** What each unconfirmed placeholder holds, so a failed one can be sent again. */
     private val outgoing = ConcurrentHashMap<String, Outgoing>()
 
+    /** Placeholder times in microseconds, each later than the last, so parts queued together keep their order. */
+    private val placeholderClock = AtomicLong()
+
     suspend fun send(recipients: List<String>, text: String, attachments: List<OutgoingAttachment> = emptyList()): Result =
         sendToThread(bridge.threadFor(recipients), text, attachments)
 
     /**
      * Queues [text] and [attachments] for the conversation and returns the key of the message with
-     * the text. Each attachment goes as its own message (what RCS allows); the text rides with the last.
-     * [prepare] runs with that key before the message appears, e.g. to store its translation so it
-     * never shows untranslated.
+     * the text. Each attachment goes as its own message. In an SMS chat the text rides with the last
+     * one as an MMS caption; RCS has no captions (the phone rejects a photo with text), so there the
+     * text follows as a message of its own. [prepare] runs with that key before the message appears,
+     * e.g. to store its translation so it never shows untranslated.
      */
     suspend fun sendToThread(
         threadId: Long,
@@ -68,15 +75,19 @@ class Sender(
                 val size = sizeOf(a)
                 if (size > MAX_ATTACHMENT_BYTES) throw AttachmentTooLargeException(a.name ?: "Attachment", MAX_ATTACHMENT_BYTES)
             }
-            val parts = if (attachments.isEmpty()) listOf(Outgoing(threadId, text, null))
-            else attachments.mapIndexed { i, a -> Outgoing(threadId, if (i == attachments.lastIndex) text else "", a) }
-            var key = ""
-            parts.forEachIndexed { i, p -> key = queue(p, if (i == parts.lastIndex) prepare else null) }
-            Result(threadId, key)
+            val conv = conversation(threadId)
+            val parts = split(text, attachments, captions = conv.type == ConversationType.SMS).map { (t, a) -> Outgoing(threadId, t, a) }
+            val queued = parts.mapIndexed { i, p -> queue(conv, p, if (i == parts.lastIndex) prepare else null) }
+            // One at a time, so they reach the phone, and so the other person, in order.
+            scope.launch { for ((placeholder, p) in queued) deliver(placeholder, p) }
+            Result(threadId, Message.key(queued.last().first.messageID))
         }
 
-    private suspend fun queue(p: Outgoing, prepare: (suspend (key: String) -> Unit)? = null): String {
-        val conv = bridge.conversation(p.threadId) ?: throw GmException("That conversation isn't on your phone anymore")
+    private suspend fun conversation(threadId: Long) =
+        bridge.conversation(threadId) ?: throw GmException("That conversation isn't on your phone anymore")
+
+    /** Shows [p] as a sending placeholder; [deliver] then sends it. */
+    private suspend fun queue(conv: Conversation, p: Outgoing, prepare: (suspend (key: String) -> Unit)? = null): Pair<GmMessage, Outgoing> {
         val tmpId = UUID.randomUUID().toString()
         val placeholderId = GmBridge.PLACEHOLDER + tmpId
         prepare?.invoke(Message.key(placeholderId))
@@ -95,14 +106,13 @@ class Sender(
             .setConversationID(conv.conversationID)
             .setTmpID(tmpId)
             .setParticipantID(conv.defaultOutgoingID)
-            .setTimestamp(System.currentTimeMillis() * 1000)
+            .setTimestamp(placeholderClock.updateAndGet { maxOf(System.currentTimeMillis() * 1000, it + 1) })
             .setMessageStatus(MessageStatus.newBuilder().setStatus(MessageStatusType.OUTGOING_SENDING))
             .addAllMessageInfo(infos)
             .build()
         gmDao.upsertMessages(listOf(GmMapping.messageEntity(placeholder, read = true)))
         outgoing[placeholderId] = p
-        scope.launch { deliver(placeholder, p) }
-        return Message.key(placeholderId)
+        return placeholder to p
     }
 
     private suspend fun deliver(placeholder: GmMessage, p: Outgoing) {
@@ -134,8 +144,10 @@ class Sender(
             }
             if (resp.status != SendMessageResponse.Status.SUCCESS) throw GmException(describe(resp.status))
             // The phone's copy normally arrives within seconds; if it doesn't, go and get it.
-            delay(CONFIRM_TIMEOUT_MS)
-            if (gmDao.message(placeholder.messageID) != null) bridge.refreshThread(p.threadId, force = true)
+            scope.launch {
+                delay(CONFIRM_TIMEOUT_MS)
+                if (gmDao.message(placeholder.messageID) != null) bridge.refreshThread(p.threadId, force = true)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -161,7 +173,9 @@ class Sender(
         val keepTranslation: suspend (String) -> Unit = { key -> dao.copyTranslations(message.key, key) }
         if (pending != null) {
             gmDao.deleteMessage(id)
-            return@withContext Result(message.threadId, queue(pending, keepTranslation))
+            val (placeholder, p) = queue(conversation(pending.threadId), pending, keepTranslation)
+            scope.launch { deliver(placeholder, p) }
+            return@withContext Result(message.threadId, Message.key(placeholder.messageID))
         }
         // Failed on the phone: send its text again and drop the failed copy.
         if (message.body.isBlank()) return@withContext null
@@ -221,10 +235,20 @@ class Sender(
         else -> "Google Messages on your phone rejected the message ($status)"
     }
 
-    private companion object {
-        const val TAG = "Sender"
-        const val MAX_ATTACHMENT_BYTES = 100_000_000
-        val RETRY_DELAYS_MS = listOf(3_000L, 8_000L, 20_000L)
-        const val CONFIRM_TIMEOUT_MS = 45_000L
+    internal companion object {
+        private const val TAG = "Sender"
+        private const val MAX_ATTACHMENT_BYTES = 100_000_000
+        private val RETRY_DELAYS_MS = listOf(3_000L, 8_000L, 20_000L)
+        private const val CONFIRM_TIMEOUT_MS = 45_000L
+
+        /**
+         * The text and attachment of each message [text] and [attachments] go as, in order. With
+         * [captions] (SMS chats) the text rides with the last attachment; otherwise it comes last on its own.
+         */
+        internal fun <A : Any> split(text: String, attachments: List<A>, captions: Boolean): List<Pair<String, A?>> = when {
+            attachments.isEmpty() -> listOf(text to null)
+            captions -> attachments.mapIndexed { i, a -> (if (i == attachments.lastIndex) text else "") to a }
+            else -> attachments.map { "" to it } + listOfNotNull((text to null).takeIf { text.isNotBlank() })
+        }
     }
 }
