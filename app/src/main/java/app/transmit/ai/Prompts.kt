@@ -135,6 +135,7 @@ object Prompts {
         append("The learner's native language is ${native.name}; their ${target.name} level is ${level.promptDescription}. ")
         append("Write your explanation in ${native.name}.\n")
         append("Format with Markdown: a few short sections, bullet points, and **bold** for ${target.name} words and phrases. ")
+        append("Plain Markdown only: no LaTeX or \$...\$ math; write arrows as the → character. ")
         target.readingAid?.let { append("Whenever you cite ${target.name} text, add its $it in parentheses. ") }
         append("Stay under about 180 words unless the message is long. No preamble, no sign-off.")
     }

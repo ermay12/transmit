@@ -60,11 +60,14 @@ class Notifier(
                 NotificationChannelCompat.Builder(CHANNEL_FAILURES, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Failed messages").setDescription("Messages that could not be sent").build(),
                 NotificationChannelCompat.Builder(CHANNEL_CONNECTION, NotificationManagerCompat.IMPORTANCE_MIN)
-                    .setName("Connection").setDescription("Shown while Transmit stays connected to Google Messages").build(),
+                    .setName("Connection").setDescription("Shown while Transmit stays connected to Google Messages")
+                    .setShowBadge(false).build(),
                 NotificationChannelCompat.Builder(CHANNEL_PAIRING, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Pairing").setDescription("When Transmit needs to be paired with Google Messages again").build(),
             ),
         )
+        // A channel's badge setting can't change once created, so the old badging one is replaced.
+        runCatching { nm.deleteNotificationChannel(OLD_CHANNEL_CONNECTION) } // refused while a service still runs on it
     }
 
     private fun canPost() = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -283,7 +286,8 @@ class Notifier(
     companion object {
         const val CHANNEL_MESSAGES = "messages"
         const val CHANNEL_FAILURES = "failures"
-        const val CHANNEL_CONNECTION = "connection"
+        const val CHANNEL_CONNECTION = "connection_quiet"
+        private const val OLD_CHANNEL_CONNECTION = "connection"
         const val CHANNEL_PAIRING = "pairing"
         const val CONNECTION_ID = Int.MAX_VALUE - 1
         const val LOGGED_OUT_ID = Int.MAX_VALUE - 3
