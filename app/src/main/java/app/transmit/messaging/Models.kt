@@ -63,6 +63,8 @@ data class Conversation(
     val snippet: String,
     val snippetKey: String?,
     val snippetOutgoing: Boolean,
+    /** The receipt of the latest message when it is outgoing; null when unknown. */
+    val snippetStatus: DeliveryStatus? = null,
     val date: Long,
     val unread: Boolean,
     val messageCount: Int,

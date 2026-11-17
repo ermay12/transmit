@@ -58,15 +58,21 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
         val latestMsg = latest?.takeIf { it.timestamp >= row.lastMessageAt }?.let { runCatching { GmMessage.parseFrom(it.proto) }.getOrNull() }
         val snippet: String
         val snippetOutgoing: Boolean
+        val snippetStatus: DeliveryStatus?
         val hasMedia: Boolean
         if (latestMsg != null) {
             val media = GmMapping.mediaParts(latestMsg).map { it.mimeType }
             snippet = snippetText(GmMapping.bodyOf(latestMsg), media, GmMapping.isPendingDownload(latestMsg))
             snippetOutgoing = GmMapping.isOutgoing(latestMsg)
+            snippetStatus = GmMapping.deliveryStatus(latestMsg).takeIf { snippetOutgoing }
             hasMedia = media.isNotEmpty()
         } else {
-            snippet = conv.latestMessage.displayContent
-            snippetOutgoing = conv.latestMessage.fromMe == 1L
+            // The latest message isn't cached yet: the conversation's summary of it has its status.
+            val summary = conv.latestMessage
+            snippet = summary.displayContent
+            snippetOutgoing = summary.fromMe == 1L
+            snippetStatus = summary.latestMessageStatus.takeIf { snippetOutgoing && it.statusValue in 1..99 }
+                ?.let { GmMapping.outgoingStatus(it.status) }
             hasMedia = false
         }
         val recipients = GmMapping.recipients(conv)
@@ -76,6 +82,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
             snippet = snippet,
             snippetKey = latestMsg?.let { Message.key(it.messageID) } ?: conv.latestMessageID.takeIf { it.isNotEmpty() }?.let(Message::key),
             snippetOutgoing = snippetOutgoing,
+            snippetStatus = snippetStatus,
             date = maxOf(row.lastMessageAt, latest?.timestamp ?: 0),
             unread = row.unread,
             messageCount = 0,

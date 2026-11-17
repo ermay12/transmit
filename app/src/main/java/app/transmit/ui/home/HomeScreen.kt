@@ -95,6 +95,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
 import app.transmit.gm.BridgeState
 import app.transmit.ui.pairing.BridgeBanner
@@ -492,7 +493,12 @@ private fun ConversationRow(item: ConversationUi, selected: Boolean, onClick: ()
                         Text(item.draft, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     }
                     else -> {
-                        if (item.conversation.snippetOutgoing) Icon(Icons.AutoMirrored.Filled.Reply, "You", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
+                        if (item.conversation.snippetOutgoing) {
+                            // Like Google Messages: your latest message shows its receipt.
+                            val status = item.conversation.snippetStatus
+                            if (status != null) ReceiptIcon(status, size = 14.dp, tint = tint)
+                            else Icon(Icons.AutoMirrored.Filled.Reply, "You", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
+                        }
                         if (item.snippetTranslated) Icon(Icons.Default.Translate, "Translated", Modifier.size(12.dp), tint = MaterialTheme.colorScheme.outline)
                         Text(
                             item.snippet.replace('\n', ' '), maxLines = 1, overflow = TextOverflow.Ellipsis, color = tint,

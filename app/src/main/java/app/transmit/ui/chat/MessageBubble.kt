@@ -32,12 +32,9 @@ import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -90,6 +87,7 @@ import app.transmit.messaging.Attachment
 import app.transmit.messaging.DeliveryStatus
 import app.transmit.messaging.Reactions
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
 import coil3.compose.AsyncImage
 import kotlin.math.abs
@@ -194,21 +192,10 @@ fun MessageBubble(
                 Text(Times.time(context, m.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (out) {
                     Spacer(Modifier.width(3.dp))
-                    StatusIcon(m.status)
+                    ReceiptIcon(m.status, size = 13.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StatusIcon(status: DeliveryStatus) {
-    val tint = MaterialTheme.colorScheme.onSurfaceVariant
-    when (status) {
-        DeliveryStatus.SENDING -> Icon(Icons.Default.Schedule, "Sending", Modifier.size(12.dp), tint = tint)
-        DeliveryStatus.SENT -> Icon(Icons.Default.Done, "Sent", Modifier.size(13.dp), tint = tint)
-        DeliveryStatus.DELIVERED -> Icon(Icons.Default.DoneAll, "Delivered", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
-        else -> Unit
     }
 }
 

@@ -66,17 +66,17 @@ object GmMapping {
         MessageStatusType.MESSAGE_DELETED, MessageStatusType.INCOMING_DELETED, MessageStatusType.OUTGOING_DELETED,
     )
 
-    fun deliveryStatus(msg: GmMessage): DeliveryStatus {
-        val status = msg.messageStatus.status
-        return when {
-            !isOutgoing(msg) -> DeliveryStatus.RECEIVED
-            status == MessageStatusType.OUTGOING_DISPLAYED -> DeliveryStatus.READ
-            status == MessageStatusType.OUTGOING_DELIVERED -> DeliveryStatus.DELIVERED
-            status == MessageStatusType.OUTGOING_COMPLETE || status == MessageStatusType.OUTGOING_NOT_DELIVERED_YET -> DeliveryStatus.SENT
-            status.name.startsWith("OUTGOING_FAILED") || status == MessageStatusType.OUTGOING_CANCELED ||
-                status == MessageStatusType.OUTGOING_RESTRICTED -> DeliveryStatus.FAILED
-            else -> DeliveryStatus.SENDING
-        }
+    fun deliveryStatus(msg: GmMessage): DeliveryStatus =
+        if (isOutgoing(msg)) outgoingStatus(msg.messageStatus.status) else DeliveryStatus.RECEIVED
+
+    /** The receipt for an outgoing message the phone gives [status]. */
+    fun outgoingStatus(status: MessageStatusType): DeliveryStatus = when {
+        status == MessageStatusType.OUTGOING_DISPLAYED -> DeliveryStatus.READ
+        status == MessageStatusType.OUTGOING_DELIVERED -> DeliveryStatus.DELIVERED
+        status == MessageStatusType.OUTGOING_COMPLETE || status == MessageStatusType.OUTGOING_NOT_DELIVERED_YET -> DeliveryStatus.SENT
+        status.name.startsWith("OUTGOING_FAILED") || status == MessageStatusType.OUTGOING_CANCELED ||
+            status == MessageStatusType.OUTGOING_RESTRICTED -> DeliveryStatus.FAILED
+        else -> DeliveryStatus.SENDING
     }
 
     /** Participant ids that are this phone's own SIMs. */
