@@ -10,6 +10,8 @@ import app.transmit.gm.proto.LongPollingPayload
 import app.transmit.gm.proto.MessageStatus
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.OutgoingRPCMessage
+import app.transmit.gm.proto.Participant
+import app.transmit.gm.proto.SmallInfo
 import app.transmit.gm.proto.SomeKindOfGroupID
 import app.transmit.gm.proto.EcP256PublicKey
 import app.transmit.gm.proto.GaiaPairingResponseContainer
@@ -166,6 +168,29 @@ class GmProtocolTest {
     fun missingIdsAreFilledFromAlternateFields() {
         val conv = Conversation.newBuilder().setSomeKindOfGroupID(SomeKindOfGroupID.newBuilder().setConversationID("9")).build()
         assertEquals("9", GmClient.withIds(conv).conversationID)
+    }
+
+    @Test
+    fun namesComeFromParticipantsOrTheOneToOneConversation() {
+        fun person(number: String, fullName: String = "", me: Boolean = false) = Participant.newBuilder()
+            .setID(SmallInfo.newBuilder().setNumber(number)).setFullName(fullName).setIsMe(me).setIsVisible(true)
+        fun conv(name: String, group: Boolean, vararg people: Participant.Builder) = Conversation.newBuilder()
+            .setName(name).setIsGroupChat(group).addParticipants(person("+15550000000", me = true))
+            .apply { people.forEach { addParticipants(it) } }.build()
+
+        // A business chat names only the conversation.
+        val rbm = "ramp_cf8gd1ek_agent@rbm.goog"
+        assertEquals(listOf(rbm to "Ramp"), GmMapping.names(conv("Ramp", false, person(rbm))))
+        // A participant's own name wins.
+        assertEquals(listOf("+15551234567" to "Ana"), GmMapping.names(conv("Ana B", false, person("+15551234567", "Ana"))))
+        // A stranger's chat is named after their number, and an id after itself: no name.
+        assertEquals(emptyList<Pair<String, String>>(), GmMapping.names(conv("(555) 123-4567", false, person("+15551234567"))))
+        assertEquals(emptyList<Pair<String, String>>(), GmMapping.names(conv(rbm, false, person(rbm, rbm))))
+        // A group's name belongs to the group, not to anyone in it.
+        assertEquals(
+            listOf("+15551234567" to "Ana"),
+            GmMapping.names(conv("Friends", true, person("+15551234567", "Ana"), person("+15557654321"))),
+        )
     }
 
     @Test

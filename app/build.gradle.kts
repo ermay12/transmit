@@ -15,8 +15,8 @@ android {
         applicationId = "app.transmit.bridge"
         minSdk = 31
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.2.4-bridge"
+        versionCode = 9
+        versionName = "0.2.8-bridge"
     }
 
     buildTypes {

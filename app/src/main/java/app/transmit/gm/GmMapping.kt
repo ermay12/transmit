@@ -9,6 +9,7 @@ import app.transmit.gm.proto.MediaContent
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.Participant
 import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.PhoneNumbers
 import app.transmit.gm.proto.Message as GmMessage
 
 /** Conversions between the phone's protocol messages and Transmit's cache rows. */
@@ -94,6 +95,25 @@ object GmMapping {
 
     fun address(p: Participant): String =
         p.id.number.ifEmpty { p.formattedNumber }.ifEmpty { p.id.participantID }
+
+    /**
+     * Names Google Messages shows for the other people in [conv], by address, for addresses not in
+     * the address book: each participant's own name, and for a one-to-one chat the conversation's
+     * name. Business (RBM) chats such as "Ramp" arrive named only on the conversation.
+     */
+    fun names(conv: Conversation): List<Pair<String, String>> {
+        val named = conv.participantsList.filter { !it.isMe }.mapNotNull { p ->
+            val address = address(p)
+            p.fullName.ifBlank { p.firstName }.takeIf { isName(it, address) }?.let { address to it.trim() }
+        }
+        val single = recipients(conv).singleOrNull()
+        if (single == null || conv.isGroupChat || named.any { it.first == single } || !isName(conv.name, single)) return named
+        return named + (single to conv.name.trim())
+    }
+
+    /** Whether [name] says more than [address] does: a stranger's chat is named after their number. */
+    private fun isName(name: String, address: String) =
+        name.isNotBlank() && !name.trim().equals(address, ignoreCase = true) && !PhoneNumbers.same(name, address)
 
     fun participant(conv: Conversation?, participantId: String): Participant? =
         conv?.participantsList?.firstOrNull { it.id.participantID == participantId }

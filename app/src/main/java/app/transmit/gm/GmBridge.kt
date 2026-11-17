@@ -106,6 +106,11 @@ class GmBridge(
                 }
             }
         }
+        // Names from the cache, so chats are titled right before the phone answers.
+        scope.launch(Dispatchers.IO) {
+            val cached = gmDao.conversations().mapNotNull { runCatching { Conversation.parseFrom(it.proto) }.getOrNull() }
+            contacts.addNames(cached.flatMap(GmMapping::names))
+        }
     }
 
     // ---- lifecycle -------------------------------------------------------------------------------
@@ -327,7 +332,7 @@ class GmBridge(
         val stale = received.filter { GmMapping.isStaleUnread(it, readUpTo[GmMapping.threadId(it.conversationID)]) }.mapTo(HashSet()) { it.conversationID }
         val list = received.map { if (it.conversationID in stale) it.toBuilder().setUnread(false).build() else it }
         gmDao.upsertConversations(list.map(GmMapping::conversationEntity))
-        contacts.addNames(list.flatMap { conv -> conv.participantsList.filter { !it.isMe && it.fullName.isNotEmpty() }.map { GmMapping.address(it) to it.fullName } })
+        contacts.addNames(list.flatMap(GmMapping::names))
         for (id in stale) {
             val threadId = GmMapping.threadId(id)
             if (System.currentTimeMillis() - (phoneToldReadAt[threadId] ?: 0L) < PHONE_READ_RETRY_MS) continue
