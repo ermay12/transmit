@@ -1,10 +1,10 @@
 # Transmit
 
-An Android texting app for language learners. Transmit replaces your SMS/MMS app: messages from friends arrive translated into the language you're practicing, and you can reply in that language while friends receive your native language. Translation and tutoring use your own AI API key.
+An Android texting app for language learners. Transmit links to Google Messages on your phone, like Messages for Web: messages from friends arrive translated into the language you're practicing, and you can reply in that language while friends receive your native language. Translation and tutoring use your own AI API key.
 
 ## Features
 
-- **Full SMS/MMS app:** conversations, group chats, photos and media, reactions, delivery reports, notifications, search, pin, mute, and swipe to archive.
+- **Your Google Messages chats:** SMS, MMS and RCS conversations, including RCS groups and business chats, with photos and media, native reactions, read receipts, notifications, search, pin, mute, and swipe to archive. Google Messages stays your phone's SMS app.
 - **Translated inbox:** incoming messages are translated in the background as they arrive. Until the translation is ready, the text is hidden, so you don't read it in your native language first. Tap any bubble to switch between the original and the translation.
 - **Write in either language:**
   - Write in your practice language: Transmit prepares the native-language version your friend receives.
@@ -18,18 +18,20 @@ An Android texting app for language learners. Transmit replaces your SMS/MMS app
 - **Smart links:** addresses open in Google Maps; dates and times ("Friday at 7", "Nov 28 from 6-9pm", "mañana a las 3", "金曜日の夜7時") open a prefilled calendar event with the message as its title and any address in the message as its location; phone numbers and email addresses are tappable too. These are found on the device, in both the original and the translation, after the message appears, so they never delay it.
 - **AI providers:** Anthropic, OpenAI, Google Gemini, OpenRouter, or any OpenAI-compatible endpoint. Translation and tutoring can each use their own model. API keys are encrypted with an Android Keystore key and never leave the device except in requests to your provider.
 
-Transmit is SMS/MMS only, not RCS. Before switching, turn off chat features (RCS) in your current messaging app so that friends' messages arrive as SMS.
+Transmit uses the same unofficial protocol as Messages for Web (a Kotlin port of [mautrix-gmessages](https://github.com/mautrix/gmessages)' libgm), so Google can change it at any time. Google Messages allows one web session at a time: pairing Transmit signs out Messages for Web elsewhere, and the reverse.
 
 ## Build and install
 
-Requirements: JDK 17 and the Android SDK (compile SDK 36). The app runs on Android 12 (API 31) or later.
+Every push to `main` builds a signed release APK with GitHub Actions and publishes it on the repository's Releases page.
+
+To build locally you need JDK 17 or later and the Android SDK (compile SDK 36). The app runs on Android 12 (API 31) or later.
 
 ```sh
 ./gradlew :app:assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Release builds are signed with the debug key, so they install directly for personal use. On first launch, onboarding asks for your languages and level, makes Transmit the default SMS app, and connects an AI provider. You can skip the AI step and add a key later in Settings.
+Release builds are signed with the debug key, so they install directly for personal use. GitHub Actions signs with the same key (the `DEBUG_KEYSTORE_BASE64` secret), so its APKs and local builds install over each other. The version code is the number of commits, so each newer build installs as an update. On first launch, onboarding asks for your languages and level, pairs with Google Messages (by signing in with the phone's Google account, or by QR code), and connects an AI provider. You can skip the AI step and add a key later in Settings.
 
 Unit tests:
 
@@ -41,12 +43,13 @@ Unit tests:
 
 ```
 app/src/main/java/app/transmit/
-  telephony/   SMS/MMS provider access, sending, MMS download, PDU encoding (pdu/)
+  gm/          Google Messages protocol: pairing, encryption, long polling, sync, media, the bridge service
+  messaging/   conversations and messages read from the cache, sending, reactions
   ai/          provider clients, prompts, translation manager, tutor, budgets, pricing
   data/        Room database, settings (DataStore), contacts, encrypted key store
   notify/      incoming-message worker (background translation) and notifications
   smart/       on-device detection of verification codes, dates, addresses, phones and emails
-  ui/          Jetpack Compose screens: home, chat, new chat, settings, onboarding
+  ui/          Jetpack Compose screens: home, chat, new chat, pairing, settings, onboarding
 ```
 
-The platform's SMS/MMS store is the source of truth for messages. Transmit's own Room database (schemas in `app/schemas/`) holds only translations, drafts, per-chat settings and the usage ledger. Dependencies are wired by hand in `AppContainer`.
+Google Messages on the phone is the source of truth for messages. Transmit's Room database (schemas in `app/schemas/`) caches its conversations and messages (`gm_*` tables) and holds translations, drafts, per-chat settings and the usage ledger. Dependencies are wired by hand in `AppContainer`.

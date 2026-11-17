@@ -6,17 +6,22 @@ plugins {
     alias(libs.plugins.protobuf)
 }
 
+/** Commits up to HEAD; 1 outside a git checkout. GitHub Actions needs a full clone (fetch-depth: 0) for this. */
+val commitCount: Int = runCatching {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1)
+
 android {
     namespace = "app.transmit"
     compileSdk = 36
 
     defaultConfig {
-        // The Google Messages bridge installs as its own app beside the SMS build of Transmit.
-        applicationId = "app.transmit.bridge"
+        applicationId = "app.transmit"
         minSdk = 31
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.2.8-bridge"
+        // Counts up with every commit, so each build installs over the last, whether built locally or by GitHub Actions.
+        versionCode = commitCount
+        versionName = "0.3.0"
     }
 
     buildTypes {
