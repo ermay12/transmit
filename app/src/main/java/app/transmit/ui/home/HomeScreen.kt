@@ -456,7 +456,7 @@ private fun ConversationRow(item: ConversationUi, selected: Boolean, onClick: ()
         Box {
             val first = item.people.firstOrNull()
             Avatar(
-                name = item.title, seed = first?.address ?: item.title, photo = if (item.people.size == 1) first?.photoUri else null,
+                name = item.title, seed = first?.address ?: item.title, photo = if (item.people.size == 1) first?.photoUri else item.conversation.groupPhoto,
                 size = 44.dp, group = item.people.size > 1,
             )
             if (selected) {

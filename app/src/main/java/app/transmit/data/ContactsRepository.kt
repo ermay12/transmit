@@ -52,6 +52,21 @@ class ContactsRepository(private val context: Context) {
     /** Names Google Messages knows for numbers that aren't in this phone's address book. */
     private val fallbackNames = ConcurrentHashMap<String, String>()
 
+    /** Photos Google Messages has for people, used when the address book has none. */
+    val profilePhotos = ProfilePhotos(context)
+
+    /** Stores the phone's photos for these addresses; ones without a contact photo pick them up. */
+    fun addPhotos(photos: List<Pair<String, ByteArray>>) {
+        var changed = false
+        for ((address, bytes) in photos) {
+            val key = PhoneNumbers.matchKey(address)
+            if (key.isBlank() || bytes.isEmpty() || !profilePhotos.save(key, bytes)) continue
+            if (cache[key]?.let { it.photoUri == null || it.photoUri.scheme == "file" } == true) cache.remove(key)
+            changed = true
+        }
+        if (changed) _version.value++
+    }
+
     fun addNames(names: List<Pair<String, String>>) {
         var changed = false
         for ((address, name) in names) {
@@ -107,7 +122,7 @@ class ContactsRepository(private val context: Context) {
                 }
             }.getOrNull() ?: ContactInfo(address, null, null, null)
         }
-        val info = if (found.name == null) found.copy(name = fallbackNames[key]) else found
+        val info = found.copy(name = found.name ?: fallbackNames[key], photoUri = found.photoUri ?: profilePhotos.photo(key))
         cache[key] = info
         return info
     }
@@ -142,7 +157,8 @@ class ContactsRepository(private val context: Context) {
         for (a in todo) {
             val match = index[a.filter { it.isDigit() }.takeLast(7)]?.firstOrNull { PhoneNumberUtils.compare(it.number, a) }
             val key = PhoneNumbers.matchKey(a)
-            cache[key] = match?.info?.copy(address = a) ?: ContactInfo(a, fallbackNames[key], null, null)
+            val info = match?.info?.copy(address = a) ?: ContactInfo(a, fallbackNames[key], null, null)
+            cache[key] = if (info.photoUri == null) info.copy(photoUri = profilePhotos.photo(key)) else info
         }
     }
 

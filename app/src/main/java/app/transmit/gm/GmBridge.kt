@@ -333,6 +333,7 @@ class GmBridge(
         val list = received.map { if (it.conversationID in stale) it.toBuilder().setUnread(false).build() else it }
         gmDao.upsertConversations(list.map(GmMapping::conversationEntity))
         contacts.addNames(list.flatMap(GmMapping::names))
+        scope.launch { fetchPhotos(list) }
         for (id in stale) {
             val threadId = GmMapping.threadId(id)
             if (System.currentTimeMillis() - (phoneToldReadAt[threadId] ?: 0L) < PHONE_READ_RETRY_MS) continue
@@ -629,6 +630,32 @@ class GmBridge(
             ?.takeIf { it.simData.hasSIMPayload() }?.simData?.simPayload
     }
 
+    /** When each participant's photo was last asked for, so conversation updates don't ask again. */
+    private val photosAskedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val photoLock = Mutex()
+
+    /** Asks the phone for the profile photos of the people in [convs] (RCS pictures, business logos). */
+    private suspend fun fetchPhotos(convs: List<Conversation>) = photoLock.withLock {
+        val now = System.currentTimeMillis()
+        val due = convs.flatMap { it.participantsList }
+            .filter { !it.isMe && it.id.participantID.isNotEmpty() && GmMapping.address(it).isNotEmpty() }
+            .associate { it.id.participantID to GmMapping.address(it) }
+            .filterKeys { now - (photosAskedAt[it] ?: 0L) > PHOTO_REFRESH_MS }
+        for (batch in due.keys.chunked(PHOTO_BATCH)) {
+            val c = client ?: return@withLock
+            val photos = try {
+                c.participantThumbnails(batch)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Profile photos unavailable", e)
+                return@withLock
+            }
+            batch.forEach { photosAskedAt[it] = now }
+            withContext(Dispatchers.IO) { contacts.addPhotos(photos.mapNotNull { (id, bytes) -> due[id]?.let { it to bytes } }) }
+        }
+    }
+
     fun cachedMediaFile(mediaId: String) = File(mediaDir, mediaId.replace(Regex("[^\\w.-]"), "_"))
 
     companion object {
@@ -642,6 +669,8 @@ class GmBridge(
         private const val PAGE = 50
         private const val PLACEHOLDER_TRANSLATION_GRACE_MS = 30_000L
         private const val PHONE_READ_RETRY_MS = 60_000L
+        private const val PHOTO_BATCH = 20
+        private const val PHOTO_REFRESH_MS = 6 * 60 * 60_000L
         /** Message ids of sent messages the phone hasn't confirmed yet. */
         const val PLACEHOLDER = "tmp_"
     }

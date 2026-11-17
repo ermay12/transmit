@@ -93,6 +93,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     val sheet by vm.sheet.collectAsStateWithLifecycle()
     val people by vm.people.collectAsStateWithLifecycle()
     val recipients by vm.recipients.collectAsStateWithLifecycle()
+    val groupPhoto by vm.groupPhoto.collectAsStateWithLifecycle()
     val budgetPrompt by vm.budgetPrompt.collectAsStateWithLifecycle()
     val banner by vm.banner.collectAsStateWithLifecycle()
     val downloading by vm.downloading.collectAsStateWithLifecycle()
@@ -130,6 +131,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
         topBar = {
             ChatTopBar(
                 people = recipients.map { people[it] ?: ContactInfo(it, null, null, null) },
+                groupPhoto = groupPhoto,
                 customName = chat?.overrides?.name,
                 autoTranslate = chat?.autoTranslate == true,
                 flag = target?.flag ?: "🌐",
@@ -319,6 +321,7 @@ private fun openLink(context: Context, link: SmartEntity, all: List<SmartEntity>
 @Composable
 private fun ChatTopBar(
     people: List<ContactInfo>,
+    groupPhoto: android.net.Uri?,
     customName: String?,
     autoTranslate: Boolean,
     flag: String,
@@ -347,7 +350,7 @@ private fun ChatTopBar(
                 Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onInfo).padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Avatar(title, first?.address ?: title, if (people.size == 1) first?.photoUri else null, size = 36.dp, group = people.size > 1)
+                Avatar(title, first?.address ?: title, if (people.size == 1) first?.photoUri else groupPhoto, size = 36.dp, group = people.size > 1)
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)

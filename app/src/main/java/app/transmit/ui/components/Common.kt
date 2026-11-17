@@ -15,6 +15,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,10 +37,15 @@ import java.util.Calendar
 @Composable
 fun Avatar(name: String, seed: String, photo: Uri?, size: Dp = 40.dp, group: Boolean = false, modifier: Modifier = Modifier) {
     val color = Color(Avatars.colorFor(seed))
+    // A photo that won't load (a group picture offline, a deleted file) falls back to the drawn avatar.
+    var failed by remember(photo) { mutableStateOf(false) }
     Box(modifier.size(size).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
         when {
+            photo != null && !failed -> AsyncImage(
+                model = photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size),
+                onError = { failed = true },
+            )
             group -> Icon(Icons.Default.Group, null, tint = Color.White, modifier = Modifier.size(size * 0.55f))
-            photo != null -> AsyncImage(model = photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
             else -> Text(
                 name.firstOrNull { it.isLetter() }?.uppercase() ?: "#",
                 color = Color.White,

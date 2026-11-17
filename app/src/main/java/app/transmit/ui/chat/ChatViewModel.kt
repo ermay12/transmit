@@ -176,6 +176,7 @@ class ChatViewModel(
     initialAttachments: List<OutgoingAttachment>,
 ) : ViewModel() {
     val recipients = MutableStateFlow<List<String>>(emptyList())
+    val groupPhoto = MutableStateFlow<android.net.Uri?>(null)
     val people = MutableStateFlow<Map<String, ContactInfo>>(emptyMap())
     private val raw = MutableStateFlow<List<Message>>(emptyList())
     val loaded = MutableStateFlow(false)
@@ -337,6 +338,7 @@ class ChatViewModel(
     private suspend fun refreshPeople() {
         val addresses = (recipients.value + raw.value.mapNotNull { it.sender }).distinct()
         if (addresses.isNotEmpty()) people.value = c.contacts.lookupAll(addresses)
+        groupPhoto.value = c.messaging.groupPhotoForThread(threadId)
     }
 
     private fun autoTranslate() {

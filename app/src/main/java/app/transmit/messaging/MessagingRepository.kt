@@ -83,6 +83,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
             groupName = conv.name.takeIf { recipients.size > 1 && it.isNotBlank() },
             rcs = conv.type == ConversationType.RCS,
             archivedOnPhone = conv.status == ConversationStatus.ARCHIVED || conv.status == ConversationStatus.KEEP_ARCHIVED,
+            groupPhoto = groupPhoto(conv, recipients),
         )
     }
 
@@ -94,6 +95,13 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
         media.isNotEmpty() -> "📎"
         pending -> "⬇"
         else -> ""
+    }
+
+    private fun groupPhoto(conv: GmConversation, recipients: List<String>): Uri? =
+        conv.groupAvatarURL.takeIf { recipients.size > 1 && it.startsWith("https://") }?.let(Uri::parse)
+
+    suspend fun groupPhotoForThread(threadId: Long): Uri? = withContext(Dispatchers.IO) {
+        bridge.conversation(threadId)?.let { groupPhoto(it, GmMapping.recipients(it)) }
     }
 
     suspend fun recipientsForThread(threadId: Long): List<String> = withContext(Dispatchers.IO) {

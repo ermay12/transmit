@@ -29,6 +29,7 @@ import app.transmit.gm.proto.GetConversationRequest
 import app.transmit.gm.proto.GetConversationResponse
 import app.transmit.gm.proto.GetOrCreateConversationRequest
 import app.transmit.gm.proto.GetOrCreateConversationResponse
+import app.transmit.gm.proto.GetThumbnailRequest
 import app.transmit.gm.proto.GetThumbnailResponse
 import app.transmit.gm.proto.IncomingRPCMessage
 import app.transmit.gm.proto.IsBugleDefaultResponse
@@ -1032,6 +1033,13 @@ class GmClient(
             .build()
         request(ActionType.UPDATE_CONVERSATION, req, userInitiated = true)
     }
+
+    /** The phone's profile photos for these participants, by participant id; ones without a photo are left out. */
+    suspend fun participantThumbnails(participantIds: List<String>): Map<String, ByteArray> =
+        request(ActionType.GET_PARTICIPANTS_THUMBNAIL, GetThumbnailRequest.newBuilder().addAllIdentifiers(participantIds).build())
+            .typed<GetThumbnailResponse>().thumbnailList
+            .filter { it.identifier.isNotEmpty() && !it.data.imageBuffer.isEmpty }
+            .associate { it.identifier to it.data.imageBuffer.toByteArray() }
 
     suspend fun isBugleDefault(): Boolean = request(ActionType.IS_BUGLE_DEFAULT, null).typed<IsBugleDefaultResponse>().success
 

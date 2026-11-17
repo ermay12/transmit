@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.video.VideoFrameDecoder
 import app.transmit.ai.AiService
 import app.transmit.ai.BudgetManager
@@ -81,7 +82,11 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
         get() = Configuration.Builder().build()
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
-        ImageLoader.Builder(context).components { add(VideoFrameDecoder.Factory()) }.build()
+        ImageLoader.Builder(context).components {
+            add(VideoFrameDecoder.Factory())
+            // Group pictures load from the web; registered here rather than trusting service discovery after R8.
+            add(OkHttpNetworkFetcherFactory())
+        }.build()
 }
 
 val Context.app: TransmitApp get() = applicationContext as TransmitApp

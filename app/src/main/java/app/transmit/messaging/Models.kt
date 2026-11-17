@@ -72,6 +72,8 @@ data class Conversation(
     val rcs: Boolean = false,
     /** Archived in Google Messages on the phone. */
     val archivedOnPhone: Boolean = false,
+    /** The group's picture in Google Messages (RCS groups); null for one-to-one chats. */
+    val groupPhoto: Uri? = null,
 ) {
     val isGroup get() = recipients.size > 1
 }
