@@ -24,6 +24,13 @@ android {
         versionName = "0.3.0"
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // GitHub Actions points this at the same keystore as local builds, which use ~/.android/debug.keystore.
+            providers.environmentVariable("TRANSMIT_KEYSTORE").orNull?.let { storeFile = file(it) }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

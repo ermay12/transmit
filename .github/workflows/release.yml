@@ -32,7 +32,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       # Release builds are signed with the debug key. Using the same key as local builds lets
-      # these APKs install over them, and the reverse.
+      # these APKs install over them, and the reverse. app/build.gradle.kts reads TRANSMIT_KEYSTORE.
       - name: Install signing key
         env:
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
@@ -41,14 +41,31 @@ jobs:
             echo "::error::Missing the DEBUG_KEYSTORE_BASE64 secret (base64 of ~/.android/debug.keystore)."
             exit 1
           fi
-          mkdir -p ~/.android
-          echo "$DEBUG_KEYSTORE_BASE64" | base64 --decode > ~/.android/debug.keystore
+          keystore="$RUNNER_TEMP/debug.keystore"
+          echo "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          fingerprint=$(keytool -list -v -keystore "$keystore" -storepass android -alias androiddebugkey \
+            | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "Signing key SHA-256: $fingerprint"
+          echo "TRANSMIT_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+          echo "KEY_SHA256=$fingerprint" >> "$GITHUB_ENV"
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease
+
+      # An APK signed with any other key won't install over the app on the phone.
+      - name: Check signature
+        run: |
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+          signer=$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [ -z "$KEY_SHA256" ] || [ "$signer" != "$KEY_SHA256" ]; then
+            echo "::error::The APK is signed with $signer, not the shared key $KEY_SHA256."
+            exit 1
+          fi
+          echo "Signed with the shared key."
 
       - name: Publish release
         env:
