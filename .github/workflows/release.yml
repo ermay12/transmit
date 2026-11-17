@@ -59,10 +59,12 @@ jobs:
       - name: Check signature
         run: |
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
-          signer=$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
-          if [ -z "$KEY_SHA256" ] || [ "$signer" != "$KEY_SHA256" ]; then
-            echo "::error::The APK is signed with $signer, not the shared key $KEY_SHA256."
+          certs=$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk)
+          echo "$certs"
+          # Signer lines read "Signer #1 …" or "Signer (minSdkVersion=…) …", depending on the apksigner version.
+          signers=$(echo "$certs" | sed -n 's/^Signer.* certificate SHA-256 digest: //p' | sort -u)
+          if [ -z "$KEY_SHA256" ] || [ "$signers" != "$KEY_SHA256" ]; then
+            echo "::error::The APK is signed with '${signers//$'\n'/, }', not the shared key $KEY_SHA256."
             exit 1
           fi
           echo "Signed with the shared key."
