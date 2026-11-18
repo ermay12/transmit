@@ -48,6 +48,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val query = MutableStateFlow("")
     private val conversations = MutableStateFlow<List<Conversation>?>(null)
     val bridge = c.bridge.state
+    /** False until the phone's conversation list has arrived, so an empty list isn't mistaken for no chats. */
+    val synced = c.bridge.synced
     val canRead = MutableStateFlow(c.messaging.canRead())
     val selection = MutableStateFlow<Set<Long>>(emptySet())
     val showArchived = MutableStateFlow(false)

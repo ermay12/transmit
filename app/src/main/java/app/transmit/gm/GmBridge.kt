@@ -94,6 +94,13 @@ class GmBridge(
 
     val isPaired get() = secrets.has(AUTH_KEY)
 
+    /**
+     * False until the phone's conversation list first arrives in this process. Until then an empty
+     * cache means "still loading", not "no conversations": right after pairing that can take a while.
+     */
+    private val _synced = MutableStateFlow(false)
+    val synced: StateFlow<Boolean> = _synced
+
     init {
         scope.launch {
             for (e in events) {
@@ -246,6 +253,7 @@ class GmBridge(
 
     private suspend fun forget() {
         secrets.put(AUTH_KEY, null)
+        _synced.value = false
         gmDao.clearMessages()
         gmDao.clearConversations()
         fetchedLatest.clear()
@@ -295,6 +303,7 @@ class GmBridge(
                 pairingJob?.cancel()
                 client?.let { saveAuth(it.auth) }
                 // A different phone means different conversations.
+                _synced.value = false
                 gmDao.clearMessages()
                 gmDao.clearConversations()
                 _state.value = BridgeState.Connecting
@@ -433,6 +442,7 @@ class GmBridge(
         try {
             val inbox = c.listConversations(INITIAL_CONVERSATIONS)
             saveConversations(inbox.conversationsList)
+            _synced.value = true
             runCatching { c.listConversations(ARCHIVED_CONVERSATIONS, ListConversationsRequest.Folder.ARCHIVE) }
                 .onSuccess { saveConversations(it.conversationsList) }
             // Recent conversations get their latest messages ahead of time so they open instantly.

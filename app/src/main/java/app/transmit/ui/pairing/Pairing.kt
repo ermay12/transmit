@@ -64,6 +64,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.gm.BridgeState
 import app.transmit.gm.GmBridge
+import app.transmit.ui.components.StatusBanner
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -328,21 +329,5 @@ fun BridgeBanner(state: BridgeState, onPair: () -> Unit, onUseHere: () -> Unit, 
         }
         BridgeState.Connecting, is BridgeState.Pairing -> null
     } ?: return
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(content.icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(content.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                content.body?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer) }
-            }
-            if (content.action != null && content.onAction != null) {
-                FilledTonalButton(onClick = content.onAction) { Text(content.action) }
-            }
-        }
-    }
+    StatusBanner(content.icon, content.title, content.body, content.action, content.onAction, modifier)
 }

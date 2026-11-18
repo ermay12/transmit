@@ -85,18 +85,22 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
+import app.transmit.ui.Permissions
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.StatusBanner
 import app.transmit.ui.components.awaitSideways
 import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
 import app.transmit.gm.BridgeState
 import app.transmit.ui.pairing.BridgeBanner
+import app.transmit.ui.rememberTurnOnMessageAlerts
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -124,6 +128,13 @@ fun HomeScreen(
     val showArchived by vm.showArchived.collectAsStateWithLifecycle()
     val archivedCount by vm.archivedCount.collectAsStateWithLifecycle()
     val complete by vm.complete.collectAsStateWithLifecycle()
+    val synced by vm.synced.collectAsStateWithLifecycle()
+    // Paired, but the phone hasn't sent its conversations yet: right after pairing this takes a while.
+    val syncing = !synced && (bridge is BridgeState.Connecting || bridge is BridgeState.Connected)
+    val context = LocalContext.current
+    // Notifications can be switched off in Android's settings at any time, so this is checked on every return.
+    var alertsOn by remember { mutableStateOf(Permissions.messageAlertsOn(context)) }
+    val turnOnAlerts = rememberTurnOnMessageAlerts { alertsOn = Permissions.messageAlertsOn(context) }
     val listState = rememberLazyListState()
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     // The list keeps its first row in place when rows appear above it (a conversation with a new
@@ -139,6 +150,7 @@ fun HomeScreen(
 
     LifecycleResumeEffect(Unit) {
         vm.refresh()
+        alertsOn = Permissions.messageAlertsOn(context)
         onPauseOrDispose { }
     }
     BackHandler(enabled = selection.isNotEmpty()) { vm.clearSelection() }
@@ -194,6 +206,12 @@ fun HomeScreen(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showArchived) {
                 item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
+                // Until paired there's nothing to be alerted to; pairing comes first.
+                if (paired && !alertsOn) {
+                    item("alerts-banner") {
+                        StatusBanner(Icons.Default.NotificationsOff, "Notifications are off", "You won't be alerted to new messages", "Turn on", turnOnAlerts)
+                    }
+                }
             }
             if (archivedRow) {
                 item("archived") { ArchivedRow(archivedCount, onClick = { vm.clearSelection(); vm.showArchived.value = true }) }
@@ -202,6 +220,7 @@ fun HomeScreen(
                 list == null && canRead -> item("loading") {
                     Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 }
+                list.isNullOrEmpty() && complete && syncing && query.isBlank() -> item("syncing") { SyncingState() }
                 list.isNullOrEmpty() && complete -> item("empty") { EmptyState(query.isNotBlank(), showArchived) }
                 list != null -> items(list, key = { it.threadId }) { item ->
                     // Search results stay listed after a change, so they don't swipe.
@@ -393,6 +412,21 @@ private fun SelectionBar(
             if (archived) Icon(Icons.Outlined.Unarchive, "Move to inbox") else Icon(Icons.Outlined.Archive, "Archive")
         }
         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") }
+    }
+}
+
+/** Shown instead of "No conversations yet" while the phone is still sending them, so it doesn't look broken. */
+@Composable
+private fun SyncingState() {
+    Column(Modifier.fillMaxWidth().padding(top = 96.dp, start = 32.dp, end = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator()
+        Spacer(Modifier.height(20.dp))
+        Text("Syncing your chats", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Google Messages on your phone is sending your conversations. This can take a minute.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+        )
     }
 }
 

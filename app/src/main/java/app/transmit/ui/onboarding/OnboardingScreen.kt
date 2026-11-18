@@ -58,7 +58,6 @@ import app.transmit.ui.settings.KeyDialog
 import app.transmit.ui.settings.LevelSelector
 import app.transmit.ui.settings.ProviderChips
 import app.transmit.ui.settings.SettingsViewModel
-import android.Manifest
 
 @Composable
 fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onDone: () -> Unit) {
@@ -152,7 +151,7 @@ private fun PhoneStep(vm: SettingsViewModel, onPair: () -> Unit) {
     StepCard(Icons.Default.Sms, "Pair with Google Messages", paired, action = "Pair", onClick = onPair)
     Spacer(Modifier.height(10.dp))
     StepCard(Icons.Default.Contacts, "Contacts & notifications", granted) { requestPerms(Permissions.runtime) }
-    if (!Permissions.has(context, Manifest.permission.POST_NOTIFICATIONS)) {
+    if (!Permissions.messageAlertsOn(context)) {
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
             Icon(Icons.Default.Notifications, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

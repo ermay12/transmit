@@ -10,6 +10,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -69,7 +70,9 @@ class Notifier(
         runCatching { nm.deleteNotificationChannel(OLD_CHANNEL_CONNECTION) } // refused while a service still runs on it
     }
 
-    private fun canPost() = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    /** Before Android 13 there is no notification permission to hold (checking it always says denied). */
+    private fun canPost() = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     /** Posts (or silently refreshes, when [alert] is false) the notification for a conversation. */
     suspend fun showThread(threadId: Long, alert: Boolean) = withContext(Dispatchers.IO) {
