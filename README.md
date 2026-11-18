@@ -58,3 +58,7 @@ app/src/main/java/app/transmit/
 ```
 
 Google Messages on the phone is the source of truth for messages. Transmit's Room database (schemas in `app/schemas/`) caches its conversations and messages (`gm_*` tables) and holds translations, drafts, per-chat settings and the usage ledger. Dependencies are wired by hand in `AppContainer`.
+
+## License
+
+Transmit is licensed under the [GNU Affero General Public License, version 3](LICENSE). Its Google Messages layer (`app/src/main/java/app/transmit/gm` and `app/src/main/proto/gm`) is a Kotlin port of libgm from [mautrix-gmessages](https://github.com/mautrix/gmessages), which is licensed under the same terms.
