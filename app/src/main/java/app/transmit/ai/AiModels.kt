@@ -58,8 +58,9 @@ data class CompletionResult(
     val model: String,
 )
 
-class AiException(message: String, val kind: Kind, cause: Throwable? = null) : Exception(message, cause) {
-    enum class Kind { NO_KEY, NO_MODEL, AUTH, RATE_LIMIT, NETWORK, REFUSAL, BAD_REQUEST, BUDGET, OTHER }
+class AiException(message: String, val kind: Kind, cause: Throwable? = null, val httpStatus: Int? = null) : Exception(message, cause) {
+    /** [KEY_LIMIT]: OpenRouter's per-key spending limit is reached (403 "Key limit exceeded"). */
+    enum class Kind { NO_KEY, NO_MODEL, AUTH, KEY_LIMIT, RATE_LIMIT, NETWORK, REFUSAL, BAD_REQUEST, BUDGET, OTHER }
 }
 
 interface AiClient {

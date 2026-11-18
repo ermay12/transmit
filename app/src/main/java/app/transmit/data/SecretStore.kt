@@ -12,13 +12,22 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** API keys, encrypted with an AES-GCM key that never leaves the Android Keystore. */
-class SecretStore(context: Context) {
+/** Named secrets: API keys and the like. */
+interface KeyVault {
+    fun get(name: String): String?
+    fun put(name: String, value: String?)
+}
+
+/**
+ * API keys, encrypted with an AES-GCM key that never leaves the Android Keystore. The user's own keys and Transmit's
+ * managed key have separate names, so switching between them never loses either.
+ */
+class SecretStore(context: Context) : KeyVault {
     private val prefs = context.getSharedPreferences("secrets", Context.MODE_PRIVATE)
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
 
-    fun get(name: String): String? {
+    override fun get(name: String): String? {
         val stored = prefs.getString(name, null) ?: return null
         return runCatching {
             val (iv, data) = stored.split(':').map { Base64.decode(it, Base64.NO_WRAP) }
@@ -28,7 +37,7 @@ class SecretStore(context: Context) {
         }.getOrNull()
     }
 
-    fun put(name: String, value: String?) {
+    override fun put(name: String, value: String?) {
         if (value.isNullOrBlank()) {
             prefs.edit().remove(name).apply()
         } else {

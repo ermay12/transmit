@@ -47,12 +47,13 @@ internal fun OkHttpClient.json(request: Request, providerName: String): JsonObje
             val message = parsed?.get("error")?.let { it.obj()?.get("message").str() ?: it.str() }
                 ?: body.take(200).ifBlank { "HTTP ${r.code}" }
             val kind = when (r.code) {
-                401, 403 -> AiException.Kind.AUTH
+                401 -> AiException.Kind.AUTH
+                403 -> if (message.contains("key limit exceeded", ignoreCase = true)) AiException.Kind.KEY_LIMIT else AiException.Kind.AUTH
                 429 -> AiException.Kind.RATE_LIMIT
                 400, 404, 422 -> AiException.Kind.BAD_REQUEST
                 else -> AiException.Kind.OTHER
             }
-            throw AiException("$providerName: $message", kind)
+            throw AiException("$providerName: $message", kind, httpStatus = r.code)
         }
         return parsed ?: throw AiException("$providerName returned an unreadable response.", AiException.Kind.OTHER)
     }

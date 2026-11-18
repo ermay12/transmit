@@ -178,6 +178,33 @@ class ProviderClientsTest {
     }
 
     @Test
+    fun openRouterKeyLimitAndExpiryAreTellable() = runBlocking {
+        val client = OpenAiCompatClient(ProviderType.OPENROUTER, "sk-or-test", server.url("/").toString().trimEnd('/'), OkHttpClient())
+        val request = CompletionRequest("google/gemma-4-31b-it", "S", "P", 64)
+        fun fails(code: Int, body: String): AiException {
+            server.enqueue(json(body).setResponseCode(code))
+            return try {
+                runBlocking { client.complete(request) }
+                fail("expected an error")
+                throw AssertionError()
+            } catch (e: AiException) {
+                e
+            }
+        }
+        fails(403, """{"error":{"code":403,"message":"Key limit exceeded (total limit)"}}""").let {
+            assertEquals(AiException.Kind.KEY_LIMIT, it.kind)
+            assertEquals(403, it.httpStatus)
+        }
+        fails(401, """{"error":{"code":401,"message":"API key expired."}}""").let {
+            assertEquals(AiException.Kind.AUTH, it.kind)
+            assertEquals(401, it.httpStatus)
+        }
+        // The account running out of credit is a service problem, not the user's allowance.
+        assertEquals(AiException.Kind.OTHER, fails(402, """{"error":{"code":402,"message":"Insufficient credits"}}""").kind)
+        assertEquals(AiException.Kind.AUTH, fails(403, """{"error":{"code":403,"message":"Forbidden"}}""").kind)
+    }
+
+    @Test
     fun openRouterEffortsFollowReasoningMetadata() {
         fun meta(s: String) = Json.parseToJsonElement(s).jsonObject
         val params = listOf("max_tokens", "reasoning", "include_reasoning")
