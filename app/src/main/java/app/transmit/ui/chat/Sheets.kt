@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ContentCopy
@@ -123,7 +122,6 @@ fun ActionsSheet(
     /** Null when the message can't be replied to. */
     onReply: (() -> Unit)?,
     onExplain: () -> Unit,
-    onToggle: () -> Unit,
     onRetranslate: () -> Unit,
     onDetails: () -> Unit,
     onRetry: () -> Unit,
@@ -166,9 +164,6 @@ fun ActionsSheet(
                 onReply?.let { ActionTile(Icons.AutoMirrored.Filled.Reply, "Reply", it) }
                 if (item.translatable) {
                     ActionTile(Icons.Outlined.Lightbulb, "Explain", onExplain)
-                    if (tr != null && tr.origin != TranslationOrigin.SAME) {
-                        ActionTile(if (item.showOriginal) Icons.Default.Translate else Icons.AutoMirrored.Filled.Undo, if (item.showOriginal) "Translation" else "Original", onToggle)
-                    }
                     ActionTile(Icons.Default.Refresh, if (tr == null) "Translate" else "Redo", onRetranslate)
                 }
                 item.code?.let { code ->

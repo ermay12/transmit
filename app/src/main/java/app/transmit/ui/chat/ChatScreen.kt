@@ -254,7 +254,6 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
             onMoreEmoji = { vm.sheet.value = Sheet.Emoji(s.item) },
             onReply = if (s.item.message.replyable) ({ vm.replyTo(s.item) }) else null,
             onExplain = { vm.sheet.value = null; vm.explain(s.item) },
-            onToggle = { vm.sheet.value = null; vm.setShowOriginal(s.item, !s.item.showOriginal) },
             onRetranslate = { vm.sheet.value = null; vm.translate(s.item.message, refresh = true) },
             onDetails = { vm.sheet.value = Sheet.Details(s.item) },
             onRetry = { vm.retry(s.item.message) },

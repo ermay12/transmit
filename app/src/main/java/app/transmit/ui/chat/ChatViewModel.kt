@@ -583,12 +583,6 @@ class ChatViewModel(
         }
     }
 
-    /** Shows the original text, or the translation (as the chat shows it), straight away. */
-    fun setShowOriginal(item: MessageUi, show: Boolean) {
-        showRoman.update { it - item.key }
-        showOriginal.update { if (show) it + item.key else it - item.key }
-    }
-
     /** A bubble whose romanization should show came into view without one. */
     fun romanizeOnSight(key: String) {
         romanRequests.trySend(key)
