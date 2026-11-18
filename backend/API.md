@@ -1,0 +1,318 @@
+# Transmit backend API (v1)
+
+The backend is a Cloudflare Worker. It hands out OpenRouter keys for the free
+trial and for Play subscribers, and keeps each key's spending limit in step with
+Google Play. The phone sends every AI request straight to OpenRouter with the
+key it gets here; no message text ever reaches the Worker.
+
+- **Base URL:** `https://transmit.ermay12.workers.dev`
+- **Package:** `com.ermay12.transmit`
+- **Google Cloud project number** (for `StandardIntegrityManager`): `36162671718`
+  (project `transmit-515111`)
+- Requests and responses are JSON (`Content-Type: application/json`), UTF-8.
+- There is no login. A trial is tied to the device (ANDROID_ID + Play
+  Integrity); a subscription is tied to its Play purchase token.
+- Allow about 30 s per call: the Worker calls Google and OpenRouter in turn.
+
+## Endpoints
+
+| Method and path | Purpose |
+| --- | --- |
+| `POST /v1/trial` | Start the free trial on this device, or re-issue its key after a reinstall during the trial |
+| `POST /v1/subscription` | Verify a Play subscription and return or refresh its key: after a purchase, an upgrade, a restore, daily, and when the allowance runs low |
+| `GET /v1/health` | Liveness check, returns `{"ok": true}` |
+
+There is no status endpoint. For the remaining allowance, call OpenRouter with
+the app's own key: `GET https://openrouter.ai/api/v1/key` and read
+`data.limit_remaining` (see [Allowance](#allowance)).
+
+## Errors
+
+Every error has the same shape, and the app should branch on `error`, not on
+the HTTP status:
+
+```json
+{ "error": "trial_already_used", "message": "This device has already used its free trial." }
+```
+
+Some errors add fields (`reason`, `state`, `retryAfterSeconds`, `service`),
+listed below. `message` is English text for logs, not for users.
+
+| `error` | HTTP | Meaning | What the app does |
+| --- | --- | --- | --- |
+| `bad_request` | 400 | Missing or malformed field | Bug in the app; log it |
+| `integrity_failed` | 403 | The Play Integrity check failed; `reason` says why (below) | "Free trial needs the app installed from Google Play" (or "this device can't start a trial"); offer Subscribe or BYOK |
+| `trial_already_used` | 409 | This device already had a trial (expired, used up, or converted to a subscription) | "This device has already used its free trial"; offer Subscribe or BYOK |
+| `trial_capacity_reached` | 429 | Today's trial quota is used up; `retryAfterSeconds` = seconds to the next UTC midnight (also in the `Retry-After` header) | "Free trials are full today, try again tomorrow"; offer Subscribe or BYOK |
+| `purchase_invalid` | 400 | Google doesn't know the token, or it's not a Transmit subscription; `reason` below | Don't retry with that token |
+| `purchase_not_active` | 402 | The purchase exists but gives no AI right now; `state` below | `pending`: wait for Play's purchase update. `on_hold`, `paused`: "Fix your payment in Google Play" + Manage subscription. `expired`, `canceled_pending`, `refunded`: ENDED. `replaced`: call again with the newer purchase token from `queryPurchasesAsync` |
+| `busy` | 409 | Another call for the same device or purchase is in progress | Retry after 2–5 s |
+| `upstream_error` | 502 | Google or OpenRouter failed; `service` is `google` or `openrouter` | Retry with backoff; nothing was charged or lost |
+| `not_found` | 404 | Unknown path | |
+| `internal_error` | 500 | Bug in the Worker | Retry later |
+
+`integrity_failed` reasons:
+
+| `reason` | Cause |
+| --- | --- |
+| `token_invalid` | Google couldn't decode the token (garbage, wrong project, or a token from another app) |
+| `wrong_package` | The token was requested by a different package |
+| `request_hash_mismatch` | `requestHash` isn't the hash of this `androidId` (see below) |
+| `token_expired` | The token is older than 10 minutes, or its timestamp is in the future |
+| `app_not_recognized` | `appRecognitionVerdict` isn't `PLAY_RECOGNIZED` (sideloaded, GitHub APK, debug build, modified app) |
+| `unlicensed` | `appLicensingVerdict` isn't `LICENSED` (not installed from Play, or no Play account on the device) |
+| `device_integrity` | `deviceRecognitionVerdict` lacks `MEETS_DEVICE_INTEGRITY` (emulator, rooted, unlocked bootloader) |
+
+`purchase_invalid` reasons: `token_unknown` (Google rejects the token),
+`unknown_product` (not `transmit_monthly` or `transmit_plus`),
+`product_mismatch` (the `productId` you sent differs from Google's).
+
+## POST /v1/trial
+
+Request:
+
+```json
+{
+  "androidId": "9774d56d682e549c",
+  "integrityToken": "<token from StandardIntegrityTokenProvider.request>"
+}
+```
+
+- `androidId`: `Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)`,
+  sent as is (1–64 letters and digits). The Worker stores only a keyed hash of it.
+- `integrityToken`: a Play Integrity **standard** request token whose
+  `requestHash` is computed as below.
+
+### Computing the requestHash
+
+```
+requestHash = lowercase hex( SHA-256( UTF-8( "transmit-trial-v1:" + androidId ) ) )
+```
+
+That is 64 hex characters. Kotlin:
+
+```kotlin
+val requestHash = MessageDigest.getInstance("SHA-256")
+    .digest("transmit-trial-v1:$androidId".toByteArray(Charsets.UTF_8))
+    .joinToString("") { "%02x".format(it) }
+
+val manager = IntegrityManagerFactory.createStandard(context)
+val provider = manager.prepareIntegrityToken(
+    PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(36162671718L).build()
+).await()                       // can be prepared ahead of time, e.g. when step 3 opens
+val token = provider.request(
+    StandardIntegrityTokenRequest.builder().setRequestHash(requestHash).build()
+).await().token()
+```
+
+Request the token right before calling `/v1/trial`: the Worker rejects tokens
+older than 10 minutes. Integrity only passes on a build installed from a Play
+track on a real, certified phone; the emulator and GitHub APKs get
+`integrity_failed`.
+
+Response `200`:
+
+```json
+{
+  "kind": "trial",
+  "key": "sk-or-v1-…",
+  "keyHash": "f01d52606dc8f0a8303a7b5cc3fa07109c2e346cec7c0a16b40de462992ce943",
+  "allowanceUsd": 0.5,
+  "remainingUsd": 0.5,
+  "expiresAt": "2026-11-25T19:30:00Z",
+  "restored": false
+}
+```
+
+- `key` is the OpenRouter key. Store it (encrypted) with `keyHash`; the Worker
+  can't show it again.
+- `expiresAt`: the key stops working then (OpenRouter returns 401 "API key
+  expired"). Day 6 reminder = `expiresAt` − 24 h.
+- `restored: true` means this device already had a trial that is still running
+  (for example after a reinstall). The old key is deleted and the new one keeps
+  the same `expiresAt` and only what was left of the allowance
+  (`remainingUsd`, which can be below `allowanceUsd`).
+- One trial per device: once it has expired, been used up, or the device has
+  subscribed, the answer is `trial_already_used`.
+
+Errors: `bad_request`, `integrity_failed`, `trial_already_used`,
+`trial_capacity_reached`, `busy`, `upstream_error`.
+
+## POST /v1/subscription
+
+One call for every subscription case. The Worker checks the token with Google,
+acknowledges new purchases, and makes sure the purchase has exactly one working
+key with the right limit.
+
+Request:
+
+```json
+{
+  "purchaseToken": "<Purchase.getPurchaseToken()>",
+  "productId": "transmit_monthly",
+  "keyHash": "f01d52606dc8…",
+  "androidId": "9774d56d682e549c"
+}
+```
+
+- `purchaseToken` (required).
+- `productId` (optional): the product the app thinks it bought. If sent, it must
+  match Google's record.
+- `keyHash` (optional): the `keyHash` of the subscription key the app holds now.
+  - If it matches the key on this purchase (or on the purchase this one
+    upgraded), the key is **kept**: the response has no `key`, and its limit and
+    enabled state are updated in place.
+  - If it's missing or doesn't match (fresh install, restore, cleared data, or a
+    second device), the Worker **rotates**: it deletes the old key and returns a
+    new one in `key`. The old key stops working at once.
+  - Never send the trial key's hash here; it never matches.
+- `androidId` (optional): send it on the first call after a purchase. If this
+  device has a trial key, the Worker deletes it (no carry-over); the
+  subscription key replaces it.
+
+Do **not** acknowledge purchases in the app. The Worker acknowledges after it has
+issued the key. If the Worker can't be reached, retry; Play refunds purchases that
+stay unacknowledged for 3 days, so a user never pays for a key they didn't get.
+
+Response `200`:
+
+```json
+{
+  "kind": "subscription",
+  "productId": "transmit_plus",
+  "basePlanId": "monthly",
+  "state": "active",
+  "key": "sk-or-v1-…",
+  "keyHash": "0b9e…",
+  "newKey": true,
+  "allowanceUsd": 9,
+  "remainingUsd": 9,
+  "allowanceRenewed": true,
+  "periodEndsAt": "2026-12-18T19:30:00Z",
+  "autoRenewing": true
+}
+```
+
+- `key` is present only when `newKey` is `true`. Store it with `keyHash`,
+  replacing any previous subscription key.
+- `state`: `active`, `canceled` (the user turned off renewal; the AI keeps
+  working until `periodEndsAt`), or `grace` (a renewal payment failed; the AI
+  keeps working during Play's grace period, but no new allowance until the
+  payment succeeds).
+- `allowanceUsd`: AI allowance per billing period for this plan ($4.50 Transmit,
+  $9.00 Plus).
+- `remainingUsd`: what's left of this period's allowance, as OpenRouter reports
+  it now.
+- `allowanceRenewed`: `true` when this call credited a new Play order: a new
+  purchase, an upgrade, or a renewal the Worker hadn't seen yet.
+- `periodEndsAt`: end of the paid period. If `autoRenewing`, that's both
+  "Renews <date>" and "Resets <date>". If not, the subscription ends then.
+
+Errors: `bad_request`, `purchase_invalid`, `purchase_not_active`, `busy`,
+`upstream_error`. On `purchase_not_active` the Worker has also disabled the
+purchase's key, if it had one; it is re-enabled automatically if the
+subscription recovers (for example `on_hold` → paid).
+
+`state` values in `purchase_not_active`: `pending` (payment not completed yet),
+`on_hold` (payment failed after the grace period), `paused`, `expired`,
+`canceled_pending` (a pending purchase was canceled), `refunded` (the current
+order was refunded or charged back), `replaced` (this token was superseded by an
+upgrade; use the newer token).
+
+## Allowance
+
+The app shows "percent of this period's AI used" from two numbers:
+
+```
+percentUsed = 1 − limit_remaining / allowanceUsd
+```
+
+- `allowanceUsd` comes from the last `/v1/trial` or `/v1/subscription` response.
+- `limit_remaining` comes from `GET https://openrouter.ai/api/v1/key` with the
+  managed key (or `remainingUsd` from the last Worker response).
+
+This formula stays right across renewals, upgrades and key rotations, because
+the Worker always sets the key's limit to "spent so far + what's left of this
+period".
+
+OpenRouter books spending about 3 minutes late, so `limit_remaining` lags. For
+the "used up" check after each AI call, also add up each response's `usage.cost`
+locally since the last Worker or `/api/v1/key` reading.
+
+OpenRouter errors with the managed key:
+
+| OpenRouter response | Meaning |
+| --- | --- |
+| 403 with `"Key limit exceeded"` | This period's allowance is used up |
+| 401 `"API key expired."` | Trial key past `expiresAt` |
+| 401 otherwise (key deleted or disabled) | Key rotated on another device, or the subscription lapsed: call `/v1/subscription` (or show ENDED for a trial) |
+| 404 `"Model blocked by guardrail"` | The app asked for a model other than `google/gemma-4-31b-it` |
+| other 4xx/5xx | Service problem, not "allowance used up"; show the message in its original language and retry later |
+
+## App flows
+
+**Start the trial** (onboarding step 3, or "Start free trial" on the plan card)
+
+1. Read ANDROID_ID, compute `requestHash`, get a standard Integrity token.
+2. `POST /v1/trial`. On `200`, save `key`, `keyHash`, `allowanceUsd`,
+   `expiresAt`, and set the mode to TRIAL. Schedule the day-6 notification.
+3. On `integrity_failed`, `trial_already_used` or `trial_capacity_reached`, show
+   the matching plain-language reason and offer Subscribe or BYOK.
+
+**Trial runs out** (401 expired, 403 key limit, or the local tally reaches the
+allowance): set ENDED and show the paywall (a notification if in the
+background).
+
+**Subscribe** (from the paywall)
+
+1. Launch the Play billing flow for `transmit_monthly` or `transmit_plus` (base
+   plan `monthly`).
+2. In `onPurchasesUpdated`, for a `PURCHASED` purchase:
+   `POST /v1/subscription {purchaseToken, productId, androidId}`. For `PENDING`,
+   wait for the next update.
+3. On `200`, save `key`/`keyHash`, `allowanceUsd`, `periodEndsAt`, and set the
+   mode to SUBSCRIBED. Drop the trial key.
+4. On `upstream_error` or a network failure, retry with backoff, and again on
+   the next app start (find the purchase with `queryPurchasesAsync`).
+
+**Upgrade to Plus**
+
+1. Launch the billing flow for `transmit_plus` with
+   `SubscriptionUpdateParams(oldPurchaseToken = <current token>, ReplacementMode.CHARGE_FULL_PRICE)`.
+2. `POST /v1/subscription {purchaseToken: <new token>, productId: "transmit_plus", keyHash: <current keyHash>}`.
+   The key is kept (no `key` in the response), and its remaining allowance
+   becomes the full $9.00 at once (`allowanceRenewed: true`).
+3. From then on, use the new purchase token. The old one answers
+   `purchase_not_active` with `state: "replaced"` or `"expired"`.
+
+**Restore purchase** (fresh install, cleared data, the "Restore purchase" link,
+or a 401 on the managed key)
+
+1. `queryPurchasesAsync(SUBS)` and take the purchase for `transmit_monthly` or
+   `transmit_plus`.
+2. `POST /v1/subscription {purchaseToken}` with no `keyHash` (or the stale one).
+   The response has a new `key`; the old key stops working.
+3. A subscription has one working key at a time, so two phones on one Google
+   account would keep taking the key from each other. Only call without a
+   matching `keyHash` when there's no key or the user tapped "Restore purchase";
+   on a 401 for a key that used to work, ask before taking the key back
+   ("Your subscription is in use on another device. Use it here?").
+
+**Daily refresh**: once a day (WorkManager) and when the local tally passes
+about 90% of the allowance, call
+`POST /v1/subscription {purchaseToken, keyHash}`. That picks up renewals within
+a day even if the Worker's own job hasn't, and keeps `state` and `periodEndsAt`
+fresh for the plan card.
+
+**Allowance used up**
+
+1. Call `POST /v1/subscription {purchaseToken, keyHash}` once, in case a renewal
+   happened. If `remainingUsd` > 0 now, carry on.
+2. Otherwise: Standard → "You've used this month's AI" + Upgrade to Plus, or
+   "Resets <periodEndsAt>". Plus → "Resets <periodEndsAt>". If `autoRenewing`
+   is `false`, there's no reset date to show.
+
+**Renewal, lapse and refund without the app**: the Worker's scheduled job checks
+every subscription after its `periodEndsAt`. A renewal raises the key's limit by
+the plan's allowance; a lapse (on hold, paused, expired) or a refund disables the
+key. The next `/v1/subscription` call reports what happened.
