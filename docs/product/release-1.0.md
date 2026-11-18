@@ -32,17 +32,17 @@ One source of truth, `AiAccess` (name is up to the implementer):
 1. **"What are you practicing?"** "I'm practicing" (prominent), "I speak" (prefilled from the device), Level. Continue.
 2. **"Connect your messages"**: one big **Connect Google Messages** button (the existing Google sign-in pairing). The QR fallback stays on the pairing screen. When pairing succeeds, return here, auto-advance, and request contacts and notification permissions with one sentence explaining why. A small "Do this later" link.
 3. **"Turn on translation"**: the benefit in one line, plus 2–3 short bullets (translations as you chat, a tutor for replies).
-   - Primary button: **Start free 7-day trial**, with the subtext "No card needed."
-   - Text button: **Use my own API key** → the existing provider + key dialog, then → `BYOK`.
+   - Primary button: **Start your free week**, with the subtext "7 days free. No card needed."
+   - Text button: **Use my own AI key** → the existing provider + key dialog, then → `BYOK`.
    - Text button: **Not now** → `NONE`.
-   - If the trial can't start, give a plain-language reason (already used on this device / not installed from Google Play / trials are full today, try tomorrow) and offer Subscribe or Use my own API key.
+   - If the trial can't start, give a plain-language reason (already used on this device / this device isn't supported (failed device integrity) / not installed from Google Play / trials are full today, try tomorrow) and offer Subscribe or Use my own API key.
 
 Finish → Home.
 
 ## Settings layout
 
 1. **Plan card** (top), varies by mode:
-   - NONE: "Translation is off" + **Start free trial** + "Use my own API key" link.
+   - NONE: "Translation is off" + **Start your free week** + "Use my own AI key" link.
    - TRIAL: "Free trial · N days left" + AI-used bar + **Subscribe**.
    - SUBSCRIBED: "Transmit" / "Transmit Plus" + "Renews <date>" when known + AI-used-this-month bar + **Upgrade to Plus** (Standard only) + **Manage subscription** (Play subscription deep link).
    - ENDED: "Your free trial has ended" / "Your subscription has ended" + **Subscribe**.
@@ -52,9 +52,9 @@ Finish → Home.
 3. **Translation**: auto-translate contacts, auto-translate unknown numbers, translate my sent messages.
 4. **Messages**: Google Messages pairing, notification display.
 5. **Advanced** (collapsed by default):
-   - Managed modes: only **Use my own API key**.
+   - Managed modes: only **Use my own AI key**.
    - BYOK: provider, key, translation model + effort, tutor model + effort, budgets, context messages, translate on open, Usage screen, and **Switch to a Transmit subscription**.
-6. Version footer.
+6. Footer: version, plus a **Source code** link to the GitHub repo (AGPL requirement).
 
 ## The allowance as users see it
 
@@ -65,7 +65,8 @@ Finish → Home.
   - Standard → "You've used this month's AI" → Upgrade to Plus, or "Resets <date>".
   - Plus → "Resets <date>".
 - In managed modes, hide the per-chat budget override (chat info sheet) and the model and cost in the message info sheet. Keep both for BYOK.
-- In managed and NONE modes, errors never mention API keys, models or Settings. In NONE, the CTA is "Start free trial".
+- In managed and NONE modes, errors never mention API keys, models or Settings. In NONE, the CTA is "Start your free week".
+- A failed translation never hides a message: the original always shows.
 
 ## Paywall / plans screen
 
@@ -78,7 +79,18 @@ Finish → Home.
 
 - Day 6: a notification, "Your free trial ends tomorrow", that opens the paywall.
 - Trial AI used up (checked after each AI call): a notification and an in-app prompt to subscribe right away.
-- Trial expired: on next open, the plan card and the first AI action show the paywall.
+- Trial expired (time or AI), or a subscription ended: if the app is open, the plans screen appears right away. If it's in the background, a notification links to the plans screen. Subscribing during the trial is allowed at any time.
+
+## Technical requirements from the launch plan (mostly phase 2)
+
+- **Spend tracking:** count spending in the app from each response's `usage.cost`. OpenRouter reports usage about 3 minutes late, so its own figure lags. The percent bar and the after-each-call allowance check use the local ledger, reconciled with `GET /api/v1/key`.
+- **Error mapping for managed keys:**
+  - 403 "Key limit exceeded" → the allowance is used up.
+  - 401 "API key expired" → the trial has ended, or the key was turned off.
+  - Any unfamiliar 4xx or 5xx → a service problem ("Translation is having trouble, try again later"). It must never show a paywall. This covers the workspace's daily cap.
+- **Renewals and refunds:** the app asks the Worker once a day, and whenever the key nears its limit, to pick up renewals, upgrades and turned-off keys. A key that the Worker reports inactive (refund or lapse) → ENDED.
+- **Purchase tokens:** the app always sends a new purchase token to the Worker and retries until it succeeds, including on the next launch. The Worker acknowledges the purchase, and Play refunds purchases that aren't acknowledged within 3 days.
+- **Integrity:** a standard request whose requestHash binds ANDROID_ID, as described in `backend/API.md`.
 
 ## Out of scope for 1.0
 
