@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -93,6 +94,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.Permissions
+import app.transmit.ui.access.allowanceBanner
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.StatusBanner
 import app.transmit.ui.components.awaitSideways
@@ -116,8 +118,12 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onUsage: () -> Unit,
     onPair: () -> Unit,
+    onPlans: () -> Unit,
 ) {
     val items by vm.filtered.collectAsStateWithLifecycle()
+    val access by vm.access.collectAsStateWithLifecycle()
+    val allowance by vm.allowance.collectAsStateWithLifecycle()
+    val warningDismissed by vm.warningDismissed.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val paired = bridge !is BridgeState.Unpaired && bridge !is BridgeState.LoggedOut
@@ -150,6 +156,7 @@ fun HomeScreen(
 
     LifecycleResumeEffect(Unit) {
         vm.refresh()
+        vm.reconcileAllowance()
         alertsOn = Permissions.messageAlertsOn(context)
         onPauseOrDispose { }
     }
@@ -185,7 +192,8 @@ fun HomeScreen(
                 SearchBar(
                     query = query,
                     onQuery = { vm.query.value = it },
-                    spent = spent,
+                    // Dollars are for people paying for their own AI.
+                    spent = spent.takeIf { access?.showsAiDetails == true },
                     limit = settings?.monthlyBudgetUsd ?: 0.0,
                     onUsage = onUsage,
                     onSettings = onSettings,
@@ -206,6 +214,14 @@ fun HomeScreen(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showArchived) {
                 item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
+                allowanceBanner(context, access, allowance)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
+                    item("allowance-banner") {
+                        StatusBanner(
+                            Icons.Default.AutoAwesome, b.title, b.body, b.action, onPlans.takeIf { b.action != null },
+                            onDismiss = if (b.dismissible) vm::dismissWarning else null,
+                        )
+                    }
+                }
                 // Until paired there's nothing to be alerted to; pairing comes first.
                 if (paired && !alertsOn) {
                     item("alerts-banner") {
@@ -257,7 +273,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SearchBar(query: String, onQuery: (String) -> Unit, spent: Double, limit: Double, onUsage: () -> Unit, onSettings: () -> Unit) {
+private fun SearchBar(query: String, onQuery: (String) -> Unit, spent: Double?, limit: Double, onUsage: () -> Unit, onSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -278,7 +294,7 @@ private fun SearchBar(query: String, onQuery: (String) -> Unit, spent: Double, l
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQuery("") }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Close, "Clear") }
                 }
-                SpendPill(spent, limit, onUsage)
+                if (spent != null) SpendPill(spent, limit, onUsage)
             }
         }
         IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") }

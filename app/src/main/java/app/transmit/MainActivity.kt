@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -34,6 +35,7 @@ import app.transmit.data.ModelSlot
 import app.transmit.gm.BridgeService
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.notify.ConversationShortcuts
+import app.transmit.ui.access.PlansScreen
 import app.transmit.ui.chat.ChatScreen
 import app.transmit.ui.chat.ChatViewModel
 import app.transmit.ui.home.HomeScreen
@@ -186,13 +188,16 @@ private object Routes {
     const val CHAT = "chat/{threadId}"
     const val NEW = "new?group={group}"
     const val SHARE = "share"
-    const val SETTINGS = "settings"
+    const val SETTINGS = "settings?ownKey={ownKey}"
     const val MODELS = "models/{slot}"
+    /** The paywall: plans, prices and purchase. */
+    const val PLANS = "plans"
     const val USAGE = "usage"
     const val PAIR = "pair"
     fun chat(id: Long) = "chat/$id"
     fun newChat(group: Boolean = false) = if (group) "new?group=true" else "new"
     fun models(slot: ModelSlot) = "models/${slot.name}"
+    fun settings(ownKey: Boolean = false) = if (ownKey) "settings?ownKey=true" else "settings"
 }
 
 @Composable
@@ -251,10 +256,19 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
         initial?.let { handle(it) }
         requests.collect { handle(it) }
     }
+    // A trial or subscription that ends while the app is open brings up the plans straight away.
+    val ended by c.access.pendingEnd.collectAsStateWithLifecycle()
+    LaunchedEffect(ended) {
+        if (ended != null) {
+            nav.navigate(Routes.PLANS) { launchSingleTop = true }
+            c.access.acknowledgeEnd()
+        }
+    }
+    val openPlans = { nav.navigate(Routes.PLANS) { launchSingleTop = true } }
 
     NavHost(nav, startDestination = start) {
         composable(Routes.ONBOARDING) {
-            OnboardingScreen(viewModel { SettingsViewModel(c) }, onPair = { nav.navigate(Routes.PAIR) }) {
+            OnboardingScreen(viewModel { SettingsViewModel(c) }, onPair = { nav.navigate(Routes.PAIR) }, onPlans = openPlans) {
                 nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
             }
         }
@@ -263,9 +277,10 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 vm = viewModel { HomeViewModel(c) },
                 onOpen = { nav.navigate(Routes.chat(it)) },
                 onNew = { nav.navigate(Routes.newChat()) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
+                onSettings = { nav.navigate(Routes.settings()) },
                 onUsage = { nav.navigate(Routes.USAGE) },
                 onPair = { nav.navigate(Routes.PAIR) },
+                onPlans = openPlans,
             )
         }
         composable(Routes.PAIR) {
@@ -284,7 +299,10 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
             // Only a share meant for this conversation, so one still being placed can't leak into it.
             val share = remember { pendingShare?.takeIf { it.threadId == threadId }?.share?.also { pendingShare = null } }
             val vm = viewModel { ChatViewModel(c, threadId, share?.text, share?.attachments.orEmpty()) }
-            ChatScreen(vm, onBack = { if (!nav.popBackStack()) onExit() }, onPair = { nav.navigate(Routes.PAIR) })
+            ChatScreen(
+                vm, onBack = { if (!nav.popBackStack()) onExit() }, onPair = { nav.navigate(Routes.PAIR) },
+                onPlans = openPlans, onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },
+            )
         }
         composable(Routes.NEW, arguments = listOf(navArgument("group") { type = NavType.BoolType; defaultValue = false })) { entry ->
             // "New group" in the share picker: backing out returns there, share and all.
@@ -328,14 +346,19 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 onNewGroup = { nav.navigate(Routes.newChat(group = true)) },
             )
         }
-        composable(Routes.SETTINGS) {
+        composable(Routes.SETTINGS, arguments = listOf(navArgument("ownKey") { type = NavType.BoolType; defaultValue = false })) { entry ->
             SettingsScreen(
                 vm = viewModel { SettingsViewModel(c) },
                 onBack = { nav.popBackStack() },
                 onModels = { nav.navigate(Routes.models(it)) },
                 onUsage = { nav.navigate(Routes.USAGE) },
                 onPair = { nav.navigate(Routes.PAIR) },
+                onPlans = openPlans,
+                openOwnKey = entry.arguments?.getBoolean("ownKey") == true,
             )
+        }
+        composable(Routes.PLANS) {
+            PlansScreen(viewModel { SettingsViewModel(c) }, onBack = { nav.popBackStack() })
         }
         composable(Routes.MODELS, arguments = listOf(navArgument("slot") { type = NavType.StringType })) { entry ->
             val slot = runCatching { ModelSlot.valueOf(entry.arguments?.getString("slot").orEmpty()) }.getOrDefault(ModelSlot.TRANSLATE)

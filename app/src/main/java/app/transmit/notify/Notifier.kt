@@ -161,7 +161,8 @@ class Notifier(
             NotificationContent.ORIGINAL -> m.body
             NotificationContent.TRANSLATED -> when {
                 translation != null -> translation
-                auto && translations.isAutoTranslatable(m) -> "🌐 …"
+                // Only while a translation is on its way: a failed one, or none coming, shows the original.
+                auto && translations.expectsAutoTranslation(m) -> "🌐 …"
                 else -> m.body
             }
         }

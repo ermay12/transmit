@@ -2,13 +2,22 @@ package app.transmit
 
 import android.app.Application
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.video.VideoFrameDecoder
+import app.transmit.access.AccessBuild
+import app.transmit.access.AccessManager
+import app.transmit.access.AccessStore
 import app.transmit.ai.AiService
+import app.transmit.ai.ProviderType
 import app.transmit.ai.BudgetManager
 import app.transmit.ai.ChatPolicy
 import app.transmit.ai.TranslationManager
@@ -32,6 +41,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+
+private val Context.accessDataStore: DataStore<Preferences> by preferencesDataStore(name = "access")
 
 /** Manual dependency graph; one instance per process. */
 class AppContainer(val context: Context) {
@@ -59,11 +70,22 @@ class AppContainer(val context: Context) {
     val messaging: MessagingRepository = MessagingRepository(context, db, bridge)
     val sender: Sender = Sender(context, db.gmDao(), dao, bridge, scope) { threadId -> notifier.notifySendFailed(threadId) }
 
+    private val accessBackend = AccessBuild.backend(context, secrets)
+    /** Where AI comes from: trial, subscription, the user's own key, or none. */
+    val access = AccessManager(
+        store = AccessStore(context.accessDataStore) { ProviderType.entries.any { secrets.has(it.secretName) } },
+        vault = secrets,
+        backend = accessBackend.first,
+        allowanceSource = accessBackend.second,
+        managedSpend = { since -> dao.managedSpentSinceFlow(since) },
+        scope = scope,
+        isForeground = { ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) },
+    )
     val ai = AiService(settings, secrets)
     val policy = ChatPolicy(dao, messaging, contacts)
     val budget = BudgetManager(dao, policy)
-    val tutor = Tutor(ai, settings, budget, dao)
-    val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, contacts)
+    val tutor = Tutor(ai, settings, budget, dao, access)
+    val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, contacts, access)
     /** Recent conversations in the system share sheet and launcher, and behind notifications. */
     val shortcuts = ConversationShortcuts(context, messaging, contacts, dao)
     val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations, shortcuts)

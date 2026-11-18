@@ -1,5 +1,7 @@
 package app.transmit.ai
 
+import app.transmit.access.AccessManager
+import app.transmit.access.forAccess
 import app.transmit.data.AppSettings
 import app.transmit.data.ContactsRepository
 import app.transmit.data.Language
@@ -28,12 +30,19 @@ class TranslationManager(
     private val repo: MessagingRepository,
     private val settings: SettingsRepository,
     private val contacts: ContactsRepository,
+    private val access: AccessManager,
 ) {
     sealed interface Event {
         val threadId: Long
-        data class BudgetReached(override val threadId: Long, val message: String) : Event
+        data class BudgetReached(override val threadId: Long, val block: AiBlock) : Event
         data class Failed(override val threadId: Long, val error: AiException) : Event
     }
+
+    /** The settings AI calls run with: the managed ones in trial and subscription. */
+    private suspend fun aiSettings(): AppSettings = settings.current().forAccess(access.current())
+
+    /** Whether any AI can run now; without it, automatic work leaves messages in their original language. */
+    private suspend fun aiAvailable() = access.current().canUseAi
 
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
     private val _pending = MutableStateFlow<Set<String>>(emptySet())
@@ -68,6 +77,13 @@ class TranslationManager(
      */
     fun isAutoTranslatable(m: Message): Boolean = isTranslatable(m) && Otp.find(m.body) == null
 
+    /**
+     * Whether a translation of [m] is still on its way, so a notification may wait for it. False once it failed or
+     * when no AI is set up: a message is never hidden for a translation that won't come.
+     */
+    fun expectsAutoTranslation(m: Message): Boolean =
+        isAutoTranslatable(m) && m.key !in _failed.value && access.access.value?.canUseAi == true
+
     /** The messages automatic translation covers: the newest few translatable ones. */
     fun autoCandidates(messages: List<Message>, s: AppSettings): List<Message> = messages
         .filter { isAutoTranslatable(it) && (!it.outgoing || s.translateOutgoing) }
@@ -75,7 +91,7 @@ class TranslationManager(
         .take(s.backfillCount)
 
     suspend fun autoTranslate(threadId: Long, messages: List<Message>) {
-        val s = settings.current()
+        val s = aiSettings()
         val eff = policy.effective(threadId, s)
         if (!eff.autoTranslate) return
         val candidates = autoCandidates(messages, s)
@@ -89,7 +105,7 @@ class TranslationManager(
 
     suspend fun translateIncoming(threadId: Long, key: String) {
         val message = repo.message(key) ?: return
-        val s = settings.current()
+        val s = aiSettings()
         val eff = policy.effective(threadId, s)
         if (!eff.autoTranslate || !isAutoTranslatable(message)) return
         val recent = repo.messages(threadId, s.contextMessages + 2)
@@ -98,10 +114,10 @@ class TranslationManager(
         if (s.romanizesAutomatically(eff.target)) romanize(threadId, listOf(key), eff.target, auto = true)
     }
 
-    /** User-initiated translation. Throws [BudgetExceededException] / [AiException] for the UI to handle. */
+    /** User-initiated translation. Throws [AiBlockedException] / [AiException] for the UI to handle. */
     suspend fun translateNow(message: Message, all: List<Message>, lang: Language, overrideBudget: Boolean = false, refresh: Boolean = false) {
         if (!isTranslatable(message)) return
-        val s = settings.current()
+        val s = aiSettings()
         translate(message.threadId, listOf(message), all, lang, s, auto = false, overrideBudget = overrideBudget, refresh = refresh)
         // Reported as a banner if it fails: the translation itself worked, and a retry shouldn't redo it.
         if (s.romanizesAutomatically(lang)) romanize(message.threadId, listOf(message.key), lang, auto = true, overrideBudget = overrideBudget)
@@ -125,6 +141,7 @@ class TranslationManager(
     suspend fun toCharacters(threadId: Long, keys: Collection<String>, lang: Language, auto: Boolean, overrideBudget: Boolean = false) {
         val r = lang.romanization ?: return
         if (keys.isEmpty() || settings.current().scriptDisplay(lang) == ScriptDisplay.ROMANIZED) return
+        if (auto && !aiAvailable()) return
         val tried = _conversions.value.tried
         val todo = dao.translations(keys.distinct(), lang.code).filter { t ->
             t.origin == TranslationOrigin.SELF && (!auto || t.msgKey !in tried) && Scripts.isRomanized(t.text, r) &&
@@ -145,9 +162,9 @@ class TranslationManager(
                     dao.setCharacters(t.msgKey, t.lang, t.text, text, t.romanized ?: Scripts.local(t.text, r) ?: t.text)
                 }
             }
-        } catch (e: BudgetExceededException) {
+        } catch (e: AiBlockedException) {
             if (!auto) throw e
-            _events.tryEmit(Event.BudgetReached(threadId, e.message.orEmpty()))
+            _events.tryEmit(Event.BudgetReached(threadId, e.block))
         } catch (e: AiException) {
             if (!auto) throw e
             _events.tryEmit(Event.Failed(threadId, e))
@@ -170,6 +187,8 @@ class TranslationManager(
         if (todo.isEmpty()) return
         val keysTodo = todo.map { it.msgKey }.toSet()
         val done = mutableSetOf<String>()
+        // Without AI only the device's own romanization runs; the rest show their characters rather than wait.
+        val remoteAllowed = !auto || aiAvailable()
         try {
             val remote = mutableListOf<TranslationEntity>()
             for (t in todo) {
@@ -181,7 +200,7 @@ class TranslationManager(
                     remote += t
                 }
             }
-            for (chunk in remote.chunked(12)) {
+            for (chunk in remote.takeIf { remoteAllowed }.orEmpty().chunked(12)) {
                 val batch = tutor.romanize(chunk.mapIndexed { i, t -> (i + 1).toString() to t.text }, lang, threadId, overrideBudget)
                 chunk.forEachIndexed { i, t ->
                     val text = batch.texts[(i + 1).toString()] ?: return@forEachIndexed
@@ -189,9 +208,9 @@ class TranslationManager(
                     done += t.msgKey
                 }
             }
-        } catch (e: BudgetExceededException) {
+        } catch (e: AiBlockedException) {
             if (!auto) throw e
-            _events.tryEmit(Event.BudgetReached(threadId, e.message.orEmpty()))
+            _events.tryEmit(Event.BudgetReached(threadId, e.block))
         } catch (e: AiException) {
             if (!auto) throw e
             _events.tryEmit(Event.Failed(threadId, e))
@@ -212,6 +231,11 @@ class TranslationManager(
         refresh: Boolean = false,
     ) {
         if (candidates.isEmpty()) return
+        if (auto && !aiAvailable()) {
+            // Shown in the original at once, rather than waiting for a translation that won't come.
+            _failed.update { it + candidates.map { m -> m.key } }
+            return
+        }
         val existing = if (refresh) emptySet() else dao.translations(candidates.map { it.key }, lang.code).map { it.msgKey }.toSet()
         val todo = candidates.filter { it.key !in existing && inFlight.add("${it.key}|${lang.code}") }
         if (todo.isEmpty()) return
@@ -242,9 +266,9 @@ class TranslationManager(
                     saved += m.key
                 }
             }
-        } catch (e: BudgetExceededException) {
+        } catch (e: AiBlockedException) {
             if (!auto) throw e
-            _events.tryEmit(Event.BudgetReached(threadId, e.message.orEmpty()))
+            _events.tryEmit(Event.BudgetReached(threadId, e.block))
         } catch (e: AiException) {
             if (!auto) throw e
             _events.tryEmit(Event.Failed(threadId, e))

@@ -230,7 +230,7 @@ private class TouchClaimingFrame(context: Context) : FrameLayout(context) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailsSheet(item: MessageUi, people: Map<String, ContactInfo>, recipients: List<String>, simLabel: String?, onDismiss: () -> Unit) {
+fun DetailsSheet(item: MessageUi, people: Map<String, ContactInfo>, recipients: List<String>, simLabel: String?, showAiDetails: Boolean, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val m = item.message
     fun name(a: String) = people[a]?.let { if (it.isContact) "${it.name} (${PhoneNumbers.format(a)})" else it.displayName } ?: PhoneNumbers.format(a)
@@ -261,7 +261,8 @@ fun DetailsSheet(item: MessageUi, people: Map<String, ContactInfo>, recipients: 
                 simLabel?.let { add("SIM" to it) }
                 item.translation?.let { tr ->
                     add("Translation" to when (tr.origin) {
-                        TranslationOrigin.AI -> listOfNotNull(tr.model, usd(tr.costUsd).takeIf { tr.costUsd > 0 }).joinToString(" · ")
+                        TranslationOrigin.AI ->
+                            if (showAiDetails) listOfNotNull(tr.model, usd(tr.costUsd).takeIf { tr.costUsd > 0 }).joinToString(" · ") else "Translated by AI"
                         TranslationOrigin.SELF -> "Written by you"
                         else -> "Already in ${Languages.get(tr.lang).name}"
                     })
@@ -280,7 +281,7 @@ fun DetailsSheet(item: MessageUi, people: Map<String, ContactInfo>, recipients: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExplainSheet(sheet: Sheet.Explain, onDismiss: () -> Unit, onRefresh: () -> Unit) {
+fun ExplainSheet(sheet: Sheet.Explain, showAiDetails: Boolean, onDismiss: () -> Unit, onRefresh: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).navigationBarsPadding()) {
             Row(verticalAlignment = Alignment.Top) {
@@ -303,7 +304,7 @@ fun ExplainSheet(sheet: Sheet.Explain, onDismiss: () -> Unit, onRefresh: () -> U
                     else -> MarkdownText(sheet.text)
                 }
             }
-            sheet.cost?.let { cost ->
+            sheet.cost?.takeIf { showAiDetails }?.let { cost ->
                 Spacer(Modifier.height(10.dp))
                 Text(
                     listOfNotNull(
@@ -328,6 +329,8 @@ fun ChatInfoSheet(
     settings: AppSettings,
     people: List<ContactInfo>,
     spent: Double,
+    /** The per-chat dollar budget, for BYOK only. */
+    showBudget: Boolean,
     onDismiss: () -> Unit,
     onAutoTranslate: (Boolean?) -> Unit,
     onLanguage: (String?) -> Unit,
@@ -429,10 +432,12 @@ fun ChatInfoSheet(
                 )
             }
 
-            BudgetEditor(
-                spent = spent, limit = chat.monthlyBudgetUsd, isDefault = overrides?.monthlyBudgetUsd == null,
-                defaultLimit = defaults.monthlyBudgetUsd, onBudget = onBudget,
-            )
+            if (showBudget) {
+                BudgetEditor(
+                    spent = spent, limit = chat.monthlyBudgetUsd, isDefault = overrides?.monthlyBudgetUsd == null,
+                    defaultLimit = defaults.monthlyBudgetUsd, onBudget = onBudget,
+                )
+            }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 
             SwitchRow(Icons.Default.PushPin, "Pin", overrides?.pinned == true, onPinned)

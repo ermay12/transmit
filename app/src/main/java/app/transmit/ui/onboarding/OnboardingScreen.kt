@@ -1,10 +1,12 @@
 package app.transmit.ui.onboarding
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,14 +22,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Contacts
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,10 +37,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,46 +53,68 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.transmit.ai.usd
-import app.transmit.ui.Permissions
-import app.transmit.ui.components.LanguagePickerDialog
+import app.transmit.data.AppSettings
 import app.transmit.gm.BridgeState
+import app.transmit.ui.Permissions
+import app.transmit.ui.access.AccessText
+import app.transmit.ui.access.TrialFailure
+import app.transmit.ui.access.TrialUi
+import app.transmit.ui.components.LanguagePickerDialog
 import app.transmit.ui.rememberPermissionsRequest
-import app.transmit.ui.settings.KeyDialog
 import app.transmit.ui.settings.LevelSelector
-import app.transmit.ui.settings.ProviderChips
+import app.transmit.ui.settings.OwnKeyDialog
 import app.transmit.ui.settings.SettingsViewModel
 
+private const val STEPS = 3
+
+/**
+ * Three steps: what you're practicing, connecting Google Messages, and turning on translation. The step is
+ * saveable, so it survives the trip to the pairing screen and rotation.
+ */
 @Composable
-fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onDone: () -> Unit) {
+fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> Unit, onDone: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    vm.keyVersion.collectAsStateWithLifecycle().value
-    var step by remember { mutableIntStateOf(0) }
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    // Set when the user leaves for the pairing screen, so coming back paired moves on.
+    var pairingStarted by rememberSaveable { mutableStateOf(false) }
     val s = settings ?: return
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(20.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            repeat(3) { i ->
-                Box(
-                    Modifier.padding(4.dp).size(if (i == step) 24.dp else 8.dp, 8.dp).clip(CircleShape)
-                        .background(if (i <= step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
-                )
+    fun finish() {
+        vm.setOnboarded()
+        onDone()
+    }
+    BackHandler(enabled = step > 0) { step-- }
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Box(Modifier.fillMaxWidth().height(48.dp)) {
+            if (step > 0) {
+                IconButton(onClick = { step-- }, modifier = Modifier.align(Alignment.CenterStart)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                }
             }
-        }
-        Spacer(Modifier.height(16.dp))
-        AnimatedContent(step, modifier = Modifier.weight(1f), label = "step") { st ->
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                when (st) {
-                    0 -> LanguagesStep(vm, s.nativeLang, s.targetLang, s.native.flag, s.target.flag, s.native.nativeName, s.target.nativeName, s.level)
-                    1 -> PhoneStep(vm, onPair)
-                    else -> AiStep(vm, s)
+            Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.Center) {
+                repeat(STEPS) { i ->
+                    Box(
+                        Modifier.padding(4.dp).size(if (i == step) 24.dp else 8.dp, 8.dp).clip(CircleShape)
+                            .background(if (i <= step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                    )
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (step > 0) TextButton(onClick = { step-- }) { Text("Back") }
-            Spacer(Modifier.weight(1f))
-            if (step == 2 && !vm.hasKey(s.provider)) TextButton(onClick = { vm.setOnboarded(); onDone() }) { Text("Later") }
-            Button(onClick = { if (step < 2) step++ else { vm.setOnboarded(); onDone() } }) { Text(if (step < 2) "Next" else "Start") }
+        Spacer(Modifier.height(12.dp))
+        AnimatedContent(step, modifier = Modifier.weight(1f), label = "step") { st ->
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                when (st) {
+                    0 -> PracticeStep(vm, s)
+                    1 -> MessagesStep(
+                        vm, pairingStarted,
+                        onPair = { pairingStarted = true; onPair() },
+                        onNext = { pairingStarted = false; step = 2 },
+                    )
+                    else -> TranslationStep(vm, onPlans, onFinish = ::finish)
+                }
+            }
+        }
+        if (step == 0) {
+            Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Continue") }
         }
     }
 }
@@ -97,102 +123,135 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onDone: () -> Un
 private fun Title(text: String, sub: String? = null) {
     Text(text, style = MaterialTheme.typography.headlineMedium)
     if (sub != null) {
-        Spacer(Modifier.height(6.dp))
-        Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        Text(sub, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Spacer(Modifier.height(24.dp))
 }
 
 @Composable
-private fun LanguagesStep(
-    vm: SettingsViewModel, nativeCode: String, targetCode: String, nativeFlag: String, targetFlag: String,
-    nativeName: String, targetName: String, level: app.transmit.data.Level,
-) {
+private fun PracticeStep(vm: SettingsViewModel, s: AppSettings) {
     var pick by remember { mutableStateOf<String?>(null) }
-    Title("Learn while you text", "Messages arrive in the language you're practicing. Your friends get your language.")
-    BigLanguage("I speak", nativeFlag, nativeName) { pick = "native" }
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        IconButton(onClick = { vm.setNative(targetCode) }) { Icon(Icons.Default.SwapVert, "Swap") }
-    }
-    BigLanguage("I'm practicing", targetFlag, targetName) { pick = "target" }
-    Spacer(Modifier.height(20.dp))
-    LevelSelector(level, vm::setLevel)
+    Title("What are you practicing?", "Messages arrive in the language you're practicing. Your friends get yours.")
+    LanguageCard("I'm practicing", s.target.flag, s.target.nativeName, prominent = true) { pick = "target" }
+    Spacer(Modifier.height(12.dp))
+    LanguageCard("I speak", s.native.flag, s.native.nativeName, prominent = false) { pick = "native" }
+    Spacer(Modifier.height(28.dp))
+    Text("Your level", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(8.dp))
+    LevelSelector(s.level, vm::setLevel)
     when (pick) {
-        "native" -> LanguagePickerDialog("I speak", nativeCode, { it?.let(vm::setNative); pick = null }, { pick = null })
-        "target" -> LanguagePickerDialog("I'm practicing", targetCode, { it?.let(vm::setTarget); pick = null }, { pick = null })
+        "native" -> LanguagePickerDialog("I speak", s.nativeLang, { it?.let(vm::setNative); pick = null }, { pick = null })
+        "target" -> LanguagePickerDialog("I'm practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
     }
 }
 
 @Composable
-private fun BigLanguage(label: String, flag: String, name: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(flag, fontSize = 40.sp)
+private fun LanguageCard(label: String, flag: String, name: String, prominent: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth(),
+        color = if (prominent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(Modifier.padding(if (prominent) 22.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(flag, fontSize = if (prominent) 48.sp else 28.sp)
             Spacer(Modifier.width(16.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(name, style = MaterialTheme.typography.headlineSmall)
+                Text(name, style = if (prominent) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium)
             }
+            Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
 @Composable
-private fun PhoneStep(vm: SettingsViewModel, onPair: () -> Unit) {
+private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Boolean, onPair: () -> Unit, onNext: () -> Unit) {
     val context = LocalContext.current
-    var granted by remember { mutableStateOf(Permissions.missing(context).isEmpty()) }
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val paired = bridge is BridgeState.Connecting || bridge is BridgeState.Connected
-    val requestPerms = rememberPermissionsRequest { granted = Permissions.missing(context).isEmpty() }
+    // Whatever the answer, the next step comes once Android's prompt is closed.
+    val requestPerms = rememberPermissionsRequest { onNext() }
+    fun askThenNext() {
+        if (Permissions.missing(context).isEmpty()) onNext() else requestPerms(Permissions.runtime)
+    }
+    // Back from pairing: ask for contacts and notifications, then move on.
+    LaunchedEffect(paired, pairingStarted) {
+        if (paired && pairingStarted) askThenNext()
+    }
     Title(
-        "Your messages",
-        "Transmit links to Google Messages on your phone, like Messages for Web. Keep Google Messages as your SMS app; RCS chats keep working.",
+        "Connect your messages",
+        "Transmit works with Google Messages on your phone, like Messages for Web. Your texts keep going through Google Messages.",
     )
-    StepCard(Icons.Default.Sms, "Pair with Google Messages", paired, action = "Pair", onClick = onPair)
-    Spacer(Modifier.height(10.dp))
-    StepCard(Icons.Default.Contacts, "Contacts & notifications", granted) { requestPerms(Permissions.runtime) }
-    if (!Permissions.messageAlertsOn(context)) {
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-            Icon(Icons.Default.Notifications, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(6.dp))
-            Text("Needed to alert you to new messages", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (paired) {
+        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Text("Connected to Google Messages", style = MaterialTheme.typography.titleMedium)
+            }
         }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Next, allow contacts and notifications so your chats show names and you hear about new messages.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = ::askThenNext, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Continue") }
+    } else {
+        Button(onClick = onPair, modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(20.dp)) {
+            Icon(Icons.Default.Sms, null)
+            Spacer(Modifier.width(12.dp))
+            Text("Connect Google Messages", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onNext, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Do this later") }
     }
 }
 
 @Composable
-private fun StepCard(icon: ImageVector, title: String, done: Boolean, action: String = "Allow", onClick: () -> Unit) {
-    Surface(
-        onClick = onClick, enabled = !done, shape = RoundedCornerShape(20.dp),
-        color = if (done) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(16.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            if (done) Icon(Icons.Default.CheckCircle, "Done", tint = MaterialTheme.colorScheme.primary)
-            else FilledTonalButton(onClick = onClick) { Text(action) }
+private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Unit, onFinish: () -> Unit) {
+    val trial by vm.trial.state.collectAsStateWithLifecycle()
+    val access by vm.access.collectAsStateWithLifecycle()
+    var ownKey by remember { mutableStateOf(false) }
+    // The free week started, or a plan was bought on the plans screen.
+    LaunchedEffect(access) { if (access?.isManaged == true) onFinish() }
+    Title("Turn on translation", "Read every message in the language you're practicing, and reply with confidence.")
+    Benefit(Icons.Default.Translate, "Translations as you chat")
+    Benefit(Icons.Default.School, "A tutor that checks your replies")
+    Benefit(Icons.Default.Lightbulb, "Words and grammar explained")
+    Spacer(Modifier.height(28.dp))
+    val failed = trial as? TrialUi.Failed
+    if (failed != null) {
+        TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = { ownKey = true }, onRetry = { vm.trial.start() })
+    } else {
+        Button(
+            onClick = { vm.trial.start() }, enabled = trial != TrialUi.Starting,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) {
+            if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            else Text(AccessText.START_TRIAL, style = MaterialTheme.typography.titleMedium)
         }
+        Text(
+            AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = { ownKey = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(AccessText.OWN_KEY) }
     }
+    TextButton(
+        onClick = { vm.turnOffAi(); onFinish() }, enabled = trial != TrialUi.Starting,
+        modifier = Modifier.align(Alignment.CenterHorizontally),
+    ) { Text("Not now") }
+    if (ownKey) OwnKeyDialog(vm, onDismiss = { ownKey = false }, onDone = { ownKey = false; onFinish() })
 }
 
 @Composable
-private fun AiStep(vm: SettingsViewModel, s: app.transmit.data.AppSettings) {
-    val provider = s.provider
-    var keyDialog by remember { mutableStateOf(false) }
-    val hasKey = vm.hasKey(provider)
-    Title("Connect an AI", "Translations, explanations and feedback use your own API key. You set the budget.")
-    ProviderChips(provider, vm::setProvider)
-    Spacer(Modifier.height(16.dp))
-    StepCard(Icons.Default.Key, if (hasKey) "${provider.label} key saved" else "${provider.label} key", hasKey, action = "Add") { keyDialog = true }
-    Spacer(Modifier.height(16.dp))
-    Text(
-        "Budget: ${usd(s.monthlyBudgetUsd)} a month overall, ${usd(s.contactDefaults.monthlyBudgetUsd)} per contact, " +
-            "${usd(s.unknownDefaults.monthlyBudgetUsd)} per unknown number." +
-            if (s.unknownDefaults.autoTranslate) "" else " Unknown numbers aren't auto-translated, so codes and spam never reach the AI.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start,
-    )
-    if (keyDialog) KeyDialog(vm, provider) { keyDialog = false }
+private fun Benefit(icon: ImageVector, text: String) {
+    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
 }

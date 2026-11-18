@@ -3,6 +3,10 @@ package app.transmit.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
+import app.transmit.access.PlayPurchase
+import app.transmit.access.Tier
+import app.transmit.ui.access.AccessText
+import app.transmit.ui.access.TrialStarter
 import app.transmit.ai.AiException
 import app.transmit.ai.Effort
 import app.transmit.ai.ModelInfo
@@ -56,6 +60,39 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
 
     val bridge = c.bridge.state
     val isPaired get() = c.bridge.isPaired
+
+    // ---- AI access -----------------------------------------------------------------------------
+
+    val accessManager get() = c.access
+    val access = c.access.access
+    val allowance = c.access.allowance
+    val trial = TrialStarter(viewModelScope, c.access)
+    val restoring = MutableStateFlow(false)
+
+    /** The user's own key from now on; a trial or subscription stays for a switch back. */
+    fun useOwnKey() = launch { c.access.useOwnKey() }
+
+    /** "Not now". */
+    fun turnOffAi() = launch { c.access.turnOff() }
+
+    /** Back to the trial or subscription; [onNoPlan] when there's none left (show the plans). */
+    fun switchToManaged(onNoPlan: () -> Unit) = launch { if (!c.access.useManaged()) onNoPlan() }
+
+    fun restore(onResult: (String) -> Unit) {
+        if (restoring.value) return
+        restoring.value = true
+        launch {
+            val error = c.access.restore()
+            restoring.value = false
+            onResult(AccessText.restoreResult(error, c.access.current()))
+        }
+    }
+
+    /** Stand-in for the Play purchase flow until the paywall exists; only the debug fake accepts it. */
+    fun placeholderPurchase(tier: Tier, onResult: (String?) -> Unit) = launch {
+        val error = c.access.activatePurchase(PlayPurchase(tier.productId, "placeholder-${System.currentTimeMillis()}"))
+        onResult(error?.let { "Purchases aren't available in this build yet." })
+    }
 
     fun unpair() {
         viewModelScope.launch { c.bridge.unpair() }

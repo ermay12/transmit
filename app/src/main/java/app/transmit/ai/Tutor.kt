@@ -1,5 +1,8 @@
 package app.transmit.ai
 
+import app.transmit.access.AccessManager
+import app.transmit.access.ManagedAi
+import app.transmit.access.forAccess
 import app.transmit.data.AppSettings
 import app.transmit.data.Language
 import app.transmit.data.ModelSlot
@@ -19,14 +22,6 @@ data class TranslationBatch(val texts: Map<String, String>, val cost: CallCost)
 data class Explanation(val text: String, val cost: CallCost?, val cached: Boolean)
 data class FeedbackResult(val feedback: Feedback, val cost: CallCost)
 
-class BudgetExceededException(val status: BudgetStatus) : Exception(
-    when (status) {
-        is BudgetStatus.GlobalExceeded -> "Monthly AI budget reached (${usd(status.spent)} of ${usd(status.limit)})."
-        is BudgetStatus.ChatExceeded -> "This chat's AI budget is used up (${usd(status.spent)} of ${usd(status.limit)})."
-        BudgetStatus.Ok -> "Budget OK"
-    },
-)
-
 fun usd(v: Double): String = when {
     v == 0.0 -> "$0"
     v < 0.01 -> "<$0.01"
@@ -35,14 +30,16 @@ fun usd(v: Double): String = when {
 }
 
 /**
- * The language-learning operations: translate, explain and give feedback. Every call is checked
- * against the budgets first and recorded in the usage ledger afterwards.
+ * The language-learning operations: translate, explain and give feedback. Every call is checked against the
+ * access mode and budgets first ([AiGate]) and recorded in the usage ledger afterwards. Managed modes run on
+ * Transmit's key and model; BYOK on the user's.
  */
 class Tutor(
     private val ai: AiService,
     private val settings: SettingsRepository,
     private val budget: BudgetManager,
     private val dao: TransmitDao,
+    private val access: AccessManager,
 ) {
     suspend fun translate(
         items: List<Pair<String, String>>,
@@ -161,16 +158,16 @@ class Tutor(
      * without reasoning controls is rejected by most providers. For translation, "Auto" means the
      * fastest setting the model allows: thinking made translations many times slower for no gain.
      */
-    private suspend fun effortFor(s: AppSettings, slot: ModelSlot, model: String): Effort {
+    private suspend fun effortFor(s: AppSettings, slot: ModelSlot, model: String, via: AiClient?): Effort {
         val wanted = s.effort(slot)
         if (wanted == Effort.DEFAULT && slot != ModelSlot.TRANSLATE) return wanted
-        val info = ai.modelInfo(s.provider, model) ?: return wanted
+        val info = ai.modelInfo(s.provider, model, via) ?: return wanted
         if (wanted == Effort.DEFAULT) return info.efforts.minOrNull() ?: Effort.DEFAULT
         return if (wanted in info.efforts) wanted else Effort.DEFAULT
     }
 
     private suspend fun run(
-        s: AppSettings,
+        settings: AppSettings,
         slot: ModelSlot,
         threadId: Long?,
         purpose: Purpose,
@@ -180,23 +177,36 @@ class Tutor(
         maxTokens: Int,
         fast: Boolean = false,
     ): Pair<String, CallCost> {
+        val mode = access.current()
+        val s = settings.forAccess(mode)
+        AiGate.check(mode, overrideBudget, { access.allowanceUsedUp() }, { budget.status(threadId, s) })?.let { throw AiBlockedException(it) }
+        val managed = mode.isManaged
         val model = s.model(slot)
             ?: throw AiException("Choose a ${if (slot == ModelSlot.TRANSLATE) "translation" else "tutor"} model in Settings.", AiException.Kind.NO_MODEL)
-        if (!overrideBudget) {
-            val status = budget.status(threadId, s)
-            if (status != BudgetStatus.Ok) throw BudgetExceededException(status)
+        val client = if (managed) {
+            ai.managedClient(access.managedKey() ?: throw AiException("No managed key.", AiException.Kind.NO_KEY))
+        } else {
+            ai.client(s.provider, s)
         }
-        val client = ai.client(s.provider, s)
-        val result = client.complete(CompletionRequest(model, system, prompt, maxTokens, effortFor(s, slot, model), fast))
-        val price = ai.price(s.provider, result.model, s) ?: ai.price(s.provider, model, s)
+        val via = client.takeIf { managed }
+        val result = try {
+            client.complete(CompletionRequest(model, system, prompt, maxTokens, effortFor(s, slot, model, via), fast))
+        } catch (e: AiException) {
+            if (managed) access.onManagedError(e)?.let { throw AiBlockedException(it) }
+            throw e
+        }
+        val price = ai.price(s.provider, result.model, s, via) ?: ai.price(s.provider, model, s, via)
         val cost = result.reportedCostUsd ?: price?.cost(result.inputTokens, result.outputTokens) ?: 0.0
         val callCost = CallCost(result.model, result.inputTokens, result.outputTokens, cost, priced = result.reportedCostUsd != null || price != null)
         dao.insertUsage(
             UsageEntity(
-                threadId = threadId, at = System.currentTimeMillis(), provider = s.provider.name, model = result.model,
+                threadId = threadId, at = System.currentTimeMillis(),
+                // Managed spending counts against the allowance, never against the user's own budgets.
+                provider = if (managed) ManagedAi.LEDGER_PROVIDER else s.provider.name, model = result.model,
                 purpose = purpose.name, inputTokens = result.inputTokens, outputTokens = result.outputTokens, costUsd = cost,
             ),
         )
+        if (managed) access.afterManagedCall()
         return result.text to callCost
     }
 }

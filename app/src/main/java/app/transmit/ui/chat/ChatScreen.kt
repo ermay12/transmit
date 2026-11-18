@@ -73,6 +73,7 @@ import app.transmit.smart.SmartActions
 import app.transmit.smart.SmartEntity
 import app.transmit.messaging.Attachment
 import app.transmit.messaging.PhoneNumbers
+import app.transmit.ui.access.AiBlockDialog
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
 import app.transmit.ui.media.ImageViewer
@@ -84,7 +85,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
+fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlans: () -> Unit, onOwnKey: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val items by vm.items.collectAsStateWithLifecycle()
@@ -102,6 +103,10 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     val spent by vm.spent.collectAsStateWithLifecycle()
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val script by vm.script.collectAsStateWithLifecycle()
+    val access by vm.access.collectAsStateWithLifecycle()
+    val trial by vm.trial.state.collectAsStateWithLifecycle()
+    // Model, cost and dollar budgets are for people paying for their own AI.
+    val aiDetails = access?.showsAiDetails == true
     var viewing by remember { mutableStateOf<Attachment?>(null) }
     /** The message a tapped quote just scrolled to. */
     var highlighted by remember { mutableStateOf<String?>(null) }
@@ -261,8 +266,8 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
             onCopyCode = { SmartActions.copyCode(context, it) },
         )
         is Sheet.Emoji -> EmojiSheet(onDismiss = { vm.sheet.value = null }, onPick = { vm.react(s.item, it) })
-        is Sheet.Details -> DetailsSheet(s.item, people, recipients, vm.simLabel(s.item.message.subId), onDismiss = { vm.sheet.value = null })
-        is Sheet.Explain -> ExplainSheet(s, onDismiss = { vm.sheet.value = null }, onRefresh = vm::refreshExplanation)
+        is Sheet.Details -> DetailsSheet(s.item, people, recipients, vm.simLabel(s.item.message.subId), aiDetails, onDismiss = { vm.sheet.value = null })
+        is Sheet.Explain -> ExplainSheet(s, aiDetails, onDismiss = { vm.sheet.value = null }, onRefresh = vm::refreshExplanation)
         Sheet.ChatInfo -> {
             val c = chat
             val st = settings
@@ -271,6 +276,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                     chat = c, settings = st,
                     people = recipients.map { people[it] ?: ContactInfo(it, null, null, null) },
                     spent = spent,
+                    showBudget = aiDetails,
                     onDismiss = { vm.sheet.value = null },
                     onAutoTranslate = vm::setAutoTranslate,
                     onLanguage = vm::setChatLanguage,
@@ -287,15 +293,15 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     }
 
     budgetPrompt?.let { prompt ->
-        AlertDialog(
-            onDismissRequest = { vm.budgetPrompt.value = null },
-            icon = { Icon(Icons.Outlined.Savings, null) },
-            title = { Text("Budget reached") },
-            text = { Text(prompt.message) },
-            confirmButton = {
-                TextButton(onClick = { vm.budgetPrompt.value = null; prompt.retry() }) { Text("Allow once") }
-            },
-            dismissButton = { TextButton(onClick = { vm.budgetPrompt.value = null }) { Text("Cancel") } },
+        val close = { vm.budgetPrompt.value = null; vm.trial.reset() }
+        AiBlockDialog(
+            block = prompt.block,
+            trial = trial,
+            onStartTrial = { vm.trial.start { close(); prompt.retry() } },
+            onPlans = { close(); onPlans() },
+            onOwnKey = { close(); onOwnKey() },
+            onAllowOnce = { close(); prompt.retry() },
+            onDismiss = close,
         )
     }
 

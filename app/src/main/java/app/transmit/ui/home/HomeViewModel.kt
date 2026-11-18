@@ -60,6 +60,18 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val spent: StateFlow<Double> = c.dao.spentSinceFlow(c.budget.periodStart())
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
     val settings = c.settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val access = c.access.access
+    val allowance = c.access.allowance
+    val warningDismissed = c.access.warningDismissed
+
+    fun dismissWarning() {
+        c.access.warningDismissed.value = true
+    }
+
+    /** Corrects the allowance with the backend's figure when the app comes back. */
+    fun reconcileAllowance() {
+        c.scope.launch { c.access.reconcile() }
+    }
 
     /**
      * Reaction snippet key → key of the message it reacts to (null when not found), so the preview

@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
 import app.transmit.ai.AiException
-import app.transmit.ai.BudgetExceededException
+import app.transmit.ai.AiBlock
+import app.transmit.ai.AiBlockedException
+import app.transmit.ai.AiMessages
+import app.transmit.access.forAccess
+import app.transmit.ui.access.TrialStarter
 import app.transmit.ai.CallCost
 import app.transmit.ai.ContextLine
 import app.transmit.ai.EffectiveChat
@@ -219,7 +223,8 @@ sealed interface Sheet {
     data object ChatInfo : Sheet
 }
 
-data class BudgetPrompt(val message: String, val retry: () -> Unit)
+/** An AI call that was blocked; [retry] runs it again past a BYOK budget ("Allow once"). */
+data class BudgetPrompt(val block: AiBlock, val retry: () -> Unit)
 
 @OptIn(FlowPreview::class)
 class ChatViewModel(
@@ -238,7 +243,12 @@ class ChatViewModel(
     private var limit = PAGE
     private val reloads = Channel<Unit>(Channel.CONFLATED)
 
-    val settings = c.settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val access = c.access.access
+    /** The settings AI work runs with: in trial and subscription, the managed context and translate-on-open counts. */
+    val settings = combine(c.settings.settings, c.access.access) { s, a -> s.forAccess(a) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** "Start your free week" from the translation-is-off prompt. */
+    val trial = TrialStarter(viewModelScope, c.access)
     /** Finds addresses, dates and codes in bubbles as they're drawn. */
     val smart: SmartLinks get() = c.smart
     val chat = MutableStateFlow<EffectiveChat?>(null)
@@ -283,8 +293,9 @@ class ChatViewModel(
 
     /** Keys of incoming messages that automatic translation will cover and hasn't given up on. */
     private val expected: Flow<Set<String>> =
-        combine(raw, chat, settings, c.translations.failed) { list, eff, s, failed ->
-            if (eff?.autoTranslate != true || s == null) emptySet()
+        combine(raw, chat, settings, c.translations.failed, access) { list, eff, s, failed, a ->
+            // Without AI nothing is coming, so nothing waits: every message shows in its original language.
+            if (eff?.autoTranslate != true || s == null || a?.canUseAi != true) emptySet()
             else c.translations.autoCandidates(list, s).filter { !it.outgoing && it.key !in failed }.mapTo(HashSet()) { it.key }
         }
 
@@ -330,8 +341,8 @@ class ChatViewModel(
         viewModelScope.launch {
             c.translations.events.filter { it.threadId == threadId }.collect { e ->
                 banner.value = when (e) {
-                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> e.message
-                    is app.transmit.ai.TranslationManager.Event.Failed -> e.error.message
+                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> e.block.message
+                    is app.transmit.ai.TranslationManager.Event.Failed -> describe(e.error)
                 }
             }
         }
@@ -594,10 +605,10 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 c.translations.toCharacters(threadId, listOf(item.key), lang, auto = false, overrideBudget = overrideBudget)
-            } catch (e: BudgetExceededException) {
-                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { toCharacters(item, true) }
+            } catch (e: AiBlockedException) {
+                budgetPrompt.value = BudgetPrompt(e.block) { toCharacters(item, true) }
             } catch (e: AiException) {
-                toast(e.message)
+                toast(describe(e))
             }
         }
     }
@@ -607,10 +618,10 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 c.translations.romanize(threadId, listOf(item.key), lang, auto = false, overrideBudget = overrideBudget)
-            } catch (e: BudgetExceededException) {
-                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { romanize(item, true) }
+            } catch (e: AiBlockedException) {
+                budgetPrompt.value = BudgetPrompt(e.block) { romanize(item, true) }
             } catch (e: AiException) {
-                toast(e.message)
+                toast(describe(e))
             }
         }
     }
@@ -621,10 +632,10 @@ class ChatViewModel(
             try {
                 c.translations.translateNow(m, raw.value, lang, overrideBudget, refresh)
                 showOriginal.update { it - m.key }
-            } catch (e: BudgetExceededException) {
-                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { translate(m, refresh, true) }
+            } catch (e: AiBlockedException) {
+                budgetPrompt.value = BudgetPrompt(e.block) { translate(m, refresh, true) }
             } catch (e: AiException) {
-                toast(e.message)
+                toast(describe(e))
             }
         }
     }
@@ -654,10 +665,10 @@ class ChatViewModel(
                 try {
                     c.translations.translateNow(m, raw.value, lang, overrideBudget)
                     items.value.firstOrNull { it.key == m.key }?.takeIf { it.translation != null }?.let { explain(it, refresh, overrideBudget) }
-                } catch (e: BudgetExceededException) {
-                    budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { explain(item, refresh, true) }
+                } catch (e: AiBlockedException) {
+                    budgetPrompt.value = BudgetPrompt(e.block) { explain(item, refresh, true) }
                 } catch (e: AiException) {
-                    toast(e.message)
+                    toast(describe(e))
                 }
             }
             return
@@ -671,11 +682,11 @@ class ChatViewModel(
             try {
                 val e = c.tutor.explain(original, rendered, lang, threadId, key, overrideBudget, refresh)
                 sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(text = e.text, cost = e.cost, cached = e.cached, error = null) else s }
-            } catch (e: BudgetExceededException) {
+            } catch (e: AiBlockedException) {
                 sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = e.message) else s }
-                budgetPrompt.value = BudgetPrompt(e.message.orEmpty()) { openExplanation(original, rendered, lang, key, refresh, true) }
+                budgetPrompt.value = BudgetPrompt(e.block) { openExplanation(original, rendered, lang, key, refresh, true) }
             } catch (e: AiException) {
-                sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = e.message) else s }
+                sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = describe(e)) else s }
             }
         }
     }
@@ -761,7 +772,7 @@ class ChatViewModel(
             c.tutor.romanize(listOf("1" to key), lang, threadId).texts["1"]?.also { romanCache[key] = it }
         } catch (e: AiException) {
             null
-        } catch (e: BudgetExceededException) {
+        } catch (e: AiBlockedException) {
             null
         }
     }
@@ -851,12 +862,12 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 block()
-            } catch (e: BudgetExceededException) {
-                budgetPrompt.value = BudgetPrompt(e.message.orEmpty(), retry)
+            } catch (e: AiBlockedException) {
+                budgetPrompt.value = BudgetPrompt(e.block, retry)
             } catch (e: AiException) {
-                toast(e.message)
+                toast(describe(e))
             } catch (e: NoSuchElementException) {
-                toast("The model returned no translation")
+                toast(describe(AiException("The model returned no translation", AiException.Kind.OTHER)))
             } finally {
                 compose.update { it.copy(busy = null) }
             }
@@ -870,6 +881,9 @@ class ChatViewModel(
             .take(n).toList().reversed()
             .map { ContextLine(it.outgoing, it.sender?.let { a -> people.value[a]?.name }, it.body) }
     }
+
+    /** Plain language outside BYOK: no keys, models or settings. */
+    private fun describe(e: Throwable): String = AiMessages.describe(e, access.value)
 
     private fun toast(message: String?) {
         _toasts.tryEmit(message ?: "Something went wrong")

@@ -2,7 +2,30 @@ package app.transmit.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextAlign
+import app.transmit.access.AccessBuild
+import app.transmit.access.AiAccess
+import app.transmit.access.Tier
+import app.transmit.ui.access.AccessText
+import app.transmit.ui.access.AllowanceBar
+import app.transmit.ui.access.TrialFailure
+import app.transmit.ui.access.TrialUi
+import app.transmit.ui.access.openManageSubscription
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -63,6 +86,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -86,16 +111,38 @@ import app.transmit.gm.BridgeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSlot) -> Unit, onUsage: () -> Unit, onPair: () -> Unit) {
+fun SettingsScreen(
+    vm: SettingsViewModel,
+    onBack: () -> Unit,
+    onModels: (ModelSlot) -> Unit,
+    onUsage: () -> Unit,
+    onPair: () -> Unit,
+    onPlans: () -> Unit,
+    /** Opens straight into "Use my own AI key", e.g. from a chat's translation-is-off prompt. */
+    openOwnKey: Boolean = false,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val access by vm.access.collectAsStateWithLifecycle()
     val spent by vm.spent.collectAsStateWithLifecycle()
     vm.keyVersion.collectAsStateWithLifecycle().value // recompose when keys change
     val bridge by vm.bridge.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var confirmUnpair by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf<String?>(null) }
     var keyDialog by remember { mutableStateOf(false) }
+    var ownKeyDialog by rememberSaveable { mutableStateOf(openOwnKey) }
+    var advanced by rememberSaveable { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    // Where the Advanced header sits in the scrolling column, to scroll it to the top when opened from the plan card.
+    var advancedTop by remember { mutableStateOf(0) }
+    val snackbar = remember { SnackbarHostState() }
+    fun show(message: String) {
+        scope.launch { snackbar.showSnackbar(message) }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
@@ -104,7 +151,24 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
         },
     ) { padding ->
         val s = settings ?: return@Scaffold
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
+        val a = access ?: return@Scaffold
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(scroll).padding(bottom = 32.dp)) {
+            PlanCard(
+                vm, a,
+                onPlans = onPlans,
+                onOwnKey = { ownKeyDialog = true },
+                onAdvanced = {
+                    advanced = true
+                    scope.launch {
+                        // Once the expand animation has made the column tall enough to scroll that far.
+                        kotlinx.coroutines.delay(350)
+                        scroll.animateScrollTo(advancedTop)
+                    }
+                },
+                onMessage = ::show,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
             Section("Languages")
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 LanguageCard("I speak", s.native.flag, s.native.nativeName, Modifier.weight(1f)) { pick = "native" }
@@ -120,34 +184,6 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
                 )
             }
 
-            Section("AI provider")
-            ProviderChips(s.provider, vm::setProvider, Modifier.padding(horizontal = 16.dp))
-            if (s.provider == ProviderType.CUSTOM) {
-                var url by remember { mutableStateOf(s.customBaseUrl) }
-                OutlinedTextField(
-                    value = url, onValueChange = { url = it; vm.setCustomBaseUrl(it) },
-                    label = { Text("Base URL") }, placeholder = { Text("https://host/v1") }, singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Link, null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                )
-            }
-            val masked = vm.maskedKey(s.provider)
-            Row0(
-                Icons.Default.Key, "API key", masked ?: "Not set",
-                trailing = {
-                    if (masked != null) Icon(Icons.Default.CheckCircle, "Saved", tint = MaterialTheme.colorScheme.primary)
-                    else Icon(Icons.Default.ErrorOutline, "Missing", tint = MaterialTheme.colorScheme.error)
-                },
-            ) { keyDialog = true }
-            ModelRow(Icons.Default.Translate, "Translation model", s, ModelSlot.TRANSLATE) { onModels(ModelSlot.TRANSLATE) }
-            ModelRow(Icons.Default.Psychology, "Tutor model", s, ModelSlot.TUTOR) { onModels(ModelSlot.TUTOR) }
-
-            Section("Budget")
-            MonthlyBudget(spent, s.monthlyBudgetUsd, vm::setMonthlyBudget, onUsage)
-            DefaultsRow(Icons.Default.Contacts, "Contacts", s.contactDefaults, vm::setContactDefaults)
-            DefaultsRow(Icons.Outlined.HelpOutline, "Unknown numbers", s.unknownDefaults, vm::setUnknownDefaults)
-
             Section("Translation")
             SwitchRow0(
                 Icons.Default.Contacts, "Auto-translate contacts", s.contactDefaults.autoTranslate,
@@ -159,8 +195,6 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
                 { vm.setUnknownDefaults(s.unknownDefaults.copy(autoTranslate = it)) },
                 subtitle = "Chats with numbers not in your contacts",
             )
-            StepperRow(Icons.Default.History, "Context messages", "Earlier messages sent with each request", s.contextMessages, 0..12, vm::setContextMessages)
-            StepperRow(Icons.Default.DoneAll, "Translate on open", "Older messages translated when a chat opens", s.backfillCount, 0..50, vm::setBackfill, step = 4)
             SwitchRow0(Icons.Default.Send, "Translate my sent messages", s.translateOutgoing, vm::setTranslateOutgoing)
 
             Section("Messages")
@@ -195,11 +229,43 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
                 }
             }
 
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth().onGloballyPositioned { advancedTop = it.positionInParent().y.toInt() }
+                    .clickable { advanced = !advanced }
+                    .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Advanced", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Icon(if (advanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (advanced) "Collapse" else "Expand")
+            }
+            AnimatedVisibility(advanced) {
+                Column {
+                    if (a is AiAccess.Byok) {
+                        OwnKeySettings(vm, s, spent, onKey = { keyDialog = true }, onModels = onModels, onUsage = onUsage)
+                        Row0(Icons.Default.AutoAwesome, "Switch to a Transmit subscription", "No key or AI settings to look after") {
+                            vm.switchToManaged(onNoPlan = onPlans)
+                        }
+                    } else {
+                        Row0(Icons.Default.Key, AccessText.OWN_KEY, "Bring a key from OpenRouter, OpenAI, Anthropic or Google") { ownKeyDialog = true }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
-            Text(
-                "Transmit ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp),
-            )
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Transmit ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+                )
+                // Required by the GNU AGPL: anyone using the app can get its source.
+                TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SOURCE_URL))) } }) {
+                    Icon(Icons.Default.Code, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Source code", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            AccessBuild.DebugPanel(vm.accessManager)
         }
 
         when (pick) {
@@ -207,6 +273,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             "target" -> LanguagePickerDialog("Practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
         }
         if (keyDialog) KeyDialog(vm, s.provider) { keyDialog = false }
+        if (ownKeyDialog) OwnKeyDialog(vm, onDismiss = { ownKeyDialog = false }, onDone = { ownKeyDialog = false; show("Using your own AI key") })
         if (confirmUnpair) {
             AlertDialog(
                 onDismissRequest = { confirmUnpair = false },
@@ -217,6 +284,215 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit, onModels: (ModelSl
             )
         }
     }
+}
+
+private const val SOURCE_URL = "https://github.com/ermay12/transmit"
+
+/** Everything about the user's own key: provider, key, models, budgets, context and usage. BYOK only. */
+@Composable
+private fun OwnKeySettings(
+    vm: SettingsViewModel,
+    s: AppSettings,
+    spent: Double,
+    onKey: () -> Unit,
+    onModels: (ModelSlot) -> Unit,
+    onUsage: () -> Unit,
+) {
+    Text(
+        "AI provider", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+    )
+    ProviderChips(s.provider, vm::setProvider, Modifier.padding(horizontal = 16.dp))
+    if (s.provider == ProviderType.CUSTOM) {
+        var url by remember { mutableStateOf(s.customBaseUrl) }
+        OutlinedTextField(
+            value = url, onValueChange = { url = it; vm.setCustomBaseUrl(it) },
+            label = { Text("Base URL") }, placeholder = { Text("https://host/v1") }, singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Link, null) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        )
+    }
+    val masked = vm.maskedKey(s.provider)
+    Row0(
+        Icons.Default.Key, "API key", masked ?: "Not set",
+        trailing = {
+            if (masked != null) Icon(Icons.Default.CheckCircle, "Saved", tint = MaterialTheme.colorScheme.primary)
+            else Icon(Icons.Default.ErrorOutline, "Missing", tint = MaterialTheme.colorScheme.error)
+        },
+        onClick = onKey,
+    )
+    ModelRow(Icons.Default.Translate, "Translation model", s, ModelSlot.TRANSLATE) { onModels(ModelSlot.TRANSLATE) }
+    ModelRow(Icons.Default.Psychology, "Tutor model", s, ModelSlot.TUTOR) { onModels(ModelSlot.TUTOR) }
+    MonthlyBudget(spent, s.monthlyBudgetUsd, vm::setMonthlyBudget, onUsage)
+    DefaultsRow(Icons.Default.Contacts, "Contacts", s.contactDefaults, vm::setContactDefaults)
+    DefaultsRow(Icons.Outlined.HelpOutline, "Unknown numbers", s.unknownDefaults, vm::setUnknownDefaults)
+    StepperRow(Icons.Default.History, "Context messages", "Earlier messages sent with each request", s.contextMessages, 0..12, vm::setContextMessages)
+    StepperRow(Icons.Default.DoneAll, "Translate on open", "Older messages translated when a chat opens", s.backfillCount, 0..50, vm::setBackfill, step = 4)
+    Row0(Icons.Default.BarChart, "Usage", "What your key spent this month, by feature and chat", onClick = onUsage)
+}
+
+/** The top of Settings: what AI the user has, how much is used, and what they can do about it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlanCard(
+    vm: SettingsViewModel,
+    access: AiAccess,
+    onPlans: () -> Unit,
+    onOwnKey: () -> Unit,
+    onAdvanced: () -> Unit,
+    onMessage: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val allowance by vm.allowance.collectAsStateWithLifecycle()
+    val trial by vm.trial.state.collectAsStateWithLifecycle()
+    val restoring by vm.restoring.collectAsStateWithLifecycle()
+    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier.fillMaxWidth()) {
+        // Less padding at the bottom, where the Restore button's own touch padding already sits.
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = if (access is AiAccess.Byok) 12.dp else 6.dp)) {
+            when (access) {
+                AiAccess.None -> {
+                    PlanTitle("Translation is off", "Translations as you chat, and a tutor for your replies.")
+                    val failed = trial as? TrialUi.Failed
+                    if (failed != null) {
+                        TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = { vm.trial.start() })
+                    } else {
+                        Button(onClick = { vm.trial.start() }, enabled = trial != TrialUi.Starting, modifier = Modifier.fillMaxWidth()) {
+                            if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            else Text(AccessText.START_TRIAL)
+                        }
+                        Text(
+                            AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(AccessText.OWN_KEY) }
+                    }
+                }
+                is AiAccess.Trial -> {
+                    PlanTitle(AccessText.trialTitle(access.endsAt), null)
+                    AllowanceBar(allowance, trial = true)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                }
+                is AiAccess.Subscribed -> {
+                    PlanTitle(access.tier.label, access.renewsAt?.let { "Renews ${AccessText.date(context, it)}" })
+                    AllowanceBar(allowance?.copy(resetsAt = null), trial = false)
+                    Spacer(Modifier.height(16.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (access.tier == Tier.STANDARD) Button(onClick = onPlans) { Text(AccessText.UPGRADE) }
+                        OutlinedButton(onClick = { openManageSubscription(context, access.tier) }) { Text("Manage subscription") }
+                    }
+                }
+                is AiAccess.Ended -> {
+                    PlanTitle(AccessText.ended(access.reason), AccessText.KEEP_GOING)
+                    Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                }
+                AiAccess.Byok -> {
+                    val s by vm.settings.collectAsStateWithLifecycle()
+                    PlanTitle("Using your own AI key", s?.provider?.label?.let { "$it · models, budgets and usage are under Advanced" })
+                    TextButton(onClick = onAdvanced, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Advanced settings") }
+                }
+            }
+            if (access !is AiAccess.Byok) {
+                TextButton(
+                    onClick = { vm.restore(onMessage) }, enabled = !restoring,
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text(if (restoring) "Restoring…" else AccessText.RESTORE, style = MaterialTheme.typography.labelMedium) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanTitle(title: String, subtitle: String?) {
+    Text(title, style = MaterialTheme.typography.titleLarge)
+    if (subtitle != null) {
+        Spacer(Modifier.height(4.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Spacer(Modifier.height(14.dp))
+}
+
+/**
+ * Pick a provider and paste its key, or use the one already saved for it; then the app runs on the user's own key
+ * (BYOK). The trial or subscription, if any, stays for a switch back.
+ */
+@Composable
+fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Unit) {
+    val context = LocalContext.current
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val check by vm.keyCheck.collectAsStateWithLifecycle()
+    vm.keyVersion.collectAsStateWithLifecycle().value
+    val provider = settings?.provider ?: return
+    var key by remember(provider) { mutableStateOf("") }
+    val saved = vm.maskedKey(provider)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Key, null) },
+        title = { Text(AccessText.OWN_KEY) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Pay your AI provider directly. Pick one and paste a key from it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                ProviderChips(provider, vm::setProvider)
+                if (provider == ProviderType.CUSTOM) {
+                    var url by remember { mutableStateOf(settings?.customBaseUrl.orEmpty()) }
+                    OutlinedTextField(
+                        value = url, onValueChange = { url = it; vm.setCustomBaseUrl(it) },
+                        label = { Text("Base URL") }, placeholder = { Text("https://host/v1") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = key, onValueChange = { key = it }, singleLine = true,
+                    label = { Text("${provider.label} key") },
+                    placeholder = { Text(saved ?: provider.keyHint) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                when (val c = check) {
+                    KeyCheck.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp)); Text("Checking…", style = MaterialTheme.typography.bodySmall)
+                    }
+                    is KeyCheck.Failed -> Text(c.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    else -> Text(
+                        if (saved != null) "Key $saved is saved. Paste another to replace it." else "Stored encrypted on this device only.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (provider.keyUrl.isNotEmpty()) {
+                    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(provider.keyUrl))) }) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp)); Text("Get a key")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val useSaved = key.isBlank() && saved != null
+            TextButton(
+                onClick = {
+                    if (useSaved) {
+                        vm.useOwnKey()
+                        onDone()
+                    } else {
+                        vm.saveKey(provider, key) { vm.useOwnKey(); onDone() }
+                    }
+                },
+                enabled = (key.isNotBlank() || useSaved) && check != KeyCheck.Checking,
+            ) { Text(if (useSaved) "Use saved key" else "Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

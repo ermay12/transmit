@@ -193,23 +193,29 @@ interface TransmitDao {
     @Insert
     suspend fun insertUsage(usage: UsageEntity)
 
-    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since")
+    // The user's own spending, for BYOK budgets and the Usage screen. Managed calls (trial, subscription) count
+    // against the allowance instead.
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND provider != 'MANAGED'")
     fun spentSinceFlow(since: Long): Flow<Double>
 
-    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since")
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND provider != 'MANAGED'")
     suspend fun spentSince(since: Long): Double
 
-    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND threadId = :threadId")
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND threadId = :threadId AND provider != 'MANAGED'")
     fun threadSpentSinceFlow(threadId: Long, since: Long): Flow<Double>
 
-    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND threadId = :threadId")
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND threadId = :threadId AND provider != 'MANAGED'")
     suspend fun threadSpentSince(threadId: Long, since: Long): Double
 
-    @Query("SELECT threadId, SUM(costUsd) AS cost, COUNT(*) AS calls FROM usage WHERE at >= :since GROUP BY threadId ORDER BY cost DESC")
+    @Query("SELECT threadId, SUM(costUsd) AS cost, COUNT(*) AS calls FROM usage WHERE at >= :since AND provider != 'MANAGED' GROUP BY threadId ORDER BY cost DESC")
     fun spendByThread(since: Long): Flow<List<ThreadSpend>>
 
-    @Query("SELECT purpose, SUM(costUsd) AS cost, COUNT(*) AS calls, SUM(inputTokens) AS inputTokens, SUM(outputTokens) AS outputTokens FROM usage WHERE at >= :since GROUP BY purpose ORDER BY cost DESC")
+    @Query("SELECT purpose, SUM(costUsd) AS cost, COUNT(*) AS calls, SUM(inputTokens) AS inputTokens, SUM(outputTokens) AS outputTokens FROM usage WHERE at >= :since AND provider != 'MANAGED' GROUP BY purpose ORDER BY cost DESC")
     fun spendByPurpose(since: Long): Flow<List<PurposeSpend>>
+
+    /** Trial and subscription spending, each call's `usage.cost`: the local tally of the managed allowance. */
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage WHERE at >= :since AND provider = 'MANAGED'")
+    fun managedSpentSinceFlow(since: Long): Flow<Double>
 
     @Query("SELECT * FROM chat_settings WHERE threadId = :threadId")
     suspend fun chatSettings(threadId: Long): ChatSettingsEntity?

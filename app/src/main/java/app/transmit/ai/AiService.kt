@@ -43,7 +43,7 @@ class AiService(
         val client = when (provider) {
             ProviderType.ANTHROPIC -> AnthropicAiClient(key)
             ProviderType.OPENAI -> OpenAiCompatClient(provider, key, "https://api.openai.com/v1", http)
-            ProviderType.OPENROUTER -> OpenAiCompatClient(provider, key, "https://openrouter.ai/api/v1", http)
+            ProviderType.OPENROUTER -> OpenAiCompatClient(provider, key, OPENROUTER_URL, http)
             ProviderType.CUSTOM -> {
                 if (s.customBaseUrl.isBlank()) throw AiException("Set the base URL for your OpenAI-compatible provider.", AiException.Kind.NO_KEY)
                 OpenAiCompatClient(provider, key, s.customBaseUrl, http)
@@ -54,6 +54,10 @@ class AiService(
         return client
     }
 
+    /** OpenRouter with Transmit's managed key, for trial and subscription users. */
+    fun managedClient(key: String): AiClient =
+        clients.getOrPut("MANAGED:${key.hashCode()}") { OpenAiCompatClient(ProviderType.OPENROUTER, key, OPENROUTER_URL, http) }
+
     /** Validates a key by listing models; returns how many usable models it can see. */
     suspend fun testKey(provider: ProviderType, key: String): Int {
         val s = settings.current()
@@ -63,28 +67,29 @@ class AiService(
         return list.size
     }
 
-    suspend fun listModels(provider: ProviderType, refresh: Boolean = false): List<ModelInfo> {
+    /** [via] lists them with another client than the user's own key, such as the managed one. */
+    suspend fun listModels(provider: ProviderType, refresh: Boolean = false, via: AiClient? = null): List<ModelInfo> {
         if (!refresh) {
             models[provider]?.let { return it }
             settings.cachedModels(provider)?.let { cached ->
                 decode(cached).takeIf { it.isNotEmpty() }?.let { models[provider] = it; return it }
             }
         }
-        val list = client(provider, settings.current()).listModels()
+        val list = (via ?: client(provider, settings.current())).listModels()
         models[provider] = list
         settings.cacheModels(provider, encode(list))
         return list
     }
 
-    suspend fun modelInfo(provider: ProviderType, id: String): ModelInfo? =
-        runCatching { listModels(provider) }.getOrNull()?.firstOrNull { it.id == id }
+    suspend fun modelInfo(provider: ProviderType, id: String, via: AiClient? = null): ModelInfo? =
+        runCatching { listModels(provider, via = via) }.getOrNull()?.firstOrNull { it.id == id }
 
     /** Price for a model: user override > provider-reported > built-in table. */
-    suspend fun price(provider: ProviderType, model: String, s: AppSettings): Price? =
+    suspend fun price(provider: ProviderType, model: String, s: AppSettings, via: AiClient? = null): Price? =
         s.priceOverride(provider, model)
             ?: models[provider]?.firstOrNull { it.id == model }?.price
             ?: Pricing.builtIn(provider, model)
-            ?: modelInfo(provider, model)?.price
+            ?: modelInfo(provider, model, via)?.price
 
     private fun encode(list: List<ModelInfo>): String = buildJsonObject {
         put("v", CACHE_VERSION)
@@ -125,5 +130,6 @@ class AiService(
     private companion object {
         /** Bump when cached [ModelInfo] fields change meaning (2: OpenRouter efforts from reasoning metadata). */
         const val CACHE_VERSION = 2
+        const val OPENROUTER_URL = "https://openrouter.ai/api/v1"
     }
 }

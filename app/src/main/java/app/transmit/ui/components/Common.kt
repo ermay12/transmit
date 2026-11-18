@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -127,6 +128,7 @@ fun StatusBanner(
     action: String? = null,
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onDismiss: (() -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -142,6 +144,11 @@ fun StatusBanner(
             }
             if (action != null && onAction != null) {
                 FilledTonalButton(onClick = onAction) { Text(action) }
+            }
+            if (onDismiss != null) {
+                androidx.compose.material3.IconButton(onClick = onDismiss) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Close, "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
             }
         }
     }
