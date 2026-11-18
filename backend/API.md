@@ -49,6 +49,7 @@ listed below. `message` is English text for logs, not for users.
 | `busy` | 409 | Another call for the same device or purchase is in progress | Retry after 2–5 s |
 | `upstream_error` | 502 | Google or OpenRouter failed; `service` is `google` or `openrouter` | Retry with backoff; nothing was charged or lost |
 | `not_found` | 404 | Unknown path | |
+| `method_not_allowed` | 405 | Wrong HTTP method for the path | Bug in the app |
 | `internal_error` | 500 | Bug in the Worker | Retry later |
 
 `integrity_failed` reasons:
@@ -245,7 +246,7 @@ OpenRouter errors with the managed key:
 | --- | --- |
 | 403 with `"Key limit exceeded"` | This period's allowance is used up |
 | 401 `"API key expired."` | Trial key past `expiresAt` |
-| 401 otherwise (key deleted or disabled) | Key rotated on another device, or the subscription lapsed: call `/v1/subscription` (or show ENDED for a trial) |
+| 401 otherwise, e.g. `"User not found."` (key deleted or disabled) | Key rotated on another device, or the subscription lapsed or was refunded: call `/v1/subscription` (or show ENDED for a trial) |
 | 404 `"Model blocked by guardrail"` | The app asked for a model other than `google/gemma-4-31b-it` |
 | other 4xx/5xx | Service problem, not "allowance used up"; show the message in its original language and retry later |
 

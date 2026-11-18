@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "transmit",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Hourly; each run handles what fits in CRON_SUBREQUEST_BUDGET and leaves the rest for the next.
+  "triggers": { "crons": ["23 * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "transmit",
+      "database_id": "fb74b4ce-efa9-4f0a-959d-2c96918ed721",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "PACKAGE_NAME": "com.ermay12.transmit",
+    // OpenRouter workspace "Transmit Customers"; its default guardrail allows only Gemma 4 31B on ZDR hosts.
+    "OPENROUTER_WORKSPACE_ID": "ab9a85f5-3ee7-4578-a4a9-2600970bf7a6",
+    // Key names are <prefix>-trial-<id> and <prefix>-sub-<id>.
+    "KEY_NAME_PREFIX": "transmit",
+    // Free trial: total AI allowance (USD), length, and the cap on new trial allowance per UTC day.
+    "TRIAL_ALLOWANCE_USD": "0.50",
+    "TRIAL_DAYS": "7",
+    "TRIAL_DAILY_BUDGET_USD": "30",
+    // AI allowance per billing period (USD), by "productId" or "productId/basePlanId".
+    "PLAN_ALLOWANCES_USD": "{\"transmit_monthly\": 4.50, \"transmit_plus\": 9.00}",
+    // Oldest Play Integrity token accepted.
+    "INTEGRITY_MAX_AGE_SECONDS": "600",
+    // Subrequests (fetches + D1 calls) one scheduled run may use; the Free plan allows 50.
+    "CRON_SUBREQUEST_BUDGET": "45",
+    // How often the job scans Google's voided purchases (refunds, chargebacks).
+    "VOIDED_CHECK_INTERVAL_HOURS": "24"
+  }
+}
