@@ -17,6 +17,7 @@ import app.transmit.data.ContactsRepository
 import app.transmit.data.SecretStore
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.AppDatabase
+import app.transmit.notify.ConversationShortcuts
 import app.transmit.notify.IncomingWorker
 import app.transmit.notify.Notifier
 import app.transmit.smart.SmartLinks
@@ -63,7 +64,9 @@ class AppContainer(val context: Context) {
     val budget = BudgetManager(dao, policy)
     val tutor = Tutor(ai, settings, budget, dao)
     val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, contacts)
-    val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations)
+    /** Recent conversations in the system share sheet and launcher, and behind notifications. */
+    val shortcuts = ConversationShortcuts(context, messaging, contacts, dao)
+    val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations, shortcuts)
     val smart = SmartLinks()
 }
 
@@ -75,6 +78,7 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
         super.onCreate()
         container = AppContainer(this)
         container.notifier.createChannels()
+        container.shortcuts.start(container.scope)
         BridgeService.start(this)
     }
 

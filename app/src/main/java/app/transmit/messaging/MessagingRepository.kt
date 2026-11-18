@@ -9,6 +9,7 @@ import app.transmit.data.db.GmMessageEntity
 import app.transmit.gm.BridgeState
 import app.transmit.gm.GmBridge
 import app.transmit.gm.GmMapping
+import app.transmit.notify.ConversationShortcuts
 import app.transmit.gm.proto.MediaContent
 import app.transmit.gm.proto.ConversationStatus
 import app.transmit.gm.proto.ConversationType
@@ -167,6 +168,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
 
     suspend fun deleteThread(threadId: Long) = withContext(Dispatchers.IO) {
         bridge.deleteConversation(threadId)
+        ConversationShortcuts.remove(context, threadId)
     }
 
     // ---- mapping -------------------------------------------------------------------------------

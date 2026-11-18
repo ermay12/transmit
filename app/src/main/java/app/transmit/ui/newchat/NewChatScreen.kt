@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,9 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -39,7 +36,8 @@ import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -47,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,8 +63,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.AppContainer
 import app.transmit.Share
 import app.transmit.data.PhoneContact
+import app.transmit.gm.NotConnectedException
 import app.transmit.messaging.PhoneNumbers
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.share.SharePreview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -83,16 +84,17 @@ class NewChatViewModel(private val c: AppContainer) : ViewModel() {
     suspend fun threadFor(recipients: List<String>): Long = withContext(Dispatchers.IO) { c.messaging.threadIdFor(recipients) }
 }
 
-private fun looksLikeNumber(q: String) = q.count { it.isDigit() } >= 3 && q.all { it.isDigit() || it in "+-() ." }
+internal fun looksLikeNumber(q: String) = q.count { it.isDigit() } >= 3 && q.all { it.isDigit() || it in "+-() ." }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun NewChatScreen(vm: NewChatViewModel, share: Share?, onBack: () -> Unit, onOpen: (Long) -> Unit) {
+fun NewChatScreen(vm: NewChatViewModel, share: Share?, startInGroupMode: Boolean = false, onBack: () -> Unit, onOpen: (Long) -> Unit) {
     val contacts by vm.contacts.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(listOf<Recipient>()) }
-    var groupMode by remember { mutableStateOf(false) }
+    var groupMode by rememberSaveable { mutableStateOf(startInGroupMode) }
     var dialpad by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(dialpad) { focus.requestFocus() }
@@ -100,7 +102,14 @@ fun NewChatScreen(vm: NewChatViewModel, share: Share?, onBack: () -> Unit, onOpe
 
     fun open(list: List<Recipient>) {
         if (list.isEmpty()) return
-        scope.launch { onOpen(vm.threadFor(list.map { it.address })) }
+        scope.launch {
+            // A new conversation is made on the phone, so this fails while disconnected.
+            runCatching { vm.threadFor(list.map { it.address }) }
+                .onSuccess(onOpen)
+                .onFailure { e ->
+                    snackbar.showSnackbar(if (e is NotConnectedException) "Connect to Google Messages to start a new chat" else e.message ?: "Couldn't start the chat")
+                }
+        }
     }
     fun pick(r: Recipient) {
         if (!groupMode && selected.isEmpty()) open(listOf(r))
@@ -112,15 +121,18 @@ fun NewChatScreen(vm: NewChatViewModel, share: Share?, onBack: () -> Unit, onOpe
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (share != null) "Send to" else if (groupMode) "New group" else "New chat") },
+                title = { Text(if (groupMode) "New group" else if (share != null) "Send to" else "New chat") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconToggleButton(checked = groupMode, onCheckedChange = { groupMode = it }) { Icon(Icons.Default.GroupAdd, "Group") }
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
+        // The whole screen, not just the list, so messages show above the keyboard.
+        modifier = Modifier.imePadding(),
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("To", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(12.dp))
@@ -180,31 +192,9 @@ fun NewChatScreen(vm: NewChatViewModel, share: Share?, onBack: () -> Unit, onOpe
     }
 }
 
-/** One line showing what's being shared, so the picker isn't mistaken for a plain new chat. */
 @Composable
-private fun SharePreview(share: Share) {
-    Surface(
-        shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-    ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Share, "Sharing", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            share.text?.takeIf { it.isNotBlank() }?.let {
-                Text(it.trim(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
-            }
-            if (share.attachments.isNotEmpty()) {
-                Spacer(Modifier.width(8.dp))
-                Icon(Icons.Default.Image, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${share.attachments.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecipientRow(name: String, detail: String?, seed: String, photo: android.net.Uri?, icon: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+internal fun RecipientRow(name: String, detail: String?, seed: String, photo: android.net.Uri?, icon: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         if (icon) {
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary) }
         } else {
@@ -212,8 +202,8 @@ private fun RecipientRow(name: String, detail: String?, seed: String, photo: and
         }
         Spacer(Modifier.width(14.dp))
         Column {
-            Text(name, style = MaterialTheme.typography.bodyLarge)
-            if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

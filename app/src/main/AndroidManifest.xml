@@ -67,7 +67,11 @@
                 <data android:scheme="mms" />
                 <data android:scheme="mmsto" />
             </intent-filter>
-            <!-- Share text or media into a new message. -->
+            <!-- Recent conversations as share targets in the system share sheet. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <!-- Share text or media into a new message. Keep the types in step with res/xml/shortcuts.xml. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

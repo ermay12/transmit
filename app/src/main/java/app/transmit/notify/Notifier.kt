@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -17,8 +16,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.LocusIdCompat
-import androidx.core.content.pm.ShortcutInfoCompat
-import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import app.transmit.MainActivity
 import app.transmit.R
@@ -27,6 +24,7 @@ import app.transmit.ai.TranslationManager
 import app.transmit.data.ContactsRepository
 import app.transmit.data.NotificationContent
 import app.transmit.data.SettingsRepository
+import app.transmit.data.chatTitle
 import app.transmit.data.db.TransmitDao
 import app.transmit.data.db.shown
 import app.transmit.data.db.shownWithReading
@@ -46,6 +44,7 @@ class Notifier(
     private val settings: SettingsRepository,
     private val policy: ChatPolicy,
     private val translations: TranslationManager,
+    private val shortcuts: ConversationShortcuts,
 ) {
     /** The conversation currently on screen; it gets no notifications. */
     @Volatile var activeThreadId: Long? = null
@@ -102,14 +101,16 @@ class Notifier(
         val people = HashMap<String, Person>()
         for (m in unread) {
             val address = m.sender ?: recipients.firstOrNull().orEmpty()
-            val person = people.getOrPut(address) { person(address) }
+            val person = people.getOrPut(address) { shortcuts.person(address) }
             val display = s.scriptDisplay(eff.target)
             // A reaction quotes in one line; a message gets its pinyin or romaji under it.
             val translation = reactionTargets[m.key]?.let { translated[it]?.shown(display) } ?: translated[m.key]?.shownWithReading(display)
             style.addMessage(notificationText(m, translation, s.notificationContent, eff.autoTranslate), m.date, person)
         }
 
-        val shortcutId = pushShortcut(threadId, title, if (isGroup) null else people.values.firstOrNull())
+        // Labelled like the conversation list, so the share sheet and launcher show the same name.
+        val label = chatTitle(recipients.map(contacts::lookup), customName)
+        val shortcutId = shortcuts.push(threadId, label, if (isGroup) null else people.values.firstOrNull(), recipients.firstOrNull() ?: title)
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_stat_message)
             .setStyle(style)
@@ -207,41 +208,6 @@ class Notifier(
         runCatching { nm.notify(LOGGED_OUT_ID, n) }
     }
 
-    private fun person(address: String): Person {
-        val info = contacts.lookup(address)
-        val bitmap = info.photoUri?.let { uri ->
-            runCatching { context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } }.getOrNull()
-        }
-        return Person.Builder()
-            .setName(info.displayName)
-            .setKey(address)
-            .setIcon(Avatars.icon(info.displayName, address, bitmap))
-            .apply { info.lookupUri?.let { setUri(it.toString()) } }
-            .build()
-    }
-
-    private fun pushShortcut(threadId: Long, title: String, person: Person?): String {
-        val id = "thread_$threadId"
-        runCatching {
-            val shortcut = ShortcutInfoCompat.Builder(context, id)
-                .setShortLabel(title.ifBlank { "Conversation" })
-                .setLongLived(true)
-                .setLocusId(LocusIdCompat(id))
-                .setIntent(MainActivity.threadIntent(context, threadId))
-                .apply {
-                    if (person != null) {
-                        setPerson(person)
-                        person.icon?.let { setIcon(it) }
-                    } else {
-                        setIcon(Avatars.icon(title, title, null))
-                    }
-                }
-                .build()
-            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
-        }
-        return id
-    }
-
     private fun openThreadIntent(threadId: Long): PendingIntent = PendingIntent.getActivity(
         context, notificationId(threadId), MainActivity.threadIntent(context, threadId),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -312,14 +278,32 @@ object Avatars {
 
     private const val SIZE = 192
 
+    /** Adaptive icon for a group: the group glyph on a full-bleed colour. */
+    fun groupIcon(context: Context, seed: String): IconCompat {
+        val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(colorFor(seed))
+        // The middle two thirds of an adaptive icon survive the launcher's mask; the glyph sits well inside.
+        val inset = (SIZE * 0.32f).toInt()
+        androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_group_avatar)?.run {
+            setBounds(inset, inset, SIZE - inset, SIZE - inset)
+            draw(canvas)
+        }
+        return IconCompat.createWithAdaptiveBitmap(out)
+    }
+
     /** Adaptive icon: the contact photo center-cropped, or a full-bleed colour with an initial. */
     fun icon(name: String, seed: String, photo: Bitmap?): IconCompat {
         val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         if (photo != null) {
+            // Only the middle two thirds of an adaptive icon show through the mask, so the photo fills
+            // just that, as it fills the circle in the app; full-bleed, the face came out zoomed in.
+            canvas.drawColor(colorFor(seed))
             val side = minOf(photo.width, photo.height)
             val src = android.graphics.Rect((photo.width - side) / 2, (photo.height - side) / 2, (photo.width + side) / 2, (photo.height + side) / 2)
-            canvas.drawBitmap(photo, src, android.graphics.Rect(0, 0, SIZE, SIZE), Paint(Paint.FILTER_BITMAP_FLAG))
+            val inset = SIZE / 6
+            canvas.drawBitmap(photo, src, android.graphics.Rect(inset, inset, SIZE - inset, SIZE - inset), Paint(Paint.FILTER_BITMAP_FLAG))
         } else {
             canvas.drawColor(colorFor(seed))
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

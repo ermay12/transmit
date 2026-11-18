@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Conversation shortcuts carrying the share-target category show in the system share sheet (Direct
+  Share); picking one sends MainActivity the share with the shortcut's id. Keep the types in step with
+  MainActivity's SEND intent filters.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="app.transmit.MainActivity">
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="image/*" />
+        <data android:mimeType="video/*" />
+        <category android:name="app.transmit.category.SHARE_TARGET" />
+    </share-target>
+</shortcuts>

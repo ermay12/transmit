@@ -6,6 +6,7 @@ import android.util.Log
 import app.transmit.data.db.GmDao
 import app.transmit.data.db.TransmitDao
 import app.transmit.gm.GmBridge
+import app.transmit.notify.ConversationShortcuts
 import app.transmit.gm.GmException
 import app.transmit.gm.GmMapping
 import app.transmit.gm.proto.Conversation
@@ -86,6 +87,7 @@ class Sender(
             val queued = parts.mapIndexed { i, p -> queue(conv, p, if (i == parts.lastIndex) prepare else null) }
             // One at a time, so they reach the phone, and so the other person, in order.
             scope.launch { for ((placeholder, p) in queued) deliver(placeholder, p) }
+            ConversationShortcuts.reportUsed(context, threadId)
             Result(threadId, Message.key(queued.last().first.messageID))
         }
 
