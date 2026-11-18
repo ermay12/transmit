@@ -190,7 +190,8 @@ private fun AiStep(vm: SettingsViewModel, s: app.transmit.data.AppSettings) {
     Spacer(Modifier.height(16.dp))
     Text(
         "Budget: ${usd(s.monthlyBudgetUsd)} a month overall, ${usd(s.contactDefaults.monthlyBudgetUsd)} per contact, " +
-            "${usd(s.unknownDefaults.monthlyBudgetUsd)} per unknown number. Unknown numbers aren't auto-translated, so codes and spam never reach the AI.",
+            "${usd(s.unknownDefaults.monthlyBudgetUsd)} per unknown number." +
+            if (s.unknownDefaults.autoTranslate) "" else " Unknown numbers aren't auto-translated, so codes and spam never reach the AI.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start,
     )
     if (keyDialog) KeyDialog(vm, provider) { keyDialog = false }

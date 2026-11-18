@@ -39,19 +39,19 @@ data class AppSettings(
     val nativeLang: String = "en",
     val targetLang: String = "es",
     val level: Level = Level.BEGINNER,
-    val provider: ProviderType = ProviderType.ANTHROPIC,
+    val provider: ProviderType = ProviderType.OPENROUTER,
     val translateModel: String? = null,
     /** "Auto" resolves to the model's fastest setting for translation (see Tutor.effortFor). */
     val translateEffort: Effort = Effort.DEFAULT,
     val tutorModel: String? = null,
     val tutorEffort: Effort = Effort.MEDIUM,
     val customBaseUrl: String = "",
-    val monthlyBudgetUsd: Double = 5.0,
-    val contactDefaults: ChatDefaults = ChatDefaults(autoTranslate = true, monthlyBudgetUsd = 1.0),
-    val unknownDefaults: ChatDefaults = ChatDefaults(autoTranslate = false, monthlyBudgetUsd = 0.10),
-    val contextMessages: Int = 4,
+    val monthlyBudgetUsd: Double = 10.0,
+    val contactDefaults: ChatDefaults = ChatDefaults(autoTranslate = true, monthlyBudgetUsd = 10.0),
+    val unknownDefaults: ChatDefaults = ChatDefaults(autoTranslate = true, monthlyBudgetUsd = 2.0),
+    val contextMessages: Int = 8,
     val translateOutgoing: Boolean = true,
-    val backfillCount: Int = 12,
+    val backfillCount: Int = 4,
     val notificationContent: NotificationContent = NotificationContent.TRANSLATED,
     val deliveryReports: Boolean = false,
     val priceOverrides: Map<String, Price> = emptyMap(),
@@ -165,7 +165,8 @@ class SettingsRepository(private val context: Context) {
         ProviderType.ANTHROPIC -> "claude-opus-5-5"
         ProviderType.OPENAI -> if (slot == ModelSlot.TRANSLATE) "gpt-5-mini" else "gpt-5"
         ProviderType.GEMINI -> if (slot == ModelSlot.TRANSLATE) "gemini-2.5-flash" else "gemini-2.5-pro"
-        ProviderType.OPENROUTER, ProviderType.CUSTOM -> null
+        ProviderType.OPENROUTER -> "google/gemma-4-31b-it"
+        ProviderType.CUSTOM -> null
     }
 
     private suspend fun edit(block: (MutablePreferences) -> Unit) {

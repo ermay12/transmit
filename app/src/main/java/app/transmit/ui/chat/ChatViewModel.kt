@@ -12,6 +12,7 @@ import app.transmit.ai.EffectiveChat
 import app.transmit.ai.Feedback
 import app.transmit.ai.Purpose
 import app.transmit.ai.TranslationManager
+import app.transmit.data.AppSettings
 import app.transmit.data.ContactInfo
 import app.transmit.data.Language
 import app.transmit.data.Languages
@@ -863,7 +864,7 @@ class ChatViewModel(
     }
 
     private fun contextLines(): List<ContextLine> {
-        val n = settings.value?.contextMessages ?: 4
+        val n = settings.value?.contextMessages ?: AppSettings().contextMessages
         return raw.value.asSequence()
             .filter { it.body.isNotBlank() && Reactions.parse(it.body) == null }
             .take(n).toList().reversed()
