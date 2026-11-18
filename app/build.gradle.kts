@@ -16,7 +16,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.transmit"
+        // The Google Play listing's package. The Kotlin namespace stays app.transmit.
+        applicationId = "com.ermay12.transmit"
         minSdk = 31
         targetSdk = 36
         // Counts up with every commit, so each build installs over the last, whether built locally or by GitHub Actions.
@@ -29,6 +30,16 @@ android {
             // GitHub Actions points this at the same keystore as local builds, which use ~/.android/debug.keystore.
             providers.environmentVariable("TRANSMIT_KEYSTORE").orNull?.let { storeFile = file(it) }
         }
+        // The Google Play upload key: set TRANSMIT_UPLOAD_KEYSTORE (a PKCS12 file with alias "upload") and
+        // TRANSMIT_UPLOAD_PASSWORD to sign release builds for Play. Without them, release builds use the debug key.
+        providers.environmentVariable("TRANSMIT_UPLOAD_KEYSTORE").orNull?.let { path ->
+            create("upload") {
+                storeFile = file(path)
+                storePassword = providers.environmentVariable("TRANSMIT_UPLOAD_PASSWORD").get()
+                keyAlias = "upload"
+                keyPassword = storePassword
+            }
+        }
     }
 
     buildTypes {
@@ -36,8 +47,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideloaded personal build: sign with the debug key so `installRelease` works out of the box.
-            signingConfig = signingConfigs.getByName("debug")
+            // For Google Play, the upload key. Otherwise the debug key, so sideloaded builds and `installRelease` work.
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -120,6 +131,8 @@ dependencies {
     implementation(libs.protobuf.java)
     implementation(libs.zxing.core)
     implementation(libs.androidx.webkit)
+    // Subscriptions. Google Play only offers subscription setup for apps whose uploaded build includes this library.
+    implementation(libs.billing)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

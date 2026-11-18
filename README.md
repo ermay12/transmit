@@ -32,7 +32,11 @@ To build locally you need JDK 17 or later and the Android SDK (compile SDK 36). 
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Release builds are signed with the debug key, so they install directly for personal use. GitHub Actions signs with the same key (the `DEBUG_KEYSTORE_BASE64` secret), so its APKs and local builds install over each other. The version code is the number of commits, so each newer build installs as an update. On first launch, onboarding asks for your languages and level, pairs with Google Messages (by signing in with the phone's Google account, or by QR code), and connects an AI provider. You can skip the AI step and add a key later in Settings.
+Release builds are signed with the debug key, so they install directly for personal use. GitHub Actions signs with the same key (the `DEBUG_KEYSTORE_BASE64` secret), so its APKs and local builds install over each other. The version code is the number of commits, so each newer build installs as an update.
+
+The package name is `com.ermay12.transmit`, the Google Play listing's. To build an app bundle for Google Play, point the build at the upload key: `TRANSMIT_UPLOAD_KEYSTORE` (a PKCS12 keystore with the alias `upload`) and `TRANSMIT_UPLOAD_PASSWORD`, then run `./gradlew :app:bundleRelease`. The bundle is in `app/build/outputs/bundle/release/`. Google Play re-signs it with the app signing key, so Play installs and sideloaded builds can't update each other.
+
+On first launch, onboarding asks for your languages and level, pairs with Google Messages (by signing in with the phone's Google account, or by QR code), and connects an AI provider. You can skip the AI step and add a key later in Settings.
 
 Unit tests:
 
