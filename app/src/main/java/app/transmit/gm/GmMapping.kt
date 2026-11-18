@@ -62,6 +62,18 @@ object GmMapping {
 
     fun isNotice(msg: GmMessage) = msg.messageStatus.statusValue >= 200
 
+    /** The phone's id for the message [msg] replies to; null when it isn't a reply. */
+    fun replyTo(msg: GmMessage): String? = msg.replyMessage.messageID.takeIf { msg.hasReplyMessage() && it.isNotEmpty() }
+
+    /**
+     * Whether a reply can point at [msg]. Only RCS messages can be replied to: SMS and MMS (types 1–3)
+     * can't carry the link, so mautrix-gmessages sends no reply for them either. A message still
+     * sending, or one that failed, isn't on the other person's phone to point at.
+     */
+    fun canReplyTo(msg: GmMessage): Boolean =
+        msg.type !in 1L..3L && !msg.messageID.startsWith(GmBridge.PLACEHOLDER) &&
+            deliveryStatus(msg).let { it != DeliveryStatus.FAILED && it != DeliveryStatus.SENDING }
+
     fun isDeleted(msg: GmMessage) = msg.messageStatus.status in setOf(
         MessageStatusType.MESSAGE_DELETED, MessageStatusType.INCOMING_DELETED, MessageStatusType.OUTGOING_DELETED,
     )

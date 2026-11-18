@@ -11,6 +11,7 @@ import app.transmit.gm.proto.MessageStatus
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.OutgoingRPCMessage
 import app.transmit.gm.proto.Participant
+import app.transmit.gm.proto.ReplyMessage
 import app.transmit.gm.proto.SmallInfo
 import app.transmit.gm.proto.SomeKindOfGroupID
 import app.transmit.gm.proto.EcP256PublicKey
@@ -165,6 +166,29 @@ class GmProtocolTest {
         assertEquals(DeliveryStatus.RECEIVED, GmMapping.deliveryStatus(msg(MessageStatusType.INCOMING_COMPLETE)))
         assertTrue(GmMapping.isNotice(msg(MessageStatusType.TOMBSTONE_RCS_GROUP_CREATED)))
         assertTrue(GmMapping.isDeleted(msg(MessageStatusType.MESSAGE_DELETED)))
+    }
+
+    @Test
+    fun repliesPointAtTheirOriginal() {
+        val reply = GmMessage.newBuilder().setMessageID("8").setReplyMessage(ReplyMessage.newBuilder().setMessageID("5").setConversationID("2")).build()
+        assertEquals("5", GmMapping.replyTo(reply))
+        assertNull(GmMapping.replyTo(GmMessage.newBuilder().setMessageID("8").build()))
+        // An empty reference, as the phone sometimes leaves on plain messages, isn't a reply.
+        assertNull(GmMapping.replyTo(GmMessage.newBuilder().setReplyMessage(ReplyMessage.getDefaultInstance()).build()))
+    }
+
+    @Test
+    fun onlyRcsMessagesOnThePhoneCanBeRepliedTo() {
+        fun msg(type: Long, status: MessageStatusType = MessageStatusType.INCOMING_COMPLETE, id: String = "5") =
+            GmMessage.newBuilder().setMessageID(id).setType(type).setMessageStatus(MessageStatus.newBuilder().setStatus(status)).build()
+        assertTrue(GmMapping.canReplyTo(msg(4)))
+        assertTrue(GmMapping.canReplyTo(msg(4, MessageStatusType.OUTGOING_DELIVERED)))
+        // SMS, downloaded MMS and undownloaded MMS can't carry a reply.
+        for (type in 1L..3L) assertFalse(GmMapping.canReplyTo(msg(type)))
+        // Not on the other person's phone, or not on this one yet.
+        assertFalse(GmMapping.canReplyTo(msg(4, MessageStatusType.OUTGOING_FAILED_GENERIC)))
+        assertFalse(GmMapping.canReplyTo(msg(4, MessageStatusType.OUTGOING_SENDING)))
+        assertFalse(GmMapping.canReplyTo(msg(0, MessageStatusType.OUTGOING_COMPLETE, id = GmBridge.PLACEHOLDER + "abc")))
     }
 
     @Test

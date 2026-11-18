@@ -4,7 +4,7 @@ An Android texting app for language learners. Transmit links to Google Messages 
 
 ## Features
 
-- **Your Google Messages chats:** SMS, MMS and RCS conversations, including RCS groups and business chats, with photos and media, native reactions, read receipts (sent, delivered and read, like Google Messages, in the chat and the inbox), notifications, search, pin, mute, and swipe to archive. Google Messages stays your phone's SMS app.
+- **Your Google Messages chats:** SMS, MMS and RCS conversations, including RCS groups and business chats, with photos and media, native reactions, replies (swipe a message to the right, or long-press it; in RCS chats, since SMS can't carry a reply), read receipts (sent, delivered and read, like Google Messages, in the chat and the inbox), notifications, search, pin, mute, and swipe to archive. Google Messages stays your phone's SMS app.
 - **Translated inbox:** incoming messages are translated in the background as they arrive. Until the translation is ready, the text is hidden, so you don't read it in your native language first. Tap any bubble to switch between the original and the translation.
 - **Write in either language:**
   - Write in your practice language: Transmit prepares the native-language version your friend receives.

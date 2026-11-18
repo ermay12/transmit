@@ -47,6 +47,10 @@ data class Message(
     val sizeBytes: Long = 0,
     val errorCode: Int = 0,
     val reactions: List<NativeReaction> = emptyList(),
+    /** The [key] of the message this one replies to; null when it isn't a reply. */
+    val replyTo: String? = null,
+    /** A reply can point at this message (RCS messages that reached the phone). */
+    val replyable: Boolean = false,
 ) {
     val hasText get() = body.isNotBlank()
     /** The phone's id for this message. */

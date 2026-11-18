@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -46,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,8 +55,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -88,10 +93,25 @@ fun ComposeBar(
     onRemoveAttachment: (OutgoingAttachment) -> Unit,
     onApply: (String) -> Unit,
     onDismissFeedback: () -> Unit,
+    /** Who wrote the message being replied to: "You", or their name. */
+    replyAuthor: String?,
+    onCancelReply: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val targetFocus = remember { FocusRequester() }
+    val nativeFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Starting a reply puts the cursor in the box to write it: the one already begun, else the practice language.
+    val replyKey = state.replyTo?.key
+    LaunchedEffect(replyKey) {
+        if (replyKey == null) return@LaunchedEffect
+        val native = state.native.isNotBlank() && state.target.isBlank()
+        runCatching { (if (native) nativeFocus else targetFocus).requestFocus() }
+        keyboard?.show()
+    }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 4.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).animateContentSize()) {
+            state.replyTo?.let { ReplyStrip(it, replyAuthor.orEmpty(), onCancelReply) }
             AnimatedVisibility(state.feedback != null) {
                 state.feedback?.let { FeedbackCard(it, state.target, onApply, onDismissFeedback) }
             }
@@ -113,6 +133,7 @@ fun ComposeBar(
                         ai = state.targetAi, stale = state.stale, enabled = enabled,
                         onClear = onClearTarget, onRefresh = onAi,
                         reading = state.targetReading, readingStale = state.readingStale || state.stale,
+                        focusRequester = targetFocus,
                     )
                     LanguageField(
                         value = state.native, onValue = onNative, language = native,
@@ -120,6 +141,7 @@ fun ComposeBar(
                         tint = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ai = state.nativeAi, stale = false, enabled = enabled,
                         onClear = { onNative("") }, onRefresh = null,
+                        focusRequester = nativeFocus,
                     )
                 }
                 Spacer(Modifier.width(4.dp))
@@ -149,6 +171,7 @@ private fun LanguageField(
     /** The text's romanization, shown under it; dimmed when [readingStale] (it's for an earlier text). */
     reading: String? = null,
     readingStale: Boolean = false,
+    focusRequester: FocusRequester? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(tint).padding(start = 10.dp, end = 4.dp),
@@ -172,7 +195,7 @@ private fun LanguageField(
                         hintLocales = remember(keyboardLocale) { LocaleList(keyboardLocale) },
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier),
                 )
             }
             if (reading != null && value.isNotEmpty()) {
@@ -239,6 +262,28 @@ private fun SendButton(state: ComposeUi, enabled: Boolean, onSend: () -> Unit) {
             // When only the target box is filled, the first tap prepares the native text to send.
             Icon(Icons.AutoMirrored.Filled.Send, if (needsNative) "Prepare message" else "Send")
         }
+    }
+}
+
+/** The message the draft replies to, above the boxes, with a button to cancel the reply. */
+@Composable
+private fun ReplyStrip(q: Quote, author: String, onCancel: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (q.outgoing) "Replying to yourself" else "Replying to $author",
+                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            QuoteText(q, MaterialTheme.typography.bodySmall, MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        QuoteThumbnail(q, Modifier.padding(start = 8.dp))
+        IconButton(onClick = onCancel) { Icon(Icons.Default.Close, "Cancel reply", Modifier.size(20.dp)) }
     }
 }
 

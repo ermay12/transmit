@@ -1,16 +1,23 @@
 package app.transmit.ui.chat
 
 import android.text.format.Formatter
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +36,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
@@ -45,9 +53,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +67,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -89,10 +113,17 @@ import app.transmit.messaging.Reactions
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
+import app.transmit.ui.components.awaitSideways
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private val BubbleMax = 280.dp
+/** How far a bubble is swiped to reply when let go; it drags with resistance beyond. */
+private val SwipeToReply = 64.dp
+private val SwipeMax = 88.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -114,6 +145,13 @@ fun MessageBubble(
     onCopyCode: (String) -> Unit,
     /** The translation's romanization should show but isn't stored yet. */
     onRomanize: () -> Unit,
+    /** Starts a reply to this message; null when it can't be replied to. */
+    onReply: (() -> Unit)?,
+    /** Who wrote the message [item] quotes: "You", or their name. */
+    quoteAuthor: String?,
+    onQuote: (Quote) -> Unit,
+    /** Just scrolled to from a quote: the row lights up for a moment. */
+    highlighted: Boolean = false,
 ) {
     val m = item.message
     val out = m.outgoing
@@ -121,82 +159,212 @@ fun MessageBubble(
     if (item.romanizesOnSight) {
         LaunchedEffect(item.key, item.translation?.text) { onRomanize() }
     }
-    Column(
-        Modifier.fillMaxWidth().padding(top = if (item.firstInRun) 6.dp else 1.dp, start = 8.dp, end = 8.dp),
-        horizontalAlignment = if (out) Alignment.End else Alignment.Start,
-    ) {
-        if (group && !out && item.firstInRun && sender != null) {
-            Text(
-                sender.displayName, style = MaterialTheme.typography.labelSmall, color = Color(Avatars.colorFor(sender.address)),
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 46.dp, bottom = 2.dp),
+    // Not saveable: a row scrolled back into view must not come back pulled.
+    val swipe = remember { SwipeToReplyState() }
+    val highlight by animateColorAsState(
+        if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent, tween(450), label = "highlight",
+    )
+    Box(Modifier.fillMaxWidth().drawBehind { drawRect(highlight) }.then(swipeToReplyGesture(swipe, onReply))) {
+        if (swipe.active) {
+            // Grows in as the bubble is pulled, full size at the point where letting go replies.
+            Icon(
+                Icons.AutoMirrored.Filled.Reply, null,
+                Modifier.align(Alignment.CenterStart).padding(start = 14.dp).size(32.dp)
+                    .graphicsLayer {
+                        val progress = (swipe.offset / SwipeToReply.toPx()).coerceIn(0f, 1f)
+                        alpha = progress
+                        scaleX = 0.5f + 0.5f * progress
+                        scaleY = scaleX
+                    }
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape).padding(6.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Row(verticalAlignment = Alignment.Bottom) {
-            if (group && !out) {
-                Box(Modifier.width(38.dp)) {
-                    if (item.lastInRun && sender != null) Avatar(sender.displayName, sender.address, sender.photoUri, size = 30.dp)
-                }
+        Column(
+            Modifier.fillMaxWidth().offset { IntOffset(swipe.offset.roundToInt(), 0) }
+                .padding(top = if (item.firstInRun) 6.dp else 1.dp, start = 8.dp, end = 8.dp),
+            horizontalAlignment = if (out) Alignment.End else Alignment.Start,
+        ) {
+            if (group && !out && item.firstInRun && sender != null) {
+                Text(
+                    sender.displayName, style = MaterialTheme.typography.labelSmall, color = Color(Avatars.colorFor(sender.address)),
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 46.dp, bottom = 2.dp),
+                )
             }
-            Column(horizontalAlignment = if (out) Alignment.End else Alignment.Start) {
-                Box(
-                    Modifier
-                        .widthIn(max = BubbleMax)
-                        .clip(RoundedCornerShape(18.dp))
-                        .combinedClickable(onClick = onTap, onLongClick = onLongPress),
-                ) {
-                    BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink)
+            Row(verticalAlignment = Alignment.Bottom) {
+                if (group && !out) {
+                    Box(Modifier.width(38.dp)) {
+                        if (item.lastInRun && sender != null) Avatar(sender.displayName, sender.address, sender.photoUri, size = 30.dp)
+                    }
                 }
-                if (item.reactions.isNotEmpty()) {
-                    Row(
-                        Modifier.offset(y = (-6).dp).padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                Column(horizontalAlignment = if (out) Alignment.End else Alignment.Start) {
+                    item.quote?.let { q ->
+                        QuoteView(q, quoteAuthor.orEmpty(), onClick = { onQuote(q) })
+                        Spacer(Modifier.size(2.dp))
+                    }
+                    val currentReply by rememberUpdatedState(onReply)
+                    Box(
+                        Modifier
+                            .widthIn(max = BubbleMax)
+                            .clip(RoundedCornerShape(18.dp))
+                            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
+                            .then(
+                                if (onReply == null) Modifier
+                                else Modifier.semantics {
+                                    customActions = listOf(CustomAccessibilityAction("Reply") { currentReply?.invoke(); currentReply != null })
+                                },
+                            ),
                     ) {
-                        item.reactions.forEach { r ->
-                            // A plain Box: a clickable Surface would grow to the 48dp touch minimum.
-                            Box(
-                                Modifier
-                                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                                    .clip(CircleShape)
-                                    .background(if (r.mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest)
-                                    .clickable { onReaction(r.emoji) }
-                                    .padding(horizontal = 6.dp, vertical = 1.dp),
-                            ) {
-                                Text(if (r.count > 1) "${r.emoji} ${r.count}" else r.emoji, fontSize = 13.sp)
+                        BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink)
+                    }
+                    if (item.reactions.isNotEmpty()) {
+                        Row(
+                            Modifier.offset(y = (-6).dp).padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            item.reactions.forEach { r ->
+                                // A plain Box: a clickable Surface would grow to the 48dp touch minimum.
+                                Box(
+                                    Modifier
+                                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                                        .clip(CircleShape)
+                                        .background(if (r.mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable { onReaction(r.emoji) }
+                                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                                ) {
+                                    Text(if (r.count > 1) "${r.emoji} ${r.count}" else r.emoji, fontSize = 13.sp)
+                                }
                             }
                         }
                     }
-                }
-                if (item.codeChip && item.code != null) {
-                    AssistChip(
-                        onClick = { onCopyCode(item.code) },
-                        label = { Text("Copy code") },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, null, Modifier.size(AssistChipDefaults.IconSize)) },
-                    )
+                    if (item.codeChip && item.code != null) {
+                        AssistChip(
+                            onClick = { onCopyCode(item.code) },
+                            label = { Text("Copy code") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null, Modifier.size(AssistChipDefaults.IconSize)) },
+                        )
+                    }
                 }
             }
-        }
-        if (m.status == DeliveryStatus.FAILED) {
-            Row(
-                Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onRetry).padding(horizontal = 6.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.ErrorOutline, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.width(4.dp))
-                Text("Not sent · Retry", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-            }
-        } else if (item.lastInRun) {
-            Row(
-                Modifier.padding(horizontal = if (group && !out) 46.dp else 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(Times.time(context, m.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (out) {
-                    Spacer(Modifier.width(3.dp))
-                    ReceiptIcon(m.status, size = 13.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (m.status == DeliveryStatus.FAILED) {
+                Row(
+                    Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onRetry).padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.ErrorOutline, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Not sent · Retry", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+            } else if (item.lastInRun) {
+                Row(
+                    Modifier.padding(horizontal = if (group && !out) 46.dp else 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(Times.time(context, m.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (out) {
+                        Spacer(Modifier.width(3.dp))
+                        ReceiptIcon(m.status, size = 13.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
     }
+}
+
+@Stable
+private class SwipeToReplyState {
+    /** How far the bubble is pulled right, in pixels. Read it in layout or drawing, not composition: it changes every frame. */
+    var offset by mutableFloatStateOf(0f)
+    /** The bubble is pulled at all. */
+    val active by derivedStateOf { offset > 0f }
+}
+
+/**
+ * Swipe a bubble right to reply, as in Google Messages: past [SwipeToReply] it buzzes, and letting go
+ * there replies. Only a clearly sideways drag counts (see [awaitSideways]), so scrolling never does.
+ */
+@Composable
+private fun swipeToReplyGesture(state: SwipeToReplyState, onReply: (() -> Unit)?): Modifier {
+    val reply by rememberUpdatedState(onReply)
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    if (onReply == null) return Modifier
+    return Modifier.pointerInput(state) {
+        var settle: Job? = null
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            if (!awaitSideways(down.id, rightOnly = true)) return@awaitEachGesture
+            settle?.cancel()
+            val threshold = SwipeToReply.toPx()
+            val max = SwipeMax.toPx()
+            var pulled = state.offset
+            var armed = false
+            val released = horizontalDrag(down.id) { change ->
+                pulled = (pulled + change.positionChange().x).coerceAtLeast(0f)
+                state.offset = if (pulled <= threshold) pulled else minOf(threshold + (pulled - threshold) * 0.35f, max)
+                if ((state.offset >= threshold) != armed) {
+                    armed = !armed
+                    if (armed) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                change.consume()
+            }
+            if (released && armed) reply?.invoke()
+            settle = scope.launch {
+                animate(state.offset, 0f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { value, _ -> state.offset = value }
+            }
+        }
+    }
+}
+
+/** The message a reply quotes, above the reply's bubble. Tapping it shows the original. */
+@Composable
+private fun QuoteView(q: Quote, author: String, onClick: () -> Unit) {
+    val accent = if (q.outgoing || q.sender == null) MaterialTheme.colorScheme.primary else Color(Avatars.colorFor(q.sender))
+    Row(
+        Modifier
+            .widthIn(max = BubbleMax)
+            .clip(RoundedCornerShape(14.dp))
+            // Outlined and paler than a bubble, so it reads as part of the reply rather than a message of its own.
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Show the original message", onClick = onClick)
+            .drawBehind {
+                // A bar down the start edge, as quotes have.
+                val inset = 6.dp.toPx()
+                drawRoundRect(accent, Offset(5.dp.toPx(), inset), Size(3.dp.toPx(), size.height - 2 * inset), CornerRadius(1.5.dp.toPx()))
+            }
+            .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f, fill = false)) {
+            if (!q.missing) {
+                Text(author, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1)
+            }
+            QuoteText(q, MaterialTheme.typography.bodySmall, MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+        }
+        QuoteThumbnail(q, Modifier.padding(start = 8.dp))
+    }
+}
+
+/** What a quoted message says, in one or a few lines. */
+@Composable
+internal fun QuoteText(q: Quote, style: TextStyle, color: Color, maxLines: Int) {
+    when {
+        q.missing -> Text("Original message", style = style, color = color, fontStyle = FontStyle.Italic, maxLines = 1)
+        // Hidden like the bubble it quotes, until its translation arrives.
+        q.hidden -> Text("Translating…", style = style, color = color, fontStyle = FontStyle.Italic, maxLines = 1)
+        else -> Text(q.summary, style = style, color = color, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A small picture of a quoted photo or video. */
+@Composable
+internal fun QuoteThumbnail(q: Quote, modifier: Modifier = Modifier) {
+    val uri = q.thumbnail?.takeIf { !q.missing } ?: return
+    AsyncImage(
+        model = uri, contentDescription = null, contentScale = ContentScale.Crop,
+        modifier = modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    )
 }
 
 @Composable

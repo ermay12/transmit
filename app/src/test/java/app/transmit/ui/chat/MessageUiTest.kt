@@ -104,4 +104,58 @@ class MessageUiTest {
         assertNull(ComposeUi(target = "dui", reading = "dui" to "dui").targetReading)
         assertNull(c.copy(target = "").targetReading)
     }
+
+    // ---- replies ---------------------------------------------------------------------------------
+
+    @Test
+    fun aQuoteShowsWhatItsBubbleShows() {
+        // Translated, in the chat's script display.
+        assertEquals("你今晚来吗？", item(ScriptDisplay.CHARACTERS).toQuote().text)
+        assertEquals("Nǐ jīnwǎn lái ma?", item(ScriptDisplay.ROMANIZED).toQuote().text)
+        // Switched to the original.
+        assertEquals("Are you coming tonight?", item(ScriptDisplay.BOTH, showOriginal = true).toQuote().text)
+        val q = item(null).toQuote()
+        assertEquals("g1", q.key)
+        assertEquals("1", q.messageId)
+        assertEquals("+15551234567", q.sender)
+        assertFalse(q.outgoing)
+    }
+
+    @Test
+    fun aQuoteOfAHiddenMessageStaysHidden() {
+        val waiting = MessageUi(
+            message = message, reactions = emptyList(), translation = null, showOriginal = false,
+            firstInRun = true, lastInRun = true, newDay = false, translatable = true, awaiting = true,
+        )
+        assertTrue(waiting.toQuote().hidden)
+        // Tapped to show the original: the quote shows it too.
+        assertFalse(waiting.copy(showOriginal = true).toQuote().hidden)
+    }
+
+    @Test
+    fun aQuoteOfAPhotoSaysSo() {
+        val q = Quote("g2", outgoing = true, sender = null, text = "", mediaType = "image/jpeg")
+        assertEquals("📷 Photo", q.summary)
+        assertEquals("🎬 Video", q.copy(mediaType = "video/mp4").summary)
+        assertEquals("🎵 Audio", q.copy(mediaType = "audio/ogg").summary)
+        assertEquals("📎 Attachment", q.copy(mediaType = "text/x-vcard").summary)
+        // A caption wins.
+        assertEquals("look", q.copy(text = "look").summary)
+        assertTrue(Quote.missing("g9").missing)
+    }
+
+    @Test
+    fun quotedMessagesAreFoundInTheListBetweenDayHeaders() {
+        fun ui(key: String, newDay: Boolean) = MessageUi(
+            message = message.copy(key = key), reactions = emptyList(), translation = null, showOriginal = false,
+            firstInRun = true, lastInRun = true, newDay = newDay, translatable = false, awaiting = false,
+        )
+        // Oldest first, as the view model keeps them; the list runs up from a gap under the newest.
+        val items = listOf(ui("ga", newDay = true), ui("gb", newDay = false), ui("gc", newDay = true))
+        assertEquals(1, listIndexOf(items, "gc"))
+        // Past gc and the day header above it.
+        assertEquals(3, listIndexOf(items, "gb"))
+        assertEquals(4, listIndexOf(items, "ga"))
+        assertNull(listIndexOf(items, "gz"))
+    }
 }

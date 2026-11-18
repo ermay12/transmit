@@ -219,6 +219,8 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
             sizeBytes = GmMapping.mediaParts(m).sumOf { it.size },
             errorCode = if (status == DeliveryStatus.FAILED) m.messageStatus.subCode.toInt() else 0,
             reactions = reactions,
+            replyTo = GmMapping.replyTo(m)?.let(Message::key),
+            replyable = GmMapping.canReplyTo(m),
         )
     }
 

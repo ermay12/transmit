@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
@@ -119,6 +120,8 @@ fun ActionsSheet(
     onDismiss: () -> Unit,
     onReact: (String) -> Unit,
     onMoreEmoji: () -> Unit,
+    /** Null when the message can't be replied to. */
+    onReply: (() -> Unit)?,
     onExplain: () -> Unit,
     onToggle: () -> Unit,
     onRetranslate: () -> Unit,
@@ -160,6 +163,7 @@ fun ActionsSheet(
                 Spacer(Modifier.height(10.dp))
             }
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                onReply?.let { ActionTile(Icons.AutoMirrored.Filled.Reply, "Reply", it) }
                 if (item.translatable) {
                     ActionTile(Icons.Outlined.Lightbulb, "Explain", onExplain)
                     if (tr != null && tr.origin != TranslationOrigin.SAME) {

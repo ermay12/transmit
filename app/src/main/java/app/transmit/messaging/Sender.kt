@@ -17,6 +17,8 @@ import app.transmit.gm.proto.MessagePayload
 import app.transmit.gm.proto.MessageStatus
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.ReactionData
+import app.transmit.gm.proto.ReplyMessage
+import app.transmit.gm.proto.ReplyPayload
 import app.transmit.gm.proto.SendMessageRequest
 import app.transmit.gm.proto.SendMessageResponse
 import app.transmit.gm.proto.SendReactionRequest
@@ -45,7 +47,8 @@ class Sender(
 ) {
     data class Result(val threadId: Long, val key: String)
 
-    private data class Outgoing(val threadId: Long, val text: String, val attachment: OutgoingAttachment?)
+    /** [replyTo] is the phone's id for the message this one replies to. */
+    private data class Outgoing(val threadId: Long, val text: String, val attachment: OutgoingAttachment?, val replyTo: String? = null)
 
     /** What each unconfirmed placeholder holds, so a failed one can be sent again. */
     private val outgoing = ConcurrentHashMap<String, Outgoing>()
@@ -61,12 +64,14 @@ class Sender(
      * the text. Each attachment goes as its own message. In an SMS chat the text rides with the last
      * one as an MMS caption; RCS has no captions (the phone rejects a photo with text), so there the
      * text follows as a message of its own. [prepare] runs with that key before the message appears,
-     * e.g. to store its translation so it never shows untranslated.
+     * e.g. to store its translation so it never shows untranslated. With [replyTo] (the phone's id for
+     * a message), the first message sent is a reply to it.
      */
     suspend fun sendToThread(
         threadId: Long,
         text: String,
         attachments: List<OutgoingAttachment> = emptyList(),
+        replyTo: String? = null,
         prepare: suspend (key: String) -> Unit = {},
     ): Result =
         withContext(Dispatchers.IO) {
@@ -76,7 +81,8 @@ class Sender(
                 if (size > MAX_ATTACHMENT_BYTES) throw AttachmentTooLargeException(a.name ?: "Attachment", MAX_ATTACHMENT_BYTES)
             }
             val conv = conversation(threadId)
-            val parts = split(text, attachments, captions = conv.type == ConversationType.SMS).map { (t, a) -> Outgoing(threadId, t, a) }
+            val parts = split(text, attachments, captions = conv.type == ConversationType.SMS)
+                .mapIndexed { i, (t, a) -> Outgoing(threadId, t, a, replyTo.takeIf { i == 0 }) }
             val queued = parts.mapIndexed { i, p -> queue(conv, p, if (i == parts.lastIndex) prepare else null) }
             // One at a time, so they reach the phone, and so the other person, in order.
             scope.launch { for ((placeholder, p) in queued) deliver(placeholder, p) }
@@ -109,6 +115,8 @@ class Sender(
             .setTimestamp(placeholderClock.updateAndGet { maxOf(System.currentTimeMillis() * 1000, it + 1) })
             .setMessageStatus(MessageStatus.newBuilder().setStatus(MessageStatusType.OUTGOING_SENDING))
             .addAllMessageInfo(infos)
+            // So the quote shows while it sends.
+            .apply { p.replyTo?.let { setReplyMessage(ReplyMessage.newBuilder().setMessageID(it).setConversationID(conv.conversationID)) } }
             .build()
         gmDao.upsertMessages(listOf(GmMapping.messageEntity(placeholder, read = true)))
         outgoing[placeholderId] = p
@@ -134,6 +142,7 @@ class Sender(
                         .setTmpID2(tmpId),
                 )
                 .apply { bridge.simPayload(conv)?.let { setSIMPayload(it) } }
+                .apply { p.replyTo?.let { setReply(ReplyPayload.newBuilder().setMessageID(it)) } }
                 .setTmpID(tmpId)
                 .build()
             var resp = bridge.requireClient().sendMessage(req)
@@ -179,7 +188,7 @@ class Sender(
         }
         // Failed on the phone: send its text again and drop the failed copy.
         if (message.body.isBlank()) return@withContext null
-        val result = sendToThread(message.threadId, message.body, prepare = keepTranslation)
+        val result = sendToThread(message.threadId, message.body, replyTo = message.replyTo?.removePrefix("g"), prepare = keepTranslation)
         runCatching { bridge.deleteMessage(id) }
         result
     }

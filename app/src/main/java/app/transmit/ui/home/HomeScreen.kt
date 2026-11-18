@@ -78,10 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.AwaitPointerEventScope
-import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -95,6 +92,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.awaitSideways
 import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
 import app.transmit.gm.BridgeState
@@ -367,25 +365,6 @@ private fun SwipeToArchive(archived: Boolean, enabled: Boolean, onSwiped: () -> 
             }
         }
         Box(Modifier.absoluteOffset { IntOffset(offset.roundToInt(), 0) }) { content() }
-    }
-}
-
-/**
- * Waits for a touch to show its direction: true once it has moved past the touch slop within about 27°
- * of horizontal; false once it has moved that far vertically (a scroll, left to the list) or ends.
- */
-private suspend fun AwaitPointerEventScope.awaitSideways(id: PointerId): Boolean {
-    val slop = viewConfiguration.touchSlop
-    var total = Offset.Zero
-    while (true) {
-        val change = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: return false
-        if (!change.pressed || change.isConsumed) return false
-        total += change.positionChange()
-        if (abs(total.y) >= slop) return false
-        if (abs(total.x) >= slop && abs(total.x) > abs(total.y) * 2) {
-            change.consume()
-            return true
-        }
     }
 }
 

@@ -50,11 +50,13 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 
 enum class AiMode { NONE, TRANSLATE, FEEDBACK, EXPLAIN }
@@ -78,6 +80,8 @@ data class ComposeUi(
     val reading: Pair<String, String>? = null,
     /** The romanization of the current practice-language text is on its way. */
     val readingBusy: Boolean = false,
+    /** The message being replied to. */
+    val replyTo: Quote? = null,
 ) {
     /** The romanization under the practice-language box: the previous text's, dimmed, while the new one is on its way. */
     val targetReading: String?
@@ -95,6 +99,52 @@ data class ComposeUi(
 }
 
 data class ReactionUi(val emoji: String, val count: Int, val mine: Boolean)
+
+/** A message a reply quotes, as its own bubble shows it. */
+data class Quote(
+    val key: String,
+    val outgoing: Boolean,
+    /** Who sent it, for incoming messages. */
+    val sender: String?,
+    val text: String,
+    /** The type of its first attachment. */
+    val mediaType: String? = null,
+    /** Its first photo or video, for a thumbnail. */
+    val thumbnail: Uri? = null,
+    /** Its translation is on its way, so its text is hidden. */
+    val hidden: Boolean = false,
+    /** Not among the cached messages: older than they go back, or deleted. */
+    val missing: Boolean = false,
+) {
+    /** The phone's id, which a reply points at. */
+    val messageId get() = key.removePrefix("g")
+
+    /** Its text, or for a message without any, what kind of attachment it is. */
+    val summary: String
+        get() = when {
+            text.isNotBlank() -> text
+            mediaType == null -> ""
+            mediaType.startsWith("image/") -> "📷 Photo"
+            mediaType.startsWith("video/") -> "🎬 Video"
+            mediaType.startsWith("audio/") -> "🎵 Audio"
+            else -> "📎 Attachment"
+        }
+
+    companion object {
+        fun missing(key: String) = Quote(key, outgoing = false, sender = null, text = "", missing = true)
+    }
+}
+
+/** This message as a reply quotes it: the text its bubble shows, translated or not. */
+fun MessageUi.toQuote() = Quote(
+    key = key,
+    outgoing = message.outgoing,
+    sender = message.sender,
+    text = displayText.ifBlank { message.subject.orEmpty() },
+    mediaType = message.attachments.firstOrNull()?.mimeType,
+    thumbnail = message.attachments.firstOrNull { (it.isImage || it.isVideo) && !it.pending }?.uri,
+    hidden = awaiting && !showOriginal,
+)
 
 data class MessageUi(
     val message: Message,
@@ -119,6 +169,8 @@ data class MessageUi(
     val romanFailed: Boolean = false,
     /** The user's own text is in pinyin or romaji though the chat shows characters; a tap writes it in them. */
     val needsCharacters: Boolean = false,
+    /** The message this one replies to. */
+    val quote: Quote? = null,
 ) {
     val key get() = message.key
     /** True when the bubble currently shows the target-language text. */
@@ -179,6 +231,8 @@ class ChatViewModel(
     val groupPhoto = MutableStateFlow<android.net.Uri?>(null)
     val people = MutableStateFlow<Map<String, ContactInfo>>(emptyMap())
     private val raw = MutableStateFlow<List<Message>>(emptyList())
+    /** Messages replies in [raw] quote that aren't in it themselves, from further back in the cache. */
+    private val quoted = MutableStateFlow<Map<String, Message>>(emptyMap())
     val loaded = MutableStateFlow(false)
     private var limit = PAGE
     private val reloads = Channel<Unit>(Channel.CONFLATED)
@@ -205,6 +259,9 @@ class ChatViewModel(
     val downloading = MutableStateFlow<Set<String>>(emptySet())
     private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val toasts: SharedFlow<String> = _toasts
+    private val _jumps = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    /** A message to scroll to and highlight: the original of a tapped quote, once it's in the list. */
+    val jumps: SharedFlow<String> = _jumps
 
     val spent: StateFlow<Double> = c.dao.threadSpentSinceFlow(threadId, c.budget.periodStart())
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
@@ -242,8 +299,8 @@ class ChatViewModel(
     private val views: Flow<Views> = combine(showOriginal, showRoman, script, c.translations.romanFailed, c.translations.conversions, ::Views)
 
     val items: StateFlow<List<MessageUi>> =
-        combine(raw, translations, c.translations.pending, views, expected) { list, tr, pending, v, exp ->
-            build(list, tr, pending, v, exp)
+        combine(combine(raw, quoted, ::Pair), translations, c.translations.pending, views, expected) { (list, q), tr, pending, v, exp ->
+            build(list, q, tr, pending, v, exp)
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
@@ -318,16 +375,25 @@ class ChatViewModel(
         // The newest screenful first so a long history doesn't hold up the conversation, then the full page.
         if (!loaded.value) {
             val first = c.messaging.messages(threadId, FIRST_SCREEN)
+            quoted.value = quotedBy(first)
             raw.value = first
             if (first.any { m -> m.sender != null && m.sender !in people.value }) refreshPeople()
             loaded.value = true
         }
         val list = c.messaging.messages(threadId, limit)
+        quoted.value = quotedBy(list)
         raw.value = list
         if (list.any { m -> m.sender != null && m.sender !in people.value }) refreshPeople()
         downloading.update { keys -> keys.filter { k -> list.any { it.key == k && it.mmsPending } }.toSet() }
         if (active) markRead()
         autoTranslate()
+    }
+
+    /** The messages replies in [list] quote that [list] doesn't hold, from the cache. */
+    private suspend fun quotedBy(list: List<Message>): Map<String, Message> {
+        val keys = list.mapNotNullTo(HashSet()) { it.replyTo }
+        list.forEach { keys.remove(it.key) }
+        return keys.mapNotNull { c.messaging.message(it) }.associateBy { it.key }
     }
 
     /**
@@ -369,6 +435,7 @@ class ChatViewModel(
 
     private fun build(
         desc: List<Message>,
+        quoted: Map<String, Message>,
         tr: Map<String, TranslationEntity>,
         pending: Set<String>,
         views: Views,
@@ -410,7 +477,7 @@ class ChatViewModel(
         for (m in visible) if (!m.outgoing) Otp.find(m.body)?.let { codes[m.key] = it.code }
         val chipKey = visible.lastOrNull { it.key in codes }?.takeIf { System.currentTimeMillis() - it.date < CODE_CHIP_MS }?.key
 
-        return visible.mapIndexed { i, m ->
+        val list = visible.mapIndexed { i, m ->
             val prev = visible.getOrNull(i - 1)
             val next = visible.getOrNull(i + 1)
             val translatable = c.translations.isTranslatable(m)
@@ -444,6 +511,46 @@ class ChatViewModel(
                 romanFailed = m.key in views.romanFailed,
                 needsCharacters = needsCharacters,
             )
+        }
+        if (list.none { it.message.replyTo != null }) return list
+        val byKey = list.associateBy { it.key }
+        return list.map { item ->
+            val key = item.message.replyTo ?: return@map item
+            val quote = byKey[key]?.toQuote()
+                ?: quoted[key]?.let { q ->
+                    // Further back than the list: shown as its bubble would be, translated unless switched to the original.
+                    val t = tr[q.key]
+                    MessageUi(
+                        message = q, reactions = emptyList(), translation = t, showOriginal = q.key in views.original,
+                        firstInRun = true, lastInRun = true, newDay = false, translatable = c.translations.isTranslatable(q),
+                        awaiting = false, script = views.script,
+                    ).toQuote()
+                }
+                ?: Quote.missing(key)
+            item.copy(quote = quote)
+        }
+    }
+
+    /** Scrolls to the message a tapped quote shows, paging back through older messages until it's in the list. */
+    fun showQuoted(quote: Quote) {
+        val key = quote.key
+        if (items.value.any { it.key == key }) {
+            _jumps.tryEmit(key)
+            return
+        }
+        viewModelScope.launch {
+            val found = withTimeoutOrNull(FIND_QUOTED_MS) {
+                items.first { list ->
+                    val there = list.any { it.key == key }
+                    // A full page is in, so there may be more behind it; a short one means the phone is fetching older ones.
+                    if (!there && raw.value.size >= limit) {
+                        limit += PAGE
+                        reload()
+                    }
+                    there
+                }
+            }
+            if (found != null) _jumps.emit(key) else toast("Couldn't find the original message")
         }
     }
 
@@ -526,6 +633,14 @@ class ChatViewModel(
             }
         }
     }
+
+    /** Starts a reply to [item]; sending the draft sends it as one. */
+    fun replyTo(item: MessageUi) {
+        sheet.value = null
+        if (item.message.replyable) compose.update { it.copy(replyTo = item.toQuote()) }
+    }
+
+    fun cancelReply() = compose.update { it.copy(replyTo = null) }
 
     fun react(item: MessageUi, emoji: String) {
         sheet.value = null
@@ -716,7 +831,7 @@ class ChatViewModel(
                 val targetText = st.target.takeIf { it.isNotBlank() && !st.stale }
                 val romanized = targetText?.let { st.reading?.takeIf { r -> r.first == st.target }?.second ?: romanCache[it.trim()] }
                 // Stored before the message appears, so it never shows untranslated first.
-                c.sender.sendToThread(threadId, st.native, st.attachments) { key ->
+                c.sender.sendToThread(threadId, st.native, st.attachments, replyTo = st.replyTo?.messageId) { key ->
                     if (targetText != null && eff != null) c.translations.storeSelf(key, threadId, eff.target, targetText, romanized)
                 }
                 compose.value = ComposeUi()
@@ -817,6 +932,8 @@ class ChatViewModel(
         const val ME = "me"
         const val RUN_GAP = 5 * 60_000L
         const val CODE_CHIP_MS = 60 * 60_000L
+        /** How long to page back for a tapped quote's original before giving up. */
+        const val FIND_QUOTED_MS = 8_000L
         /** A pause in typing this long asks for the draft's romanization. */
         const val READING_DELAY_MS = 900L
     }

@@ -78,6 +78,8 @@ import app.transmit.ui.components.Times
 import app.transmit.ui.media.ImageViewer
 import app.transmit.ui.media.MediaActions
 import app.transmit.ui.pairing.BridgeBanner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -101,6 +103,8 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val script by vm.script.collectAsStateWithLifecycle()
     var viewing by remember { mutableStateOf<Attachment?>(null) }
+    /** The message a tapped quote just scrolled to. */
+    var highlighted by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) vm.addAttachments(uris)
@@ -115,6 +119,16 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     }
     LaunchedEffect(vm) {
         vm.toasts.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    }
+    LaunchedEffect(vm) {
+        vm.jumps.collectLatest { key ->
+            val index = listIndexOf(vm.items.value, key) ?: return@collectLatest
+            // A third of the way up the screen, not against the compose bar.
+            listState.animateScrollToItem(index, -listState.layoutInfo.viewportSize.height / 3)
+            highlighted = key
+            delay(1_500)
+            highlighted = null
+        }
     }
     // Follow the conversation when a new message arrives while the user is near the bottom.
     val newest = items.lastOrNull()
@@ -172,6 +186,10 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                                     },
                                     onCopyCode = { SmartActions.copyCode(context, it) },
                                     onRomanize = { vm.romanizeOnSight(item.key) },
+                                    onReply = if (item.message.replyable) ({ vm.replyTo(item) }) else null,
+                                    quoteAuthor = item.quote?.let { quoteAuthor(it, people) },
+                                    onQuote = vm::showQuoted,
+                                    highlighted = item.key == highlighted,
                                 )
                             }
                             if (item.newDay) {
@@ -202,8 +220,10 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
             BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere)
             val s = settings
             if (s != null && target != null) {
+                // The quote follows the message's bubble: its translation arriving, or a switch to the original.
+                val reply = compose.replyTo?.let { r -> items.firstOrNull { it.key == r.key }?.toQuote() ?: r }
                 ComposeBar(
-                    state = compose,
+                    state = compose.copy(replyTo = reply),
                     native = s.native,
                     target = target,
                     script = script,
@@ -218,6 +238,8 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
                     onRemoveAttachment = vm::removeAttachment,
                     onApply = vm::applyCorrection,
                     onDismissFeedback = vm::dismissFeedback,
+                    replyAuthor = reply?.let { quoteAuthor(it, people) },
+                    onCancelReply = vm::cancelReply,
                     modifier = Modifier.navigationBarsPadding(),
                 )
             }
@@ -230,6 +252,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
             onDismiss = { vm.sheet.value = null },
             onReact = { vm.react(s.item, it) },
             onMoreEmoji = { vm.sheet.value = Sheet.Emoji(s.item) },
+            onReply = if (s.item.message.replyable) ({ vm.replyTo(s.item) }) else null,
             onExplain = { vm.sheet.value = null; vm.explain(s.item) },
             onToggle = { vm.sheet.value = null; vm.setShowOriginal(s.item, !s.item.showOriginal) },
             onRetranslate = { vm.sheet.value = null; vm.translate(s.item.message, refresh = true) },
@@ -294,6 +317,23 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit) {
     }
 
     viewing?.let { ImageViewer(it) { viewing = null } }
+}
+
+/** Who wrote a quoted message: "You", or their name as the chat shows it. */
+private fun quoteAuthor(q: Quote, people: Map<String, ContactInfo>): String =
+    if (q.outgoing) "You" else q.sender?.let { (people[it] ?: ContactInfo(it, null, null, null)).displayName }.orEmpty()
+
+/**
+ * Where message [key] is in the chat's list, which runs up from the newest: a gap at the bottom, then each
+ * message with a day header above the first of each day.
+ */
+internal fun listIndexOf(items: List<MessageUi>, key: String): Int? {
+    var index = 1
+    for (item in items.asReversed()) {
+        if (item.key == key) return index
+        index += if (item.newDay) 2 else 1
+    }
+    return null
 }
 
 /** Opens what a tapped link in [item] points at. [all] is every link in the bubble. */
