@@ -81,6 +81,14 @@ Finish → Home.
 - Trial AI used up (checked after each AI call): a notification and an in-app prompt to subscribe right away.
 - Trial expired (time or AI), or a subscription ended: if the app is open, the plans screen appears right away. If it's in the background, a notification links to the plans screen. Subscribing during the trial is allowed at any time.
 
+## Small decisions (after phase 1)
+
+- The 80% Home banner can be dismissed. A dismissal lasts until the allowance period resets or the allowance reaches 100%, not just until the app restarts.
+- The ENDED Home banner stays, and can't be dismissed.
+- When the app isn't installed from Google Play, hide Subscribe and offer only "Use my own AI key".
+- In NONE mode, chats show a slim "Translation is off · Start your free week" strip. Dismissing it hides it in every chat; the Home and Settings CTAs remain.
+- A trial whose AI is used up becomes ENDED.
+
 ## Technical requirements from the launch plan (mostly phase 2)
 
 - **Spend tracking:** count spending in the app from each response's `usage.cost`. OpenRouter reports usage about 3 minutes late, so its own figure lags. The percent bar and the after-each-call allowance check use the local ledger, reconciled with `GET /api/v1/key`.
