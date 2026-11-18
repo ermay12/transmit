@@ -107,3 +107,20 @@ If `npm install` fails with "Cannot read properties of null (reading
   the Transmit Customers workspace. The Worker only touches keys it created.
 - **Trial abuse:** watch `trial_capacity_reached` lines; if the cap fills every
   day, lower `TRIAL_DAILY_BUDGET_USD` or add sign-in.
+
+## Status / remaining work
+
+As of 2026-11-18, deployed and smoke-tested (invalid inputs return the right
+codes, and the Google calls work in production). The OpenRouter client was checked
+live with one throwaway key, since deleted. Not done yet:
+
+- **First production job run unconfirmed.** Check that `job_state` has a
+  `voided` row: `npx wrangler d1 execute transmit --remote --command "SELECT * FROM job_state"`,
+  or look for `cron_done` in the logs.
+- **No real trial or purchase tested end to end.** That needs a Play-installed
+  build (internal testing track) on a Pixel, and a license-tester purchase
+  (test renewals come every 5 minutes, so the app's refresh call picks them up).
+- **CPU time under load is unmeasured** (10 ms Free-plan limit; see above).
+- **No IP rate limiting.** Junk calls to `/v1/trial` could use up Play
+  Integrity's 10,000 checks a day. Add a Workers rate-limit binding if that happens.
+- **A workspace-scoped OpenRouter management key** has not replaced the account-wide one yet.
