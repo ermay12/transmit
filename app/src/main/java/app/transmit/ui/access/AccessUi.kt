@@ -95,6 +95,7 @@ object AccessText {
     const val USE_HERE = "Use it here"
     const val USE_HERE_EXPLAINED = "A subscription works on one device at a time. Using it here stops it on the other device."
     const val KEEP_GOING = "Subscribe to keep translating and getting help with your replies."
+    const val OWN_KEY_TO_KEEP_GOING = "Use your own AI key to keep translating."
 
     /** Plain language: never about integrity verdicts, keys or servers. */
     fun trialFailure(code: AccessErrorCode): String = when (code) {
@@ -360,7 +361,12 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         }
         else -> null
     }
-    // Not installed from Play: nothing to buy, so no Subscribe or Upgrade.
-    return if (canBuy || banner == null || banner.does != BannerAction.PLANS) banner
-    else banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
+    // Not installed from Play: nothing to buy, so no Subscribe or Upgrade. Where AI has stopped, the user's own
+    // key is the way on (as in Settings), so the banner isn't a dead end.
+    return when {
+        canBuy || banner == null || banner.does != BannerAction.PLANS -> banner
+        access is AiAccess.Ended || (access is AiAccess.Trial && allowance?.usedUp == true) ->
+            banner.copy(body = AccessText.OWN_KEY_TO_KEEP_GOING, action = AccessText.OWN_KEY, does = BannerAction.OWN_KEY)
+        else -> banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
+    }
 }

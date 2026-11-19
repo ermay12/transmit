@@ -395,7 +395,7 @@ private fun PlanCard(
                         PlanTitle(AccessText.ended(access.reason), AccessText.KEEP_GOING)
                         Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
                     } else {
-                        PlanTitle(AccessText.ended(access.reason), "Use your own AI key to keep translating.")
+                        PlanTitle(AccessText.ended(access.reason), AccessText.OWN_KEY_TO_KEEP_GOING)
                         Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
                     }
                 }
