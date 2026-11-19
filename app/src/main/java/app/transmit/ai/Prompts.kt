@@ -24,8 +24,19 @@ data class Feedback(
     enum class Verdict { PERFECT, GOOD, FIX }
 }
 
-/** One line of earlier conversation, given to the model as translation context. */
-data class ContextLine(val fromMe: Boolean, val speaker: String?, val text: String)
+/**
+ * One line of earlier conversation, given to the model as translation context. It names no one, so contact names and
+ * phone numbers never reach the AI: [person] is 0 for the other person in a one-to-one chat ("Them"), and 1, 2, … for
+ * the people in a group ("Person 1"). See [PromptContext].
+ */
+data class ContextLine(val fromMe: Boolean, val text: String, val person: Int = 0) {
+    val speaker: String
+        get() = when {
+            fromMe -> "Me"
+            person <= 0 -> "Them"
+            else -> "Person $person"
+        }
+}
 
 object Prompts {
     // ---- translation -----------------------------------------------------------------------------
@@ -65,8 +76,7 @@ object Prompts {
         if (context.isNotEmpty()) {
             append("<context>\nEarlier messages in this conversation, for reference only (do not translate):\n")
             context.forEach { line ->
-                val who = if (line.fromMe) "Me" else line.speaker ?: "Them"
-                append(who).append(": ").append(line.text.replace('\n', ' ').take(400)).append('\n')
+                append(line.speaker).append(": ").append(line.text.replace('\n', ' ').take(400)).append('\n')
             }
             append("</context>\n\n")
         }

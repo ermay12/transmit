@@ -53,9 +53,10 @@ class PromptsTest {
         val sys = Prompts.tutorSystem(en, ja, Level.BEGINNER)
         assertTrue(sys.contains("Japanese"))
         assertTrue(sys.contains("furigana"))
-        val t = Prompts.translateUser(listOf("1" to "hi"), listOf(ContextLine(true, null, "yo"), ContextLine(false, "Ana", "hey")))
+        val t = Prompts.translateUser(listOf("1" to "hi"), listOf(ContextLine(true, "yo"), ContextLine(false, "hey"), ContextLine(false, "sup", person = 2)))
         assertTrue(t.contains("Me: yo"))
-        assertTrue(t.contains("Ana: hey"))
+        assertTrue(t.contains("Them: hey"))
+        assertTrue(t.contains("Person 2: sup"))
         assertTrue(t.contains("<m id=\"1\">hi</m>"))
     }
 

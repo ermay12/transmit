@@ -98,7 +98,7 @@ class AppContainer(val context: Context) {
     val policy = ChatPolicy(dao, messaging, contacts)
     val budget = BudgetManager(dao, policy)
     val tutor = Tutor(ai, settings, budget, dao, access)
-    val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, contacts, access)
+    val translations: TranslationManager = TranslationManager(dao, tutor, policy, messaging, settings, access)
     /** Recent conversations in the system share sheet and launcher, and behind notifications. */
     val shortcuts = ConversationShortcuts(context, messaging, contacts, dao)
     val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations, shortcuts)

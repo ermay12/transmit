@@ -16,6 +16,7 @@ import app.transmit.ai.CallCost
 import app.transmit.ai.ContextLine
 import app.transmit.ai.EffectiveChat
 import app.transmit.ai.Feedback
+import app.transmit.ai.PromptContext
 import app.transmit.ai.Purpose
 import app.transmit.ai.TranslationManager
 import app.transmit.data.AppSettings
@@ -952,13 +953,9 @@ class ChatViewModel(
         }
     }
 
-    private fun contextLines(): List<ContextLine> {
-        val n = settings.value?.contextMessages ?: AppSettings().contextMessages
-        return raw.value.asSequence()
-            .filter { it.body.isNotBlank() && Reactions.parse(it.body) == null }
-            .take(n).toList().reversed()
-            .map { ContextLine(it.outgoing, it.sender?.let { a -> people.value[a]?.name }, it.body) }
-    }
+    /** Earlier messages for a draft's translation, under neutral labels: no names or numbers. */
+    private fun contextLines(): List<ContextLine> =
+        PromptContext.lines(raw.value, recipients.value, settings.value?.contextMessages ?: AppSettings().contextMessages)
 
     /** Plain language outside BYOK: no keys, models or settings. */
     private fun describe(e: Throwable): String = AiMessages.describe(e, access.value).resolve(c.context)

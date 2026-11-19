@@ -3,7 +3,6 @@ package app.transmit.ai
 import app.transmit.access.AccessManager
 import app.transmit.access.forAccess
 import app.transmit.data.AppSettings
-import app.transmit.data.ContactsRepository
 import app.transmit.data.Language
 import app.transmit.data.ScriptDisplay
 import app.transmit.data.Scripts
@@ -29,7 +28,6 @@ class TranslationManager(
     private val policy: ChatPolicy,
     private val repo: MessagingRepository,
     private val settings: SettingsRepository,
-    private val contacts: ContactsRepository,
     private val access: AccessManager,
 ) {
     sealed interface Event {
@@ -255,7 +253,8 @@ class TranslationManager(
             for (chunk in remaining.sortedBy { it.date }.chunked(8)) {
                 val items = chunk.mapIndexed { i, m -> (i + 1).toString() to m.body.trim() }
                 val purpose = if (chunk.all { it.outgoing }) Purpose.TRANSLATE_OUTGOING else Purpose.TRANSLATE_INCOMING
-                val batch = tutor.translate(items, lang, contextFor(chunk.first(), all, s.contextMessages), threadId, purpose, overrideBudget)
+                val context = PromptContext.lines(all, recipients(threadId, all), s.contextMessages, before = chunk.first())
+                val batch = tutor.translate(items, lang, context, threadId, purpose, overrideBudget)
                 val share = 1.0 / chunk.size
                 chunk.forEachIndexed { i, m ->
                     val text = batch.texts[(i + 1).toString()] ?: return@forEachIndexed
@@ -292,16 +291,9 @@ class TranslationManager(
         )
     }
 
-    private fun contextFor(first: Message, all: List<Message>, count: Int): List<ContextLine> {
-        if (count <= 0) return emptyList()
-        return all.asSequence()
-            .filter { it.date < first.date && it.key != first.key && it.body.isNotBlank() && Reactions.parse(it.body) == null }
-            .sortedByDescending { it.date }
-            .take(count)
-            .toList()
-            .reversed()
-            .map { ContextLine(it.outgoing, it.sender?.let { a -> contacts.lookup(a).name }, it.body) }
-    }
+    /** The conversation's other people, which number the speakers in a group's context. */
+    private suspend fun recipients(threadId: Long, messages: List<Message>): List<String> =
+        messages.firstOrNull { it.recipients.isNotEmpty() }?.recipients ?: repo.recipientsForThread(threadId)
 
     private companion object {
         val URL = Regex("https?://\\S+|www\\.\\S+")
