@@ -46,7 +46,9 @@ class PlayBilling(context: Context, override val available: Boolean) : Storefron
     /** The product and base-plan offer to launch for each tier, from the last [offers]. */
     @Volatile private var details: Map<Tier, Pair<ProductDetails, String>> = emptyMap()
 
+    /** A copy not installed from Play can't buy, so it doesn't talk to Billing at all. */
     private suspend fun connected(): Boolean = connecting.withLock {
+        if (!available) return false
         if (client.isReady) return true
         repeat(3) { attempt ->
             val result = suspendCancellableCoroutine { cont ->
