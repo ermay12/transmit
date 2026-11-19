@@ -80,6 +80,35 @@ class WorkerApiTest {
     }
 
     @Test
+    fun aSwitchToTransmitIsReadFromThePendingFieldsAndItsAbsenceMeansNone() {
+        val ends = "2026-12-18T19:30:00Z"
+        val endsAt = Instant.parse(ends).toEpochMilli()
+        // API.md "Switch to Transmit" step 3: still Plus, with Plus's allowance, until pendingStartsAt.
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","basePlanId":"monthly","state":"active","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":6,"allowanceRenewed":false,"periodEndsAt":"$ends","autoRenewing":true,"pendingProductId":"transmit_monthly","pendingAllowanceUsd":4.5,"pendingStartsAt":"$ends"}""")
+        val switching = (sub() as AccessResult.Granted).grant
+        assertEquals(Entitlement.Subscription(Tier.PLUS, endsAt, autoRenewing = true, pendingSwitch = PlanSwitch(Tier.STANDARD, endsAt)), switching.entitlement)
+        assertEquals(9.0, switching.allowanceUsd, 0.0)
+        assertEquals(6.0, switching.remainingUsd, 0.0)
+        assertNull(switching.key)
+
+        // A Worker from before the downgrade, a cancelled switch, or renewal turned off: no pending fields at all.
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"active","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":6,"periodEndsAt":"$ends","autoRenewing":true}""")
+        assertNull(((sub() as AccessResult.Granted).grant.entitlement as Entitlement.Subscription).pendingSwitch)
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"active","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":6,"periodEndsAt":"$ends","autoRenewing":true,"pendingProductId":null,"pendingStartsAt":null}""")
+        assertNull(((sub() as AccessResult.Granted).grant.entitlement as Entitlement.Subscription).pendingSwitch)
+
+        // pendingStartsAt always equals periodEndsAt, so a missing one falls back to it.
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"active","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":6,"periodEndsAt":"$ends","autoRenewing":true,"pendingProductId":"transmit_monthly"}""")
+        assertEquals(PlanSwitch(Tier.STANDARD, endsAt), ((sub() as AccessResult.Granted).grant.entitlement as Entitlement.Subscription).pendingSwitch)
+
+        // Something the app doesn't know is ignored; the rest of the answer still counts.
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"active","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":6,"periodEndsAt":"$ends","autoRenewing":true,"pendingProductId":"transmit_yearly","pendingStartsAt":"$ends"}""")
+        val unknown = (sub() as AccessResult.Granted).grant
+        assertNull((unknown.entitlement as Entitlement.Subscription).pendingSwitch)
+        assertEquals(Tier.PLUS, (unknown.entitlement as Entitlement.Subscription).tier)
+    }
+
+    @Test
     fun theSubscriptionRequestLeavesOutWhatTheAppDoesntHave() = runBlocking {
         reply(400, """{"error":"bad_request","message":"x"}""")
         api.subscription("ptok", null, null, null)

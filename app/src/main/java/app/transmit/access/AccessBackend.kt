@@ -74,9 +74,24 @@ data class PlayPurchase(val productId: String, val purchaseToken: String)
 sealed interface Entitlement {
     data class Trial(val endsAt: Long) : Entitlement
 
-    /** [periodEndsAt] is when the paid period ends; with [autoRenewing], it renews (and the allowance resets) then. */
-    data class Subscription(val tier: Tier, val periodEndsAt: Long?, val autoRenewing: Boolean = true) : Entitlement
+    /**
+     * [periodEndsAt] is when the paid period ends; with [autoRenewing], it renews (and the allowance resets) then.
+     * [pendingSwitch]: a plan change set for that renewal (Plus → Transmit). Until then [tier] and the allowance are
+     * still the current plan's.
+     */
+    data class Subscription(
+        val tier: Tier,
+        val periodEndsAt: Long?,
+        val autoRenewing: Boolean = true,
+        val pendingSwitch: PlanSwitch? = null,
+    ) : Entitlement
 }
+
+/**
+ * A plan change Play has set for the next renewal (`pendingProductId` and `pendingStartsAt` in `backend/API.md`):
+ * from [startsAt] the plan is [tier]. Only a switch from Plus to Transmit makes one.
+ */
+data class PlanSwitch(val tier: Tier, val startsAt: Long)
 
 /** A managed key and what it allows. */
 data class Grant(

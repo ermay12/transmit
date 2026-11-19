@@ -141,16 +141,32 @@ class WorkerApi(private val http: OkHttpClient = defaultHttp(), baseUrl: String 
             return Grant(Entitlement.Trial(expiresAt), key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance)
         }
 
-        /** A `/v1/subscription` 200 for [purchaseToken]. `key` comes only with `newKey: true`. */
+        /**
+         * A `/v1/subscription` 200 for [purchaseToken]. `key` comes only with `newKey: true`. While a switch to
+         * Transmit is set, `pendingProductId` and `pendingStartsAt` say so; Workers from before the downgrade never
+         * send them, and their absence means nothing is set.
+         */
         fun subscriptionGrant(b: JsonObject, purchaseToken: String): Grant? {
             val tier = Tier.fromProductId(b["productId"].str()) ?: return null
             val allowance = b["allowanceUsd"].num() ?: return null
             val newKey = b["newKey"].bool() ?: (b["key"] != null)
             val key = if (newKey) b["key"].str()?.takeIf { it.isNotBlank() } ?: return null else null
+            val periodEndsAt = instant(b["periodEndsAt"].str())
             return Grant(
-                Entitlement.Subscription(tier, instant(b["periodEndsAt"].str()), autoRenewing = b["autoRenewing"].bool() ?: true),
+                Entitlement.Subscription(tier, periodEndsAt, autoRenewing = b["autoRenewing"].bool() ?: true, pendingSwitch = pendingSwitch(b, tier, periodEndsAt)),
                 key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance, purchaseToken = purchaseToken,
             )
+        }
+
+        /**
+         * The plan set for the next renewal, if any. `pendingStartsAt` always equals `periodEndsAt`, so either does.
+         * `pendingAllowanceUsd` isn't kept: the renewal's own answer brings the new allowance. A pending plan that
+         * isn't a known product, or is the plan already held, is ignored rather than failing the whole answer.
+         */
+        private fun pendingSwitch(b: JsonObject, tier: Tier, periodEndsAt: Long?): PlanSwitch? {
+            val next = Tier.fromProductId(b["pendingProductId"].str())?.takeIf { it != tier } ?: return null
+            val at = instant(b["pendingStartsAt"].str()) ?: periodEndsAt ?: return null
+            return PlanSwitch(next, at)
         }
 
         private fun instant(s: String?): Long? = s?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }

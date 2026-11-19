@@ -48,7 +48,11 @@ data class StoredAccess(
         return when (val e = entitlement) {
             null -> AiAccess.None
             is Entitlement.Trial -> if (now >= e.endsAt) AiAccess.Ended(EndReason.TRIAL_EXPIRED) else AiAccess.Trial(e.endsAt)
-            is Entitlement.Subscription -> AiAccess.Subscribed(e.tier, e.periodEndsAt.takeIf { e.autoRenewing }, inUseElsewhere)
+            // A switch only happens at a renewal, so one is never shown for a plan that won't renew.
+            is Entitlement.Subscription -> AiAccess.Subscribed(
+                e.tier, e.periodEndsAt.takeIf { e.autoRenewing }, inUseElsewhere,
+                pendingSwitch = e.pendingSwitch.takeIf { e.autoRenewing }, periodEndsAt = e.periodEndsAt,
+            )
         }
     }
 
@@ -91,6 +95,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val tier = stringPreferencesKey("sub_tier")
         val periodEndsAt = longPreferencesKey("sub_period_ends_at")
         val autoRenewing = booleanPreferencesKey("sub_auto_renewing")
+        val pendingTier = stringPreferencesKey("sub_pending_tier")
+        val pendingStartsAt = longPreferencesKey("sub_pending_starts_at")
         val ended = stringPreferencesKey("ended")
         val keyHash = stringPreferencesKey("key_hash")
         val allowanceUsd = doublePreferencesKey("allowance_usd")
@@ -115,7 +121,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
             val entitlement = when (p[K.entitlement]) {
                 "trial" -> p[K.trialEndsAt]?.let { Entitlement.Trial(it) }
                 "subscription" -> Tier.entries.firstOrNull { it.name == p[K.tier] }?.let { tier ->
-                    Entitlement.Subscription(tier, p[K.periodEndsAt]?.takeIf { it > 0 }, p[K.autoRenewing] ?: true)
+                    val pending = Tier.entries.firstOrNull { it.name == p[K.pendingTier] }?.let { t -> p[K.pendingStartsAt]?.let { PlanSwitch(t, it) } }
+                    Entitlement.Subscription(tier, p[K.periodEndsAt]?.takeIf { it > 0 }, p[K.autoRenewing] ?: true, pending)
                 }
                 else -> null
             }
@@ -140,6 +147,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
             listOf(K.trialEndsAt, K.periodEndsAt).forEach { p.remove(it) }
             p.remove(K.tier)
             p.remove(K.autoRenewing)
+            p.remove(K.pendingTier)
+            p.remove(K.pendingStartsAt)
             when (val e = s.entitlement) {
                 null -> p.remove(K.entitlement)
                 is Entitlement.Trial -> {
@@ -151,6 +160,10 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                     p[K.tier] = e.tier.name
                     e.periodEndsAt?.let { p[K.periodEndsAt] = it }
                     p[K.autoRenewing] = e.autoRenewing
+                    e.pendingSwitch?.let {
+                        p[K.pendingTier] = it.tier.name
+                        p[K.pendingStartsAt] = it.startsAt
+                    }
                 }
             }
             if (s.ended != null) p[K.ended] = s.ended.name else p.remove(K.ended)

@@ -41,6 +41,7 @@ class AccessModelTest {
             StoredAccess(entitlement = Entitlement.Subscription(Tier.STANDARD, null), ended = EndReason.SUBSCRIPTION_ENDED),
             StoredAccess(ownKey = true, entitlement = Entitlement.Trial(now + day)),
             StoredAccess(offStripDismissed = true, warningDismissedFor = "trial:1", inUseElsewhere = true),
+            StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 9 * day, pendingSwitch = PlanSwitch(Tier.STANDARD, now + 9 * day)), keyHash = "h2"),
         )
         for (s in states) {
             val p = mutablePreferencesOf()
@@ -52,6 +53,11 @@ class AccessModelTest {
         AccessStore.encode(states[1], p)
         AccessStore.encode(StoredAccess(), p)
         assertEquals(StoredAccess(), AccessStore.decode(p) { false })
+        // A switch that was cancelled (Keep Plus) is gone after the next answer is stored.
+        AccessStore.encode(states.last(), p)
+        val kept = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 9 * day), keyHash = "h2")
+        AccessStore.encode(kept, p)
+        assertEquals(kept, AccessStore.decode(p) { false })
     }
 
     @Test
@@ -63,8 +69,18 @@ class AccessModelTest {
 
         val sub = StoredAccess(entitlement = Entitlement.Subscription(Tier.STANDARD, now + day))
         assertEquals(AiAccess.Subscribed(Tier.STANDARD, now + day), sub.resolve(now))
-        // Not renewing: no "Renews" or "Resets" date.
-        assertEquals(AiAccess.Subscribed(Tier.STANDARD, null), sub.copy(entitlement = Entitlement.Subscription(Tier.STANDARD, now + day, false)).resolve(now))
+        // Not renewing: no "Renews" or "Resets" date, but the period still ends.
+        assertEquals(
+            AiAccess.Subscribed(Tier.STANDARD, null, periodEndsAt = now + day),
+            sub.copy(entitlement = Entitlement.Subscription(Tier.STANDARD, now + day, false)).resolve(now),
+        )
+
+        // Plus with a switch to Transmit set: still Plus, renewing (as Transmit) on the same day.
+        val switch = PlanSwitch(Tier.STANDARD, now + day)
+        val switching = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + day, pendingSwitch = switch))
+        assertEquals(AiAccess.Subscribed(Tier.PLUS, now + day, pendingSwitch = switch), switching.resolve(now))
+        // A switch needs a renewal, so none shows for a plan that won't renew.
+        assertNull((switching.copy(entitlement = Entitlement.Subscription(Tier.PLUS, now + day, false, switch)).resolve(now) as AiAccess.Subscribed).pendingSwitch)
     }
 
     @Test

@@ -40,8 +40,16 @@ sealed interface AiAccess {
     /**
      * [renewsAt] is the end of the paid period when it renews automatically, and also when the allowance resets.
      * [inUseElsewhere]: another device holds the subscription's key; "Use it here" takes it back.
+     * [pendingSwitch]: Plus moves to Transmit at the renewal; until then it's Plus, with Plus's allowance.
+     * [periodEndsAt] is the end of the paid period whether or not it renews: a switch set now takes effect then.
      */
-    data class Subscribed(val tier: Tier, val renewsAt: Long?, val inUseElsewhere: Boolean = false) : AiAccess
+    data class Subscribed(
+        val tier: Tier,
+        val renewsAt: Long?,
+        val inUseElsewhere: Boolean = false,
+        val pendingSwitch: PlanSwitch? = null,
+        val periodEndsAt: Long? = renewsAt,
+    ) : AiAccess
 
     data class Ended(val reason: EndReason) : AiAccess
 
