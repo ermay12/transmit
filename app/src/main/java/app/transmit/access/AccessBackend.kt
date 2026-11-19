@@ -16,8 +16,11 @@ interface AccessBackend {
      */
     suspend fun activatePurchase(purchase: PlayPurchase, currentKeyHash: String?): AccessResult
 
-    /** Finds this Google account's subscription on Play and takes its key to this device ("Restore purchase"). */
-    suspend fun restore(): AccessResult
+    /**
+     * Finds this Google account's subscription on Play and takes its key to this device ("Restore purchase").
+     * [currentKeyHash] is the subscription key held now, if any: it is kept when it still belongs to the purchase.
+     */
+    suspend fun restore(currentKeyHash: String?): AccessResult
 
     /**
      * Re-checks a subscription the app already holds: daily, when the allowance nears its end, and when it's used
@@ -32,15 +35,30 @@ interface AccessBackend {
  * each response's `usage.cost` itself and only uses this to correct drift.
  */
 fun interface AllowanceSource {
-    /** What's left of the managed key's allowance as OpenRouter sees it, or null when it can't be read now. */
-    suspend fun read(managedKey: String): AllowanceReading?
+    /** What OpenRouter says about the managed key now. */
+    suspend fun read(managedKey: String): AllowanceCheck
 }
 
-/**
- * [remainingUsd] as OpenRouter reported it, covering spending up to [at]. Because of OpenRouter's lag, set [at] a
- * few minutes before the reading was taken; calls the app logged after [at] are added on top.
- */
-data class AllowanceReading(val remainingUsd: Double, val at: Long)
+/** OpenRouter's view of the managed key. */
+sealed interface AllowanceCheck {
+    /**
+     * [remainingUsd] as OpenRouter reported it, covering spending up to [at]. Because of OpenRouter's lag, [at] is a
+     * few minutes before the reading was taken; calls the app logged after [at] are added on top.
+     */
+    data class Reading(val remainingUsd: Double, val at: Long) : AllowanceCheck
+
+    /** 403 "Key limit exceeded": this period's allowance is spent. */
+    data object UsedUp : AllowanceCheck
+
+    /**
+     * 401: the key no longer works. For a trial, it has expired; for a subscription, it was rotated on another
+     * device, or the Worker turned it off (lapse, refund). Told apart by the mode, never by OpenRouter's wording.
+     */
+    data object KeyRejected : AllowanceCheck
+
+    /** No answer, or one that says nothing about the allowance (a service problem, never a paywall). */
+    data object Unavailable : AllowanceCheck
+}
 
 /** A Play purchase the app learned about from `onPurchasesUpdated` or `queryPurchasesAsync`. */
 data class PlayPurchase(val productId: String, val purchaseToken: String)
@@ -81,6 +99,8 @@ data class AccessError(
     val retryAfterMs: Long? = null,
     /** For logs only, never shown. */
     val detail: String? = null,
+    /** The same call may succeed later (busy, Google or OpenRouter down, no connection): a purchase is sent again. */
+    val retryable: Boolean = false,
 )
 
 /** What went wrong, in terms the app shows to the user. */
@@ -114,7 +134,9 @@ enum class AccessErrorCode {
          */
         fun resultFor(error: String?, reason: String? = null, state: String? = null, retryAfterSeconds: Long? = null): AccessResult {
             val retry = retryAfterSeconds?.let { it * 1000 }
-            fun fail(code: AccessErrorCode) = AccessResult.Failed(AccessError(code, retry, listOfNotNull(error, reason, state).joinToString("/")))
+            val retryable = error in RETRYABLE
+            fun fail(code: AccessErrorCode) =
+                AccessResult.Failed(AccessError(code, retry, listOfNotNull(error, reason, state).joinToString("/"), retryable))
             return when (error) {
                 "trial_already_used" -> fail(TRIAL_ALREADY_USED)
                 "trial_capacity_reached" -> fail(TRIALS_FULL)
@@ -123,7 +145,8 @@ enum class AccessErrorCode {
                     "app_not_recognized", "unlicensed" -> fail(NOT_FROM_PLAY)
                     else -> fail(SERVICE)
                 }
-                "purchase_invalid" -> fail(NO_PURCHASE)
+                // Only an unknown token means "no purchase"; a product mix-up is the app's bug, not the user's.
+                "purchase_invalid" -> if (reason == "token_unknown" || reason == null) fail(NO_PURCHASE) else fail(SERVICE)
                 "purchase_not_active" -> when (state) {
                     "pending" -> fail(PAYMENT_PENDING)
                     "on_hold", "paused" -> fail(PAYMENT_PROBLEM)
@@ -135,6 +158,9 @@ enum class AccessErrorCode {
                 else -> fail(SERVICE)
             }
         }
+
+        /** Worker errors worth sending the same request again for (`backend/API.md`). */
+        val RETRYABLE = setOf("busy", "upstream_error", "internal_error")
     }
 }
 

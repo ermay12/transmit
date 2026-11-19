@@ -171,7 +171,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         return AccessResult.Granted(subscriptionGrant(tier, newKey = currentKeyHash == null))
     }
 
-    override suspend fun restore(): AccessResult {
+    override suspend fun restore(currentKeyHash: String?): AccessResult {
         delay(500)
         val tier = purchased ?: return AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
         return AccessResult.Granted(subscriptionGrant(tier))
@@ -183,7 +183,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
     }
 
     /** Nothing to reconcile with: the configured percent is the truth. */
-    override suspend fun read(managedKey: String): AllowanceReading? = null
+    override suspend fun read(managedKey: String): AllowanceCheck = AllowanceCheck.Unavailable
 
     suspend fun apply(access: AccessManager, mode: FakeMode) {
         Log.i("DebugAccess", "Mode $mode")

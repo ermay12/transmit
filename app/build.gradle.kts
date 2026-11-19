@@ -133,6 +133,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     // Subscriptions. Google Play only offers subscription setup for apps whose uploaded build includes this library.
     implementation(libs.billing)
+    // The free trial's device check (a standard request whose requestHash binds ANDROID_ID).
+    implementation(libs.play.integrity)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

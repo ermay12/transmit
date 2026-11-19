@@ -130,7 +130,11 @@ class AccessManager(
     }
 
     /** "Restore purchase". Null when the backend answered: SUBSCRIBED, or ENDED for a lapsed subscription. */
-    suspend fun restore(): AccessError? = handle(activate = true) { backend.restore() }
+    suspend fun restore(): AccessError? {
+        val s = store.current()
+        val hash = s.keyHash.takeIf { s.entitlement is Entitlement.Subscription }
+        return handle(activate = true) { backend.restore(hash) }
+    }
 
     /** Re-checks the subscription with the backend, at most every few minutes unless [force]d. */
     suspend fun refresh(force: Boolean = false): AccessError? = refreshLock.withLock {
@@ -232,7 +236,7 @@ class AccessManager(
     suspend fun reconcile() {
         val key = managedKey() ?: return
         if (!current().isManaged) return
-        val reading = runCatching { allowanceSource.read(key) }.getOrNull() ?: return
+        val reading = runCatching { allowanceSource.read(key) }.getOrNull() as? AllowanceCheck.Reading ?: return
         setBaseline { b -> b.copy(remainingUsd = reading.remainingUsd, at = reading.at) }
         afterManagedCall()
     }

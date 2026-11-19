@@ -43,7 +43,7 @@ class AccessManagerTest {
         val store = AccessStore(PreferenceDataStoreFactory.create(scope = scope) { file }) {
             vault.has(ProviderType.OPENROUTER.secretName)
         }
-        return AccessManager(store, vault, backend, { null }, { spent }, scope, isForeground = { foreground }).also {
+        return AccessManager(store, vault, backend, { AllowanceCheck.Unavailable }, { spent }, scope, isForeground = { foreground }).also {
             it.listener = object : AccessListener {
                 override fun onEndedInBackground(reason: EndReason) {
                     backgroundEnds += reason
@@ -217,7 +217,7 @@ class AccessManagerTest {
         var refreshes = 0
         override suspend fun startTrial(): AccessResult = if (throwOnTrial) throw java.io.IOException("offline") else trial
         override suspend fun activatePurchase(purchase: PlayPurchase, currentKeyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
-        override suspend fun restore() = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        override suspend fun restore(currentKeyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
         override suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult {
             refreshes++
             return refresh
