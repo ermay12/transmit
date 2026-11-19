@@ -1,4 +1,4 @@
-Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4).
+Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4), and the 1.0.0-beta5 plan changes: no Keep Plus, one calm message for any Google Play error, and plans whose renewal is off (added on top of 5a55df4).
 
 The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.workers.dev/privacy. Where it follows a disclosure, the two read as one paragraph, the link last. The demo's sample messages are in `app/src/main/java/app/transmit/demo/DemoChats.kt`, not in strings.xml, since they're content rather than copy.
 
@@ -132,6 +132,7 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | Settings: Subscription, Plus switching to Transmit | `plan_plus_name` | Transmit Plus |
 | Settings: Subscription, Plus switching to Transmit | `plan_switches_on` | Switches to Transmit on %1$s |
 | Settings: Subscription, Plus switching to Transmit | `settings_subscription_ai_used` | %1$d%% AI used |
+| Settings: Subscription, renewal turned off in Google Play (under "Transmit Plus" or "Transmit") | `plan_ends` | Ends %1$s |
 | Settings: Advanced | `settings_advanced` | Advanced |
 | Settings: Advanced | `access_own_key` | Use my own AI key |
 | Settings: Advanced | `settings_own_key_summary` | Pay an AI provider such as OpenAI or Google yourself |
@@ -224,12 +225,15 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | Plans: switch set | `plan_switch_done` | You'll switch to Transmit on %1$s. Until then, you keep Plus. |
 | Plans: switch set | `plan_switches_on` | Switches to Transmit on %1$s |
 | Plans: switch set | `plan_switch_starts` | Starts %1$s |
-| Plans: switch set | `plan_keep_plus` | Keep Plus |
-| Plans: switch set | `plan_keep_plus_note` | Stay on Transmit Plus, with twice the AI. |
-| Plans: switch set | `plan_keep_plus_done` | You're staying on Transmit Plus. |
-| Plans: switch or Keep Plus didn't go through | `plan_change_failed` | Google Play couldn't make the change. Try again later, or use Manage subscription. |
-| Plans: switch or Keep Plus didn't go through | `purchase_play_unavailable` | Google Play isn't available right now. Try again later. |
-| Plans: switch or Keep Plus didn't go through | `purchase_retrying` | Your purchase went through, but Transmit couldn't finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts. |
+| Plans: switch set (in place of Keep Plus, which Google Play doesn't support) | `plan_switch_pending_note` | Switching to Transmit on %1$s. Changed your mind? You can upgrade back to Plus anytime after the switch. |
+| Plans: any error from Google Play (a switch, an upgrade or a purchase) | `billing_failed` | Google Play couldn't make that change. Please try again later. |
+| Plans: switch didn't go through | `purchase_play_unavailable` | Google Play isn't available right now. Try again later. |
+| Plans: switch didn't go through | `purchase_retrying` | Your purchase went through, but Transmit couldn't finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts. |
+| Plans: renewal turned off in Google Play (own plan card) | `plan_ends` | Ends %1$s |
+| Plans: renewal turned off in Google Play | `plan_ends_note` | Your plan ends on %1$s |
+| Plans: renewal turned off in Google Play (main button; opens Google Play's page for the plan) | `plan_keep_subscription` | Keep my subscription |
+| Plans: renewal turned off in Google Play (under the button) | `plan_keep_subscription_note` | In Google Play, tap Resubscribe. Nothing else changes. |
+| Plans: Transmit with renewal off (second button, with the auto-renew line and upgrade note below) | `plan_upgrade` | Upgrade to Plus |
 | Plans: in use on another device | `access_in_use_elsewhere_explained` | Your subscription is in use on another device. A subscription works on one device at a time. Using it here stops it on the other device. |
 | Plans: in use on another device | `access_use_here` | Use it here |
 | Plans: buying | `purchase_working` | Setting up your plan… |
