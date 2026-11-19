@@ -1,9 +1,13 @@
 <!--
-Draft for hosting as a plain web page (GitHub Pages renders this file as-is; a Worker route can serve it as HTML).
-Before publishing: fill every [BRACKETED] placeholder, set the effective date, and re-check the facts against the
-build you ship. Comments like this one don't show on the rendered page.
-Facts were taken from the code on branch play-launch at 189aed3 (2026-11-18). See docs/launch/data-safety.md for
-the code references behind each statement.
+This file is the privacy policy page. The Worker serves it at https://transmit.ermay12.workers.dev/privacy:
+backend/scripts/build-pages.mjs renders it to HTML when the Worker is built, so editing this file and redeploying the
+Worker updates the page (backend/README.md, "Privacy policy page").
+Before publishing: fill every [BRACKETED] placeholder (the page shows them highlighted), set the effective date, and
+re-check the facts against the build you ship. Comments like this one don't show on the page.
+Facts were taken from the code on branch play-launch at 189aed3 (2026-11-18). The server parts (IP addresses, logs,
+retention) were re-checked on 2026-11-19 against the Worker after its privacy changes, and the AI context labels
+against the app change that replaces contact names with "Me", "Them" and "Person 1, 2, …". See
+docs/launch/data-safety.md for the code references behind each statement.
 -->
 
 # Transmit privacy policy
@@ -19,7 +23,7 @@ Transmit is an Android app for language learners. It shows your Google Messages 
 - To translate or explain a message, Transmit sends its text, and a few earlier messages from the same chat, to an AI service:
   - With the free week or a Transmit plan, that's OpenRouter. Transmit's OpenRouter account only allows model hosts that have a zero-data-retention policy.
   - With your own API key, it's the provider you chose, under that provider's terms.
-- Transmit's server keeps a few records to run the free week and subscriptions. They hold hashed or encrypted identifiers, never your name, phone number, email address or Google account.
+- Transmit's server keeps a few records to run the free week and subscriptions. They hold hashed or encrypted identifiers, never your name, phone number, email address, IP address or Google account. Subscription records are deleted 90 days after the subscription ends or is refunded.
 
 ## 1. What stays on your phone
 
@@ -34,7 +38,7 @@ Transmit stores these only on your device:
   - your own AI API keys, if you add any;
   - the AI key Transmit's server gives you for the free week or a plan;
   - your Google Play purchase token, if you subscribe.
-- **Your contacts:** with your permission, Transmit reads your contacts to show names and photos, and to let you pick who to text. It doesn't upload your contact list. The only exception is the names of people in a chat, which can go to the AI service as context (see section 3).
+- **Your contacts:** with your permission, Transmit reads your contacts to show names and photos, and to let you pick who to text. It doesn't upload your contact list, and it never sends contact names to the AI service (see section 3).
 
 Transmit also finds verification codes, addresses, dates, phone numbers and email addresses in messages on the device. It creates its notifications on the device too, with no push service.
 
@@ -57,12 +61,12 @@ Transmit is an independent app. It isn't made, endorsed or supported by Google, 
 When Transmit translates or explains something, it sends the AI service:
 
 - the text of the messages to translate, write in characters, or add pinyin or romaji to;
-- for context, up to 8 earlier messages from the same chat (each shortened to 400 characters), marked as "Me" or with the sender's display name from your contacts or Google Messages;
+- for context, up to 8 earlier messages from the same chat (each shortened to 400 characters). Each is labelled only "Me" or "Them", or in a group chat "Person 1", "Person 2" and so on. Names and phone numbers from your contacts or Google Messages are never sent;
 - for **Check my translation**, your draft and, if you wrote one, what you meant in your own language;
 - for **Explain**, the message and its translation;
 - your own language, the language you're practicing, and your level.
 
-Transmit doesn't send the AI service phone numbers, photos, videos, audio, other attachments, your contact list or your Google account.
+Transmit doesn't send the AI service contact names, phone numbers, photos, videos, audio, other attachments, your contact list or your Google account. Message text is sent as written, so a name that someone typed in a message goes with it.
 
 ### When it is sent
 
@@ -77,10 +81,28 @@ Transmit doesn't send the AI service phone numbers, photos, videos, audio, other
 
 - The requests use an AI key that Transmit's server created for your free week or plan. OpenRouter doesn't know your name, phone number or Google account.
 - Transmit's OpenRouter account only allows model hosts with a zero-data-retention policy, which means they don't store prompts or responses after answering. Hosts that keep requests for abuse monitoring are excluded too.
-- I haven't turned on OpenRouter's optional prompt logging, or OpenRouter's use of inputs and outputs. So under [OpenRouter's data policy](https://openrouter.ai/docs/guides/privacy/data-collection), OpenRouter doesn't store your messages or Transmit's replies.
+- I haven't turned on OpenRouter's optional prompt logging, or OpenRouter's use of inputs and outputs. So under [OpenRouter's data policy](https://openrouter.ai/docs/guides/privacy/data-collection), OpenRouter doesn't store your messages or Transmit's replies, with the two exceptions below.
+- Even with zero data retention, OpenRouter may sample a small number of prompts to sort them into categories for its usage reports and model rankings. It says the categories are stored anonymously and never linked to an account, and that the sorting is done by a model with a zero-data-retention policy.
+- OpenRouter also screens every request, zero-data-retention requests included, for child sexual abuse material as it passes through. Content flagged as possible child sexual abuse material may be kept for human review, for reporting, and where the law requires it to be preserved ([zero data retention](https://openrouter.ai/docs/guides/features/zdr)).
 - OpenRouter does keep metadata for each request, such as the number of tokens, the cost and how long it took. It doesn't keep the text.
-- OpenRouter also says it samples a small number of prompts to sort them into categories for its statistics, storing those categories anonymously. It also checks requests for child sexual abuse material, and may keep flagged content for review, reporting and legal reasons.
-- OpenRouter's own terms and [privacy policy](https://openrouter.ai/privacy) apply to its service.
+- Like any web service, OpenRouter receives your phone's IP address with each request. OpenRouter's own terms and [privacy policy](https://openrouter.ai/privacy) apply to its service.
+
+<!--
+OpenRouter facts checked 2026-11-19 against:
+- https://openrouter.ai/docs/guides/privacy/data-collection ("Data Collection"): prompts and responses aren't stored
+  unless you opt in to logging or the content is flagged as potential CSAM; "OpenRouter samples a small number of
+  prompts for categorization to power our reporting and model ranking", stored "completely anonymously and never
+  associated with your account or user ID", and "done by model with a zero-data-retention policy"; "OpenRouter will
+  screen inference requests, including ZDR traffic, for child sexual abuse material (CSAM) in flight"; per-request
+  metadata (token counts, latency) is stored. The page doesn't say whether sampling skips ZDR traffic, hence "may".
+- https://openrouter.ai/docs/guides/features/zdr ("Zero Data Retention"): ZDR means "no routine storage of prompts or
+  responses after processing"; all inference requests, including ZDR traffic, are screened for CSAM, and "Content
+  flagged as potential CSAM may be retained for human review, reporting, and preservation"; the "ZDR only" setting
+  excludes Safety Retention endpoints (launch-checklist.md, step 4).
+- https://openrouter.ai/privacy (last updated August 31, 2026): collects IP addresses and log files; doesn't use
+  inputs or outputs for model training.
+Re-check these pages before publishing and whenever OpenRouter announces a policy change.
+-->
 
 **With your own API key:** your phone sends the request straight to the provider you chose: Anthropic, OpenAI, Google (Gemini API), OpenRouter, or the OpenAI-compatible service at the address you entered. That provider handles it under your account with them, and under their terms and privacy policy, including whether they store it or train on it. I never see these requests. Your key is stored encrypted on your phone and sent only to that provider.
 
@@ -104,11 +126,21 @@ The server stores a keyed hash of the Android ID (never the ID itself), when the
 - the latest Google Play order number, and the order numbers of any refunded orders;
 - the AI allowance, the hash of the AI key, its spending limit, and timestamps.
 
+The server deletes this record, and the subscription's AI key, 90 days after the subscription ends or is refunded. A purchase that a plan change replaced (for example, by an upgrade to Transmit Plus) counts as ended on the day of the change; the plan you changed to has a record of its own.
+
 **AI keys.** For each free week or subscription, the server creates an AI key at OpenRouter, sends it to your phone once, and keeps only its hash. It reads how much the key has spent, to set its limit.
 
-**Network address.** To stop one network from starting many free weeks, the server counts free-week requests per IP address (or per IPv6 /64 block) per day, stored as a keyed hash. It deletes these counts after about a day.
+**Network address.** To stop one network from starting many free weeks, the server limits how often each network can call it. It counts calls under a keyed hash of your IP address (for IPv6, of its /64 block) and the date, never under the address itself. The hash changes every day, so one day's counts can't be linked to another's.
 
-**Hosting.** Cloudflare runs the server and sees your IP address and other request details to deliver each request. Cloudflare's logs of requests to the server can include those details, and are kept for 3 days. See [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/).
+- Free-week calls are counted per day in the server's database. Each day's counts are deleted shortly after the day ends (midnight UTC).
+- All calls are also counted per minute by Cloudflare's rate limiter, under the same hash, for the current minute only.
+
+**Hosting and logs.** Cloudflare runs the server, so it receives your IP address and other request details to deliver each request, and handles them under [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/).
+
+- I've turned off Cloudflare's per-request logs for Transmit's server. So the server keeps no record of each request with its IP address, headers or location.
+- The server writes a short log line when something happens, such as "free week started" or "subscription checked". These lines never contain IP addresses, Android IDs, purchase tokens or AI keys, and Cloudflare keeps them for 3 days.
+- Cloudflare also counts the server's requests, errors and processing time, in totals that don't include IP addresses.
+- When I'm fixing a problem, I can watch requests live, including their IP address. That live view isn't stored.
 
 ## 5. Google Play
 
@@ -124,15 +156,11 @@ The server stores a keyed hash of the Android ID (never the ID itself), when the
 | Message text sent for translation | Your own provider (own key) | Under that provider's terms |
 | Free-week record (hashed Android ID, dates, allowance) | Transmit's server | As long as Transmit's server runs, so each device gets one free week |
 | Free-week AI key | OpenRouter | Deleted when the free week ends |
-| Subscription record | Transmit's server | [RETENTION PERIOD, e.g. "until 12 months after the subscription ends"] |
-| Subscription AI key | OpenRouter | Turned off when the subscription ends or is refunded |
-| Free-week request counts per network | Transmit's server | About a day |
-| Request logs | Cloudflare | 3 days |
-
-<!--
-RETENTION PERIOD: the Worker never deletes subscription rows today (backend/src has no DELETE for subscriptions).
-Either implement a cleanup and state its period here, or state the truth: "as long as Transmit's server runs".
--->
+| Subscription record | Transmit's server | Until 90 days after the subscription ends or is refunded, then deleted automatically |
+| Subscription AI key | OpenRouter | Turned off when the subscription ends or is refunded, and deleted with the subscription record |
+| Free-week call counts per network (keyed hash) | Transmit's server | Until the day ends (midnight UTC) |
+| Per-minute call counts per network (keyed hash) | Cloudflare's rate limiter | The current minute |
+| The server's log lines (no IP addresses or identifiers) | Cloudflare | 3 days |
 
 ## 7. Your choices and rights
 
@@ -141,7 +169,7 @@ Either implement a cleanup and state its period here, or state the truth: "as lo
 - **Choose your provider.** Use your own API key in **Settings → Advanced**.
 - **Contacts and notifications** are optional. You can turn either permission off in Android's settings.
 - **Delete data on your phone.** Unpair, clear Transmit's storage, or uninstall.
-- **Delete data on Transmit's server.** Email [CONTACT EMAIL] with your Google Play order number (it starts with "GPA." and is in your Google Play receipt). I'll delete your subscription record and its AI key within 30 days. If the subscription is still active, the app will set it up again the next time it checks, so cancel it in Google Play first if you want it gone for good.
+- **Delete data on Transmit's server.** Subscription records are deleted automatically 90 days after the subscription ends or is refunded. To have yours deleted sooner, email [CONTACT EMAIL] with your Google Play order number (it starts with "GPA." and is in your Google Play receipt). I'll delete your subscription record and its AI key within 30 days. If the subscription is still active, the app will set it up again the next time it checks, so cancel it in Google Play first if you want it gone for good.
   - Free-week records can't be matched to you, because they only hold a keyed hash of an identifier on your phone. I keep them to prevent abuse of the free week.
 
 If you are in the European Economic Area, the United Kingdom or another region with similar laws, you can also ask to access or correct your data, object to how it's used, or complain to your local data protection authority. I handle the data above to provide the app you asked for (translation, the free week, your subscription), and for my legitimate interest in preventing abuse and keeping the service secure.
@@ -152,7 +180,7 @@ Transmit isn't meant for children. It isn't directed at children under 13, and I
 
 ## 9. Security
 
-Every connection Transmit makes uses HTTPS. On your phone, secrets are encrypted with a key kept in the Android Keystore. On the server, identifiers are stored as keyed hashes, and purchase tokens are encrypted. No system is perfectly secure. If a breach affects your data, I'll post a notice on this page and in the app's release notes.
+Every connection Transmit makes uses HTTPS. On your phone, secrets are encrypted with a key kept in the Android Keystore. On the server, identifiers are stored as keyed hashes, purchase tokens are encrypted, and IP addresses aren't stored at all. No system is perfectly secure. If a breach affects your data, I'll post a notice on this page and in the app's release notes.
 
 ## 10. Where data is processed
 
@@ -168,6 +196,6 @@ If this policy changes, I'll post the new version on this page with a new effect
 
 ## 13. Contact
 
-[LEGAL NAME]
-[ADDRESS]
+[LEGAL NAME]\
+[ADDRESS]\
 [CONTACT EMAIL]

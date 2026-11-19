@@ -1,6 +1,11 @@
 # Data safety form: proposed answers
 
-Proposed answers for Play Console → Monitor and improve → Policy and programs → App content → **Data safety**, for Transmit 1.0 (`com.ermay12.transmit`). They're based on the code on branch `play-launch` at 189aed3 (2026-11-18). If the code changes, re-check this file (see [What would change these answers](#what-would-change-these-answers)).
+Proposed answers for Play Console → Monitor and improve → Policy and programs → App content → **Data safety**, for Transmit 1.0 (`com.ermay12.transmit`). They're based on the code on branch `play-launch` at 189aed3 (2026-11-18). Re-checked on 2026-11-19 for:
+
+- the Worker's privacy changes: no IP addresses in logs or storage, and subscription rows deleted 90 days after they end;
+- the app change that replaces contact names in AI context with neutral labels, so **Contacts** is no longer declared.
+
+If the code changes, re-check this file (see [What would change these answers](#what-would-change-these-answers)).
 
 The answers must match the privacy policy (`docs/launch/privacy-policy.md`). Google compares them.
 
@@ -27,14 +32,14 @@ From [Provide information for Google Play's Data safety section](https://support
 | Does your app collect or share any of the required user data types? | **Yes** | Message text goes to the AI service, and the Worker receives ANDROID_ID and purchase tokens (below). |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | Every endpoint is HTTPS: OpenRouter and the BYOK providers (`ai/AiService.kt:44-50`), the Worker (`access/WorkerApi.kt:115`), and Google (`gm/GmClient.kt:131-146`). The app targets SDK 36 and has no network security config, so cleartext HTTP is blocked even for a custom BYOK base URL. |
 | Which of the following methods of account creation does your app support? | **My app does not allow users to create an account** | No login anywhere. The free week is tied to the device and the subscription to its Play purchase token (`backend/API.md`, "There is no login"). |
-| Do you provide a way for users to request that their data is deleted? | **Yes** | Section 7 of the privacy policy: email with the Google Play order number, and the Worker's subscription row and OpenRouter key are deleted by hand. The IP counts are deleted automatically after about a day (`backend/src/cron.ts:143`), and trial keys when the trial ends (`cron.ts:289`). Hashed trial rows are kept for abuse prevention, which the form allows ("even if you need to retain certain data for legitimate reasons such as ... abuse prevention"). |
-| Delete data URL (if shown; optional for apps without accounts) | The privacy policy URL, anchored at section 7 | |
+| Do you provide a way for users to request that their data is deleted? | **Yes** | Section 7 of the privacy policy: email with the Google Play order number, and the Worker's subscription row and OpenRouter key are deleted by hand. Without a request, the job deletes subscription rows and their keys 90 days after the subscription ends or is refunded (`backend/src/cron.ts`, `purgeEndedSubscriptions`). The per-network counts go at the first job run after UTC midnight (`cron.ts:174`), and trial keys when the trial ends (`deleteExpiredTrialKeys`). Hashed trial rows are kept for abuse prevention, which the form allows ("even if you need to retain certain data for legitimate reasons such as ... abuse prevention"). |
+| Delete data URL (if shown; optional for apps without accounts) | `https://transmit.ermay12.workers.dev/privacy#7-your-choices-and-rights` (section 7 of the policy) | |
 
 Paths without a prefix are under `app/src/main/java/app/transmit/`.
 
 ## Section 2: Data types
 
-Declare these five types and nothing else.
+Declare these four types and nothing else.
 
 ### Messages → SMS or MMS
 
@@ -52,28 +57,13 @@ Declare these five types and nothing else.
   - BYOK: the user picks the provider and pastes their own key, so the transfer follows "a specific user-initiated action, where the user reasonably expects the data to be shared".
   - The Google Messages relay carries message payloads encrypted with keys only the phone and the app hold (`gm/GmCrypto.kt:29`, `RequestCrypto`). That's covered by the end-to-end encryption exemption, and it's the user's own Google Messages anyway.
 - **Why optional:** AI is off unless the user starts the free week, subscribes or adds a key (`AiAccess` NONE mode; onboarding "Not now"). Auto-translation can also be turned off per category and per chat.
-- **Note on "ephemeral":** the managed path arguably qualifies. Hosts are limited to ZDR (the workspace guardrail, `backend/wrangler.jsonc`, `OPENROUTER_WORKSPACE_ID`), and OpenRouter doesn't store prompts with logging off. But OpenRouter samples some prompts for anonymous categorization and screens requests for CSAM, and BYOK providers may keep data. "No" is the safe answer. If you choose "Yes", base it on the managed path only.
+- **Note on "ephemeral":** the managed path arguably qualifies. Hosts are limited to ZDR (the workspace guardrail, `backend/wrangler.jsonc`, `OPENROUTER_WORKSPACE_ID`), and OpenRouter doesn't store prompts with logging off. But even with ZDR, OpenRouter may sample prompts for anonymous categorization, and it screens every request for CSAM and may keep flagged content ([Data Collection](https://openrouter.ai/docs/guides/privacy/data-collection), [Zero Data Retention](https://openrouter.ai/docs/guides/features/zdr), checked 2026-11-19). BYOK providers may keep data too. "No" is the safe answer. If you choose "Yes", base it on the managed path only.
 
 ### Messages → Other in-app messages
 
 Same answers as SMS or MMS: collected yes, shared no, ephemeral no, optional, App functionality.
 
 - **Why:** RCS chats are "chat content", which Google lists under Other in-app messages rather than SMS or MMS. The **Check my translation** draft (`ai/Prompts.kt:185`) is also message text the user writes in the app.
-
-### Contacts
-
-| Question | Answer |
-| --- | --- |
-| Collected | **Yes** |
-| Shared | **No** |
-| Processed ephemerally | **No** |
-| Required or optional | **Optional** |
-| Purposes | **App functionality** |
-
-- **Why collected:** Google's Contacts type covers "contact names". Each context line sent to the AI is labelled with the sender's display name from the address book or from Google Messages, not "Them". See `ai/TranslationManager.kt:295-304` (`contextFor` → `contacts.lookup(a).name`), `ui/chat/ChatViewModel.kt:955-961` (`contextLines`) and `ai/Prompts.kt:68`.
-- **Not collected:** the contact list itself. `data/ContactsRepository.kt` reads contacts only for on-device display and the recipient picker.
-- **Why optional:** same as Messages. Even without the contacts permission, names can still come from Google Messages (`fallbackNames`, `ContactsRepository.kt:125`).
-- **Recommended code change:** replace sender names in context lines with neutral labels ("Them", or "Person 1/2" in groups). Contacts then leaves this form, and the privacy policy gets simpler.
 
 ### Device or other IDs
 
@@ -86,9 +76,12 @@ Same answers as SMS or MMS: collected yes, shared no, ephemeral no, optional, Ap
 | Purposes | **App functionality**, **Fraud prevention, security, and compliance** |
 
 - **Why collected:** ANDROID_ID (`access/PlayAccessBackend.kt:125`) goes to the Worker in `/v1/trial` (`access/WorkerApi.kt:79`), and once in `/v1/subscription` after a purchase (`WorkerApi.kt:100`).
-  - The Worker stores `HMAC("device:" + id)` in `trials.device_hash` (`backend/src/trial.ts:28`, `backend/migrations/0001_init.sql`), to give each device one free week.
-  - This type also covers the Play Integrity token bound to the same ID (`access/PlayIntegrity.kt:31,68`; checked, not stored, in `backend/src/trial.ts:64`).
-  - It also covers the per-network trial counter: a keyed hash of the IPv4 address or IPv6 /64, deleted after about a day (`backend/src/ratelimit.ts`, `trial.ts:38`, `0002_trial_calls.sql`). IP addresses aren't used for location, so no location type.
+  - The Worker stores `HMAC("device:" + id)` in `trials.device_hash` (`backend/src/trial.ts:29`, `backend/migrations/0001_init.sql`), to give each device one free week.
+  - This type also covers the Play Integrity token bound to the same ID (`access/PlayIntegrity.kt:31,68`; checked, not stored, in `backend/src/trial.ts:65`).
+  - It also covers the IP address, used only for rate limits. The Worker never stores or logs it. Both limits count by `HMAC("ip:" + UTC day + "|" + IPv4 address or IPv6 /64)` (`networkKey`, `backend/src/ratelimit.ts:44`), so a network's hash changes daily:
+    - the per-minute Workers Rate Limiting binding, which keeps counts for the current minute;
+    - the daily `/v1/trial` counter in D1 (`trial.ts:36`, `0002_trial_calls.sql`), deleted at the first job run after UTC midnight (`cron.ts:174`).
+  - IP addresses aren't used for location, so no location type.
 - **Why not shared:** Google decodes the Integrity token as the API provider, and Cloudflare hosts the Worker. Both are service providers.
 - **Why optional:** only the free week and the first call after a purchase send it. BYOK and no-AI users never do.
 
@@ -102,7 +95,8 @@ Same answers as SMS or MMS: collected yes, shared no, ephemeral no, optional, Ap
 | Required or optional | **Optional** |
 | Purposes | **App functionality**, **Fraud prevention, security, and compliance** |
 
-- **Why collected:** the purchase token and product ID go to the Worker (`access/WorkerApi.kt:97-98`). The Worker stores them in the `subscriptions` table (`0001_init.sql`, `subscription.ts:412`): the token encrypted, its keyed hash, the product, state, expiry, auto-renew, the latest Play order ID, and voided order IDs.
+- **Why collected:** the purchase token and product ID go to the Worker (`access/WorkerApi.kt:97-98`). The Worker stores them in the `subscriptions` table (`0001_init.sql`, `subscription.ts:403`): the token encrypted, its keyed hash, the product, state, expiry, auto-renew, the latest Play order ID, and voided order IDs.
+- **Retention:** the job deletes the row, and its OpenRouter key, 90 days after the purchase ended (expired, pending purchase cancelled, or replaced by a plan change) or was refunded (`subscriptions.ended_at`, `0004_subscription_retention.sql`; `SUBSCRIPTION_RETENTION_MS` and `purgeEndedSubscriptions` in `backend/src/cron.ts`).
 - **Purposes:** to deliver the plan's AI allowance (App functionality), and to turn off keys after refunds and chargebacks (`backend/src/cron.ts`, voided purchases), which is Fraud prevention.
 - **Why not shared:** the token goes back only to Google Play's Developer API, to verify the purchase.
 - **Why optional:** only subscribers.
@@ -113,6 +107,8 @@ Same answers as SMS or MMS: collected yes, shared no, ephemeral no, optional, Ap
 | Data | Decision | Why |
 | --- | --- | --- |
 | Personal info (name, email, phone number, user IDs) | Not collected | Never sent to the Worker or the AI (`access/WorkerApi.kt`, `ai/Prompts.kt`). |
+| Contacts (contact names) | Not collected | AI context lines name no one: "Me", "Them", or "Person 1/2/…" in groups (`ContextLine.speaker` in `ai/Prompts.kt`, built by `PromptContext`). Names and numbers from the address book or Google Messages never go to the AI or the Worker; `data/ContactsRepository.kt` reads contacts only for on-device display and the recipient picker. A name a person typed into a message is message text, covered by Messages. |
+| IP addresses in server logs | Not collected | Workers invocation logs are off (`observability.logs.invocation_logs: false` in `backend/wrangler.jsonc`); they stored each request's `cf-connecting-ip` and location. The Worker's own log lines carry no IP addresses or identifiers (`log()` in `backend/src/http.ts`). Cloudflare processes the IP to deliver requests as the hosting service provider. |
 | Google sign-in cookies (Google-account pairing) | Not declared | No Data safety type fits. They're read from the user's own sign-in on Google's page (`ui/pairing/GoogleSignIn.kt`) and sent only to Google's Messages servers (`gm/GmClient.kt:1164`). The privacy policy discloses them (section 2). |
 | Recipient numbers, message payloads and media to Google's relay | Not declared | End-to-end encrypted between the phone and the app: `RequestCrypto` (`gm/GmCrypto.kt:29`), and media with a per-file key (`gm/GmClient.kt:1048`, `MediaCrypto`). |
 | Photos, videos, audio, files | Not collected | They only travel through Google Messages, encrypted. The AI only gets text. |
@@ -135,17 +131,18 @@ Same answers as SMS or MMS: collected yes, shared no, ephemeral no, optional, Ap
 ## What the listing will roughly say
 
 - **Data shared:** "No data shared with third parties".
-- **Data collected:** Messages, Contacts, Device or other IDs, Financial info.
+- **Data collected:** Messages, Device or other IDs, Financial info.
 - **Security practices:** "Data is encrypted in transit", "You can request that data be deleted".
 
 ## What would change these answers
 
 | Change | Update |
 | --- | --- |
-| Sender names in AI context replaced with neutral labels | Remove **Contacts** |
+| Contact names or numbers sent to the AI again | Add **Contacts** (collected, App functionality) |
+| Workers invocation logs turned back on | They store IP addresses and location for 3 days: say so in privacy policy section 4, and re-check Device or other IDs |
 | An in-app privacy disclosure + consent screen before the first AI use | No change, but it supports "not shared" and the User Data policy |
 | Crash reporting or analytics added | Add **App info and performance** (and maybe App activity) |
 | Managed mode adds another provider, or a host without ZDR | Re-check "not shared" and the privacy policy |
-| Subscription rows deleted after a set period | Update the privacy policy retention table; the answers stay |
+| The 90-day subscription retention changes | Update privacy policy sections 4, 6 and 7; the answers stay |
 | An in-app "delete my server data" button | The answers stay; mention it in the privacy policy |
 | Accounts or sign-in added | Account creation answers, and the account deletion requirement |

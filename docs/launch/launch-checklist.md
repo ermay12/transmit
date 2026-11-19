@@ -8,7 +8,7 @@ Ordered steps to get Transmit 1.0 onto Google Play production. As of 2026-11-18:
 
 The companion drafts are in this folder: `privacy-policy.md`, `data-safety.md`, `store-listing.md`, and `content-rating-and-declarations.md`.
 
-Items marked **(you)** need your decision or your account. Items marked **(code)** are app or Worker changes, none of which are made yet.
+Items marked **(you)** need your decision or your account. Items marked **(code)** are app or Worker changes; the ones done are ticked.
 
 ## 1. Decisions only you can make (you)
 
@@ -20,10 +20,10 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
   - Separately, once a personal account sells, Google Play already shows its address publicly. Both apply account-wide, so your other apps' listings show them too.
   - Options: an LLC, or a business or virtual-office address (no PO boxes). Your call.
 - [ ] **Target audience:** 18+ (recommended) or 13+ (`content-rating-and-declarations.md` §2).
-- [ ] **Retention period** for the Worker's subscription rows. Today they're never deleted. Either pick a period (for example 12 months after the subscription ends) and have it built, or state "kept while the server runs".
+- [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
 - [ ] **Deletion turnaround:** the draft promises 30 days.
 - [ ] **App name:** "Transmit: Learn by Texting" is recommended. Check the name against existing "Transmit" apps and marks first (`store-listing.md`).
-- [ ] **Sender names in AI context:** keep them (and declare Contacts), or replace them with neutral labels (recommended; `data-safety.md`).
+- [x] **Sender names in AI context:** replaced with neutral labels (`docs/product/release-1.0.md`). `data-safety.md` and the privacy policy assume that app change (step 2.5).
 
 ## 2. App and Worker changes before the closed test (code)
 
@@ -36,10 +36,8 @@ The closed track is reviewed against the same policies as production, so fix the
 5. [ ] **Recommended:** neutral speaker labels in AI context (`ai/TranslationManager.kt:303`, `ui/chat/ChatViewModel.kt:960`). This removes Contacts from Data safety.
 6. [ ] **Optional:** a "Report translation" action in the long-press sheet (AI-Generated Content policy).
 7. [ ] **Optional:** clear the WebView's Google cookies on unpair (`GmBridge.forget` doesn't clear `CookieManager` today).
-8. [ ] **Worker logs.** `backend/README.md` says "Logs never contain keys, tokens, device IDs or IP addresses". That's true of the Worker's own `console.log` lines. But with `observability.enabled`, Cloudflare's Workers Logs also keep invocation logs with request details (3 days on the Free plan). Either:
-   - accept that (the privacy policy already says Cloudflare's logs "can include" the IP address, kept 3 days), or
-   - turn invocation logs off in `wrangler.jsonc` (check the current option name in Cloudflare's Workers Logs docs) and correct the README.
-9. [ ] **Worker retention:** build the cleanup for the period you chose in step 1, if any.
+8. [x] **Worker logs.** Invocation logs stored each request's `cf-connecting-ip`, headers and location (city, postal code, coordinates) for 3 days. They're off since 2026-11-19 (`observability.logs.invocation_logs: false`). The Worker's own log lines stay, and never contain IP addresses. The rate limits count by a keyed hash of the network and the day. See `backend/README.md`, "Privacy".
+9. [x] **Worker retention:** the job deletes subscription rows and their OpenRouter keys 90 days after they end (2026-11-19, migration `0004`).
 10. [ ] **Docs:**
     - Fix `README.md`. It still says "Unknown numbers aren't auto-translated", but since 13d9dc4 they are, by default.
     - Its BYOK-only intro ("Translation and tutoring use your own AI API key") also predates the free week and plans.
@@ -49,9 +47,9 @@ The closed track is reviewed against the same policies as production, so fix the
 
 Play needs "an active, publicly accessible and non-geofenced URL (no PDFs)" ([User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311)). Pick one:
 
-- **A route on the existing Worker** (recommended): `https://transmit.ermay12.workers.dev/privacy`.
+- **A route on the existing Worker** (chosen, live since 2026-11-19): `https://transmit.ermay12.workers.dev/privacy`.
   - It works now while the repo is private, uses the domain the policy already names, and its URL won't change if the repo moves.
-  - Needs a small Worker change: serve the policy as static HTML, generated from the Markdown when you deploy or kept as a string. Then deploy.
+  - The page is rendered from `privacy-policy.md` whenever the Worker is deployed. To update it, edit the Markdown and redeploy (`backend/README.md`, "Privacy policy page").
 - **GitHub Pages**, once the repo is public, serving `main` / `docs`: `https://ermay12.github.io/transmit/launch/privacy-policy.html`.
   - No code, and edits are versioned.
   - Pages on a private repo needs a paid GitHub plan. The URL changes if you rename the repo.
@@ -60,7 +58,7 @@ Play needs "an active, publicly accessible and non-geofenced URL (no PDFs)" ([Us
 
 Either way:
 
-- [ ] Fill the placeholders and the effective date, publish, and open the URL in a private window to check it.
+- [ ] Fill the placeholders and the effective date in `privacy-policy.md`, redeploy the Worker, and open the URL in a private window to check it.
 - [ ] Put the URL in Play Console (App content → Privacy policy) and in the app (step 2.1).
 
 ## 4. Account and service checks (you)
