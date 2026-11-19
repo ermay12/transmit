@@ -40,7 +40,7 @@ object AccessWork {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(REFRESH, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    /** "Your free trial ends tomorrow", 24 h before [endsAt]. A new trial (or a re-issued one) replaces it. */
+    /** "Your free week ends tomorrow", 24 h before [endsAt]. A new trial (or a re-issued one) replaces it. */
     fun scheduleTrialReminder(context: Context, endsAt: Long, now: Long = System.currentTimeMillis()) {
         val delay = reminderDelay(endsAt, now) ?: return
         val request = OneTimeWorkRequestBuilder<TrialReminderWorker>().setInitialDelay(delay, TimeUnit.MILLISECONDS).build()

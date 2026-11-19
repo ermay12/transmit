@@ -99,10 +99,10 @@ object AccessText {
 
     /** Plain language: never about integrity verdicts, keys or servers. */
     fun trialFailure(code: AccessErrorCode): String = when (code) {
-        AccessErrorCode.TRIAL_ALREADY_USED -> "This device has already used its free trial."
-        AccessErrorCode.DEVICE_NOT_SUPPORTED -> "This device isn't supported for free trials."
-        AccessErrorCode.NOT_FROM_PLAY -> "Free trials need Transmit installed from Google Play."
-        AccessErrorCode.TRIALS_FULL -> "Free trials are full today. Try again tomorrow."
+        AccessErrorCode.TRIAL_ALREADY_USED -> "This device has already used its free week."
+        AccessErrorCode.DEVICE_NOT_SUPPORTED -> "This device isn't supported for the free week."
+        AccessErrorCode.NOT_FROM_PLAY -> "The free week needs Transmit installed from Google Play."
+        AccessErrorCode.TRIALS_FULL -> "Today's free weeks are all taken. Try again tomorrow."
         AccessErrorCode.RATE_LIMITED -> "Too many attempts from this network. Try again later."
         AccessErrorCode.NETWORK -> AiMessages.NO_CONNECTION
         AccessErrorCode.BUSY -> "Still working on it. Try again in a moment."
@@ -129,8 +129,8 @@ object AccessText {
     }
 
     fun ended(reason: EndReason) = when (reason) {
-        EndReason.TRIAL_USED_UP -> "Your free trial's AI is used up"
-        EndReason.TRIAL_EXPIRED -> "Your free trial has ended"
+        // One name for the end of the free week, whether its days or its AI ran out.
+        EndReason.TRIAL_USED_UP, EndReason.TRIAL_EXPIRED -> "Your free week has ended"
         EndReason.SUBSCRIPTION_ENDED -> "Your subscription has ended"
     }
 
@@ -141,8 +141,8 @@ object AccessText {
         ((endsAt - now + DateUtils.DAY_IN_MILLIS - 1) / DateUtils.DAY_IN_MILLIS).toInt().coerceAtLeast(0)
 
     fun trialTitle(endsAt: Long): String = when (val d = daysLeft(endsAt)) {
-        0, 1 -> "Free trial · 1 day left"
-        else -> "Free trial · $d days left"
+        0, 1 -> "Free week · 1 day left"
+        else -> "Free week · $d days left"
     }
 }
 
@@ -163,8 +163,8 @@ fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modi
     Column(modifier.fillMaxWidth()) {
         Text(
             when {
-                view == null -> if (trial) "Your trial's AI" else "This month's AI"
-                trial -> "${view.percent}% of your trial's AI used"
+                view == null -> if (trial) "Your free week's AI" else "This month's AI"
+                trial -> "${view.percent}% of your free week's AI used"
                 else -> "${view.percent}% of this month's AI used"
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -344,7 +344,7 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         is AiAccess.Trial -> when {
             allowance == null || !allowance.nearlyUsedUp -> null
             allowance.usedUp -> AllowanceBannerContent(AccessText.ended(EndReason.TRIAL_USED_UP), "Subscribe to keep translating.", AccessText.SUBSCRIBE, false)
-            else -> AllowanceBannerContent("You've used ${allowance.percent}% of your free trial's AI", "Subscribe to keep translating after it runs out.", AccessText.SUBSCRIBE, true)
+            else -> AllowanceBannerContent("You've used ${allowance.percent}% of your free week's AI", "Subscribe to keep translating after it runs out.", AccessText.SUBSCRIBE, true)
         }
         is AiAccess.Subscribed -> {
             val upgrade = if (access.tier == Tier.STANDARD) "Upgrade" else null

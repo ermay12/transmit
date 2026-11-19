@@ -67,7 +67,7 @@ class Notifier(
                 NotificationChannelCompat.Builder(CHANNEL_PAIRING, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Pairing").setDescription("When Transmit needs to be paired with Google Messages again").build(),
                 NotificationChannelCompat.Builder(CHANNEL_PLAN, NotificationManagerCompat.IMPORTANCE_DEFAULT)
-                    .setName("Plan").setDescription("When your free trial or subscription is ending or has ended").build(),
+                    .setName("Plan").setDescription("When your free week or subscription is ending or has ended").build(),
             ),
         )
         // A channel's badge setting can't change once created, so the old badging one is replaced.
@@ -220,7 +220,7 @@ class Notifier(
 
     /** Day 6 of the free week. */
     fun notifyTrialEndsTomorrow() = notifyPlan(
-        "Your free trial ends tomorrow",
+        "Your free week ends tomorrow",
         "Subscribe to keep translating and getting help with your replies.",
     )
 

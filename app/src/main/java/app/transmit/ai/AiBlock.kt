@@ -30,12 +30,11 @@ sealed interface AiBlock {
                 is BudgetStatus.ChatExceeded -> "This chat's AI budget is used up (${usd(s.spent)} of ${usd(s.limit)})."
                 BudgetStatus.Ok -> "Budget OK"
             }
-            is AllowanceUsedUp -> if (access is AiAccess.Trial) "Your free trial's AI is used up." else "You've used this month's AI."
+            is AllowanceUsedUp -> if (access is AiAccess.Trial) "Your free week has ended." else "You've used this month's AI."
             NotSetUp -> "Translation is off."
             InUseElsewhere -> "Your subscription is in use on another device."
             is Ended -> when (reason) {
-                EndReason.TRIAL_USED_UP -> "Your free trial's AI is used up."
-                EndReason.TRIAL_EXPIRED -> "Your free trial has ended."
+                EndReason.TRIAL_USED_UP, EndReason.TRIAL_EXPIRED -> "Your free week has ended."
                 EndReason.SUBSCRIPTION_ENDED -> "Your subscription has ended."
             }
         }

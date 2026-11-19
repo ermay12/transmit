@@ -44,7 +44,7 @@ class AiGateTest {
         assertEquals(AiBlock.AllowanceUsedUp(standard), block)
         assertFalse(block!!.canAllowOnce)
         assertEquals("You've used this month's AI.", block.message)
-        assertEquals("Your free trial's AI is used up.", check(trial, usedUp = true)!!.message)
+        assertEquals("Your free week has ended.", check(trial, usedUp = true)!!.message)
     }
 
     @Test
