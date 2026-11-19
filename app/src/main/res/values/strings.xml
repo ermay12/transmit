@@ -44,4 +44,7 @@
     <string name="compose_plain_hint">Message</string>
     <string name="turn_on_title">Turn on translation</string>
     <string name="action_not_now">Not now</string>
+
+    <!-- Settings. -->
+    <string name="settings_translation_off_caption">These apply once translation is on.</string>
 </resources>

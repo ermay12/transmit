@@ -16,7 +16,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import app.transmit.R
 import app.transmit.access.AccessBuild
 import app.transmit.access.AiAccess
 import app.transmit.access.Tier
@@ -185,6 +187,13 @@ fun SettingsScreen(
             }
 
             Section("Translation")
+            if (!a.canUseAi) {
+                // No AI set up, or it ended: the switches stay editable, but say they don't do anything yet.
+                Text(
+                    stringResource(R.string.settings_translation_off_caption), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+                )
+            }
             SwitchRow0(
                 Icons.Default.Contacts, "Auto-translate contacts", s.contactDefaults.autoTranslate,
                 { vm.setContactDefaults(s.contactDefaults.copy(autoTranslate = it)) },
