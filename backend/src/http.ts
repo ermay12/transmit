@@ -8,6 +8,7 @@ export type ErrorCode =
   | "purchase_invalid"
   | "purchase_not_active"
   | "busy"
+  | "key_mismatch"
   | "rate_limited"
   | "upstream_error"
   | "not_found"
@@ -22,6 +23,7 @@ const STATUS: Record<ErrorCode, number> = {
   purchase_invalid: 400,
   purchase_not_active: 402,
   busy: 409,
+  key_mismatch: 409,
   rate_limited: 429,
   upstream_error: 502,
   not_found: 404,
@@ -90,6 +92,13 @@ export function optionalString(body: Record<string, unknown>, field: string, pat
   const v = body[field];
   if (v === undefined || v === null || v === "") return undefined;
   return requiredString(body, field, pattern, maxLength);
+}
+
+export function optionalBoolean(body: Record<string, unknown>, field: string): boolean | undefined {
+  const v = body[field];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "boolean") throw new ApiError("bad_request", `Field "${field}" must be true or false.`);
+  return v;
 }
 
 /** Structured log line. Never pass keys, tokens or device IDs here. */

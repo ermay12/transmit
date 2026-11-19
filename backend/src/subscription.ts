@@ -10,7 +10,7 @@ import type { Ctx } from "./context";
 import { encrypt, keyedHash } from "./crypto";
 import { firstRow, getSubscription, Lease, putSubscription, subscriptionStmt, type SubscriptionRow, trialStmt, type TrialRow } from "./db";
 import type { SubscriptionPurchaseV2 } from "./google";
-import { ApiError, json, log, optionalString, readJson, requiredString } from "./http";
+import { ApiError, json, log, optionalBoolean, optionalString, readJson, requiredString } from "./http";
 import { isoSeconds, type KeyInfo, money } from "./openrouter";
 import { adoptSharedToken, readSharedToken, shareTokenWrites } from "./shared-token";
 
@@ -117,6 +117,10 @@ function notActive(state: SubState): ApiError {
   return new ApiError("purchase_not_active", `This purchase gives no AI right now (${state}).`, { state });
 }
 
+function keyMismatch(): ApiError {
+  return new ApiError("key_mismatch", "This purchase's key is held elsewhere; keyHash does not match it.");
+}
+
 function invalid(reason: string, message: string): ApiError {
   return new ApiError("purchase_invalid", message, { reason });
 }
@@ -127,6 +131,7 @@ export async function handleSubscription(ctx: Ctx, request: Request): Promise<Re
   const productId = optionalString(body, "productId", PRODUCT_ID, 200);
   const keyHash = optionalString(body, "keyHash", KEY_HASH, 200);
   const androidId = optionalString(body, "androidId", ANDROID_ID, 64);
+  const rotate = optionalBoolean(body, "rotate") ?? true;
   const now = ctx.now();
 
   const tokenHash = await keyedHash(ctx.keys, "purchase", purchaseToken);
@@ -145,6 +150,7 @@ export async function handleSubscription(ctx: Ctx, request: Request): Promise<Re
       tokenHash,
       productId,
       keyHash,
+      rotate,
       row: firstRow<SubscriptionRow>(row),
       deviceHash,
       trial: firstRow<TrialRow>(trial),
@@ -160,6 +166,8 @@ interface SyncArgs {
   tokenHash: string;
   productId?: string;
   keyHash?: string;
+  /** false: answer key_mismatch instead of taking the key from whoever holds it. */
+  rotate: boolean;
   /** This purchase's row, read under the lease. */
   row: SubscriptionRow | null;
   deviceHash?: string;
@@ -206,10 +214,9 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
   let plan: KeyPlan;
 
   if (row?.key_hash) {
-    plan =
-      a.keyHash === row.key_hash
-        ? await keepKey(ctx, row.key_hash, newOrder, allowance, a.tokenHash)
-        : await rotateKey(ctx, row.key_hash, newOrder, allowance, a.tokenHash);
+    if (a.keyHash === row.key_hash) plan = await keepKey(ctx, row.key_hash, newOrder, allowance, a.tokenHash);
+    else if (!a.rotate) throw keyMismatch();
+    else plan = await rotateKey(ctx, row.key_hash, newOrder, allowance, a.tokenHash);
   } else {
     // First time we see this token. An upgrade (or resubscribe) links to the purchase it replaces.
     newOrder = true;
@@ -218,6 +225,7 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
       : null;
     const prevKey = linked && !linked.replaced_by ? linked.key_hash : null;
     if (prevKey && a.keyHash === prevKey) plan = await keepKey(ctx, prevKey, true, allowance, a.tokenHash);
+    else if (prevKey && !a.rotate) throw keyMismatch();
     else if (prevKey) plan = await rotateKey(ctx, prevKey, true, allowance, a.tokenHash);
     else plan = await newKey(ctx, allowance, a.tokenHash);
     if (linked && !linked.replaced_by) {

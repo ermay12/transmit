@@ -84,6 +84,56 @@ describe("POST /v1/subscription", () => {
     expect(world.keys.size).toBe(1);
   });
 
+  it("answers key_mismatch instead of rotating when rotate is false, and changes nothing", async () => {
+    const world = new FakeWorld();
+    world.addPurchase(TOKEN);
+    const first = await subscribe(world);
+    const restored = await subscribe(world); // another phone restores: the key moves there
+    const before = await env.DB.prepare("SELECT * FROM subscriptions").first();
+    const keys = structuredClone([...world.keys.values()]);
+
+    // The first phone's background refresh with its stale keyHash must not take the key back.
+    for (const keyHash of [first.body.keyHash, undefined]) {
+      const r = await subscribe(world, { keyHash, rotate: false });
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ error: "key_mismatch" });
+      expect(r.body.key).toBeUndefined();
+    }
+    expect([...world.keys.values()]).toEqual(keys);
+    expect(world.keys.get(restored.body.keyHash as string)!.disabled).toBe(false);
+    expect(await env.DB.prepare("SELECT * FROM subscriptions").first()).toEqual(before);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM locks").first("n")).toBe(0);
+
+    // The holder's own refresh still works, and without the field a stale keyHash still rotates.
+    expect((await subscribe(world, { keyHash: restored.body.keyHash, rotate: false })).body).toMatchObject({ newKey: false });
+    expect((await subscribe(world, { keyHash: first.body.keyHash, rotate: true })).body).toMatchObject({ newKey: true });
+  });
+
+  it("still issues a first key, and refuses to move an upgraded purchase's key, with rotate false", async () => {
+    const world = new FakeWorld();
+    world.addPurchase(TOKEN);
+    const monthly = await subscribe(world, { rotate: false });
+    expect(monthly.body).toMatchObject({ newKey: true });
+
+    world.addPurchase("plus-token", { productId: "transmit_plus", orderId: "GPA.2", linked: TOKEN });
+    const refused = await call(world, "/v1/subscription", { purchaseToken: "plus-token", keyHash: "stale", rotate: false });
+    expect(refused.body.error).toBe("key_mismatch");
+    expect(world.keys.get(monthly.body.keyHash as string)!.disabled).toBe(false);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM subscriptions").first("n")).toBe(1);
+
+    const plus = await call(world, "/v1/subscription", { purchaseToken: "plus-token", keyHash: monthly.body.keyHash, rotate: false });
+    expect(plus.body).toMatchObject({ newKey: false, keyHash: monthly.body.keyHash, remainingUsd: 9 });
+  });
+
+  it("reports a lapsed purchase before a key mismatch, and validates rotate", async () => {
+    const world = new FakeWorld();
+    world.addPurchase(TOKEN);
+    await subscribe(world);
+    expect((await subscribe(world, { rotate: "no" })).body.error).toBe("bad_request");
+    world.setState(TOKEN, "SUBSCRIPTION_STATE_ON_HOLD");
+    expect((await subscribe(world, { keyHash: "stale", rotate: false })).body).toMatchObject({ error: "purchase_not_active", state: "on_hold" });
+  });
+
   it("upgrades to Plus with CHARGE_FULL_PRICE: same key, full $9.00 at once, old token replaced", async () => {
     const world = new FakeWorld();
     world.addPurchase(TOKEN);

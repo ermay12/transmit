@@ -47,6 +47,7 @@ listed below. `message` is English text for logs, not for users.
 | `purchase_invalid` | 400 | Google doesn't know the token, or it's not a Transmit subscription; `reason` below | Don't retry with that token |
 | `purchase_not_active` | 402 | The purchase exists but gives no AI right now; `state` below | `pending`: wait for Play's purchase update. `on_hold`, `paused`: "Fix your payment in Google Play" + Manage subscription. `expired`, `canceled_pending`, `refunded`: ENDED. `replaced`: call again with the newer purchase token from `queryPurchasesAsync` |
 | `busy` | 409 | Another call for the same device or purchase is in progress | Retry after 2–5 s (for `/v1/trial`, see [Concurrent calls](#concurrent-calls)) |
+| `key_mismatch` | 409 | `/v1/subscription` with `"rotate": false`: the `keyHash` sent is missing or isn't this purchase's current key, so the key is in use on another device. Nothing was changed | Background call: stop and keep the app's state. In the foreground: "Your subscription is in use on another device. Use it here?" On yes, call again without `rotate` |
 | `rate_limited` | 429 | Too many calls from this network; `retryAfterSeconds` = seconds to wait (also in the `Retry-After` header). See [Rate limits](#rate-limits) | Wait `retryAfterSeconds`, then retry once; don't retry in a loop. For a trial: "Too many attempts from this network, try again later"; offer Subscribe or BYOK |
 | `upstream_error` | 502 | Google or OpenRouter failed; `service` is `google` or `openrouter` | Retry with backoff; nothing was charged or lost |
 | `not_found` | 404 | Unknown path | |
@@ -198,6 +199,14 @@ Request:
 - `androidId` (optional): send it on the first call after a purchase. If this
   device has a trial key, the Worker deletes it (no carry-over); the
   subscription key replaces it.
+- `rotate` (optional, `true` or `false`, default `true`): `false` means "never
+  take the key from another device". Where the Worker would rotate (a missing
+  or non-matching `keyHash` on a purchase that has a key, including the one an
+  upgrade links to), it answers `key_mismatch` instead and changes nothing.
+  `purchase_invalid` and `purchase_not_active` still come first. A purchase
+  with no key yet still gets one. Send `"rotate": false` on background calls
+  (daily refresh, near the limit); leave it out for purchases, upgrades and
+  "Restore purchase".
 
 Do **not** acknowledge purchases in the app. The Worker acknowledges after it has
 issued the key. If the Worker can't be reached, retry; Play refunds purchases that
@@ -238,7 +247,7 @@ Response `200`:
   "Renews <date>" and "Resets <date>". If not, the subscription ends then.
 
 Errors: `bad_request`, `purchase_invalid`, `purchase_not_active`, `busy`,
-`rate_limited`, `upstream_error`. On `purchase_not_active` the Worker has also disabled the
+`key_mismatch` (only with `"rotate": false`), `rate_limited`, `upstream_error`. On `purchase_not_active` the Worker has also disabled the
 purchase's key, if it had one; it is re-enabled automatically if the
 subscription recovers (for example `on_hold` → paid).
 
@@ -346,12 +355,16 @@ or a 401 on the managed key)
    matching `keyHash` when there's no key or the user tapped "Restore purchase";
    on a 401 for a key that used to work, ask before taking the key back
    ("Your subscription is in use on another device. Use it here?").
+   Calls the user didn't ask for send `"rotate": false`, so they get
+   `key_mismatch` instead of taking the key.
 
 **Daily refresh**: once a day (WorkManager) and when the local tally passes
 about 90% of the allowance, call
 `POST /v1/subscription {purchaseToken, keyHash}`. That picks up renewals within
 a day even if the Worker's own job hasn't, and keeps `state` and `periodEndsAt`
-fresh for the plan card.
+fresh for the plan card. Add `"rotate": false` to these background calls: a
+stale `keyHash` (the key moved to another phone) then gets `key_mismatch`, not a
+new key.
 
 **Allowance used up**
 
