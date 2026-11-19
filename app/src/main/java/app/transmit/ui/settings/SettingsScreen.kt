@@ -399,7 +399,7 @@ private fun PlanCard(
                     // The last day reads "1 day left", not "0 days left".
                     val days = AccessText.daysLeft(access.endsAt).coerceAtLeast(1)
                     PlanTitle(pluralStringResource(R.plurals.settings_plan_trial_days, days, days), null)
-                    AllowanceBar(allowance, trial = true)
+                    AllowanceBar(allowance)
                     Spacer(Modifier.height(16.dp))
                     if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                 }

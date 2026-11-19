@@ -124,9 +124,7 @@
 
     <!-- How much of the managed AI is used: a percentage, never dollars. -->
     <string name="allowance_trial">Your free week\'s AI</string>
-    <string name="allowance_month">This month\'s AI</string>
     <string name="allowance_trial_used">%1$d%% of your free week\'s AI used</string>
-    <string name="allowance_month_used">%1$d%% of this month\'s AI used</string>
     <string name="allowance_resets">Resets %1$s</string>
 
     <!-- Settings: the plan card, the Translation switches, and Advanced for managed modes. -->

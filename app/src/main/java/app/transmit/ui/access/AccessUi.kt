@@ -163,18 +163,17 @@ fun openPlayListing(context: Context) {
 /** The Play listing's id: the release's applicationId, whatever this build is called. */
 private const val PLAY_LISTING_ID = "com.ermay12.transmit"
 
-/** "42% of this month's AI used", a bar, and when it resets. Never dollars. */
+/**
+ * "42% of your free week's AI used", a bar, and when it resets, on the free week's plan card. Never dollars.
+ * Subscribers see the percent in Settings' Subscription row instead.
+ */
 @Composable
-fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modifier) {
+fun AllowanceBar(view: AllowanceView?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val fraction = view?.fraction ?: 0.0
     Column(modifier.fillMaxWidth()) {
         Text(
-            when {
-                view == null -> stringResource(if (trial) R.string.allowance_trial else R.string.allowance_month)
-                trial -> stringResource(R.string.allowance_trial_used, view.percent)
-                else -> stringResource(R.string.allowance_month_used, view.percent)
-            },
+            if (view == null) stringResource(R.string.allowance_trial) else stringResource(R.string.allowance_trial_used, view.percent),
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(Modifier.height(6.dp))
