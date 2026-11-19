@@ -13,9 +13,16 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.video.VideoFrameDecoder
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import app.transmit.access.AccessBuild
+import app.transmit.access.AccessListener
 import app.transmit.access.AccessManager
 import app.transmit.access.AccessStore
+import app.transmit.access.AccessWork
+import app.transmit.access.EndReason
+import app.transmit.access.PurchaseQueue
+import app.transmit.access.Purchases
 import app.transmit.ai.AiService
 import app.transmit.ai.ProviderType
 import app.transmit.ai.BudgetManager
@@ -41,6 +48,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 private val Context.accessDataStore: DataStore<Preferences> by preferencesDataStore(name = "access")
 
@@ -70,17 +78,22 @@ class AppContainer(val context: Context) {
     val messaging: MessagingRepository = MessagingRepository(context, db, bridge)
     val sender: Sender = Sender(context, db.gmDao(), dao, bridge, scope) { threadId -> notifier.notifySendFailed(threadId) }
 
-    private val accessBackend = AccessBuild.backend(context, secrets)
+    private val accessServices = AccessBuild.services(context, secrets, scope)
     /** Where AI comes from: trial, subscription, the user's own key, or none. */
     val access = AccessManager(
         store = AccessStore(context.accessDataStore) { ProviderType.entries.any { secrets.has(it.secretName) } },
         vault = secrets,
-        backend = accessBackend.first,
-        allowanceSource = accessBackend.second,
+        backend = accessServices.backend,
+        allowanceSource = accessServices.allowance,
         managedSpend = { since -> dao.managedSpentSinceFlow(since) },
         scope = scope,
         isForeground = { ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) },
+        autoStart = false,
     )
+    /** Play's purchase sheet, and getting every purchase's key from the Worker. */
+    val purchases = Purchases(accessServices.store, access, PurchaseQueue(secrets), scope) { AccessWork.scheduleDelivery(context) }
+    /** Play Integrity for the trial; warmed when a screen that can start it opens. */
+    val trialCheck = accessServices.attestation
     val ai = AiService(settings, secrets)
     val policy = ChatPolicy(dao, messaging, contacts)
     val budget = BudgetManager(dao, policy)
@@ -90,6 +103,25 @@ class AppContainer(val context: Context) {
     val shortcuts = ConversationShortcuts(context, messaging, contacts, dao)
     val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations, shortcuts)
     val smart = SmartLinks()
+
+    init {
+        access.listener = object : AccessListener {
+            override fun onEndedInBackground(reason: EndReason) = notifier.notifyAccessEnded(reason)
+            override fun onInUseElsewhereInBackground() = notifier.notifyInUseElsewhere()
+            override fun onTrialGranted(endsAt: Long) = AccessWork.scheduleTrialReminder(context, endsAt)
+            override fun onSubscriptionGranted() = AccessWork.cancelTrialReminder(context)
+        }
+        access.start()
+    }
+
+    /** At launch and whenever the app comes back: a trial or subscription that ended meanwhile, and lost purchases. */
+    fun checkAccess() {
+        scope.launch {
+            access.reconcile()
+            access.refresh()
+            purchases.sync()
+        }
+    }
 }
 
 class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -102,6 +134,10 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
         container.notifier.createChannels()
         container.shortcuts.start(container.scope)
         BridgeService.start(this)
+        AccessWork.scheduleDailyRefresh(this)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = container.checkAccess()
+        })
     }
 
     override val workManagerConfiguration: Configuration

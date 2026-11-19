@@ -29,6 +29,8 @@ import app.transmit.app
 import app.transmit.ui.access.AiBlockDialog
 import app.transmit.ui.access.TrialUi
 import app.transmit.data.KeyVault
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -38,14 +40,25 @@ import kotlinx.coroutines.launch
  *     adb shell am broadcast -n com.ermay12.transmit/app.transmit.access.DebugAccessReceiver \
  *         --es mode TRIAL --ei allowance 85 --es trial TRIALS_FULL
  *
- * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome].
+ * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--es backend WORKER`
+ * (or `FAKE`) picks the backend for the next start: WORKER is the live Worker with real Play Integrity and Billing,
+ * without the installed-from-Play check, so the Worker's own answers show (an emulator gets `integrity_failed`).
  */
 object AccessBuild {
     private var fake: FakeAccessBackend? = null
 
-    fun backend(context: Context, vault: KeyVault): Pair<AccessBackend, AllowanceSource> {
+    fun services(context: Context, vault: KeyVault, scope: CoroutineScope): AccessServices {
         val f = FakeAccessBackend(context, vault).also { fake = it }
-        return f to f
+        if (f.backendChoice == DebugBackend.WORKER) {
+            Log.i("DebugAccess", "Using the live Worker")
+            val store = PlayBilling(context, available = true)
+            val integrity = PlayIntegrity(context, scope)
+            val backend = PlayAccessBackend(WorkerApi(), store, integrity, { PlayAccessBackend.androidId(context) }, checkInstall = false)
+            return AccessServices(backend, OpenRouterAllowance(), store, integrity)
+        }
+        return AccessServices(f, f, FakeStorefront(f), object : TrialAttestation {
+            override suspend fun token(requestHash: String) = "debug-token"
+        })
     }
 
     fun fake(context: Context): FakeAccessBackend = fake ?: FakeAccessBackend(context, context.app.container.secrets)
@@ -96,7 +109,46 @@ object AccessBuild {
                 AiAccess.Byok, null -> null
             }
             if (block != null) FilterChip(selected = false, onClick = { preview = block }, label = { Text("Show blocked dialog") })
+            var choice by remember { mutableStateOf(f.backendChoice) }
+            Text("Backend (applies after a restart)", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DebugBackend.entries.forEach { b ->
+                    FilterChip(selected = choice == b, onClick = { choice = b; f.backendChoice = b }, label = { Text(b.label) })
+                }
+            }
         }
+    }
+}
+
+enum class DebugBackend(val label: String) {
+    FAKE("Fake"),
+    WORKER("Live Worker"),
+}
+
+/** Play for the fake backend: fixed prices, and a purchase sheet that buys at once. */
+@OptIn(DelicateCoroutinesApi::class)
+class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
+    override val available = true
+    private val _updates = kotlinx.coroutines.flow.MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = 4)
+    override val updates: kotlinx.coroutines.flow.Flow<PurchaseUpdate> = _updates
+
+    override suspend fun offers(): Map<Tier, PlanOffer> {
+        delay(300)
+        return mapOf(Tier.STANDARD to PlanOffer(Tier.STANDARD, "$5.99"), Tier.PLUS to PlanOffer(Tier.PLUS, "$11.99"))
+    }
+
+    override suspend fun purchases(): List<OwnedPurchase> =
+        listOfNotNull(fake.purchased?.let { OwnedPurchase(it.productId, "debug-token-${it.productId}", purchased = true, acknowledged = true) })
+
+    override suspend fun launch(activity: android.app.Activity, tier: Tier, plan: PurchasePlan): LaunchResult {
+        if (plan == PurchasePlan.AlreadyOwned) return LaunchResult.ALREADY_OWNED
+        if (plan == PurchasePlan.NotOffered) return LaunchResult.UNAVAILABLE
+        Log.i("DebugAccess", "Fake purchase of $tier as $plan")
+        kotlinx.coroutines.GlobalScope.launch {
+            delay(800)
+            _updates.emit(PurchaseUpdate.Purchases(listOf(OwnedPurchase(tier.productId, "debug-token-${tier.productId}-${System.currentTimeMillis()}", purchased = true, acknowledged = false))))
+        }
+        return LaunchResult.LAUNCHED
     }
 }
 
@@ -135,6 +187,10 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
     var allowancePercent: Int
         get() = prefs.getInt("allowance", 10)
         set(v) = prefs.edit().putInt("allowance", v).apply()
+
+    var backendChoice: DebugBackend
+        get() = prefs.getString("backend", null)?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } } ?: DebugBackend.FAKE
+        set(v) = prefs.edit().putString("backend", v.name).apply()
 
     /** The subscription "on Play", for restore and refresh. */
     var purchased: Tier?
@@ -182,6 +238,8 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         val tier = purchased ?: return AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
         return AccessResult.Granted(subscriptionGrant(tier, newKey = false))
     }
+
+    override suspend fun activeOnPlay(): Boolean = purchased != null
 
     /** Nothing to reconcile with: the configured percent is the truth. */
     override suspend fun read(managedKey: String): AllowanceCheck = AllowanceCheck.Unavailable
@@ -243,6 +301,7 @@ class DebugAccessReceiver : BroadcastReceiver() {
         val pending = goAsync()
         container.scope.launch {
             try {
+                intent.getStringExtra("backend")?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } }?.let { fake.backendChoice = it }
                 intent.getStringExtra("trial")?.let { v -> FakeTrialOutcome.entries.firstOrNull { it.name == v } }?.let { fake.trialOutcome = it }
                 intent.getStringExtra("mode")?.let { v -> FakeMode.entries.firstOrNull { it.name == v } }?.let { fake.apply(container.access, it) }
                 if (intent.hasExtra("allowance")) fake.setAllowance(container.access, intent.getIntExtra("allowance", 10))

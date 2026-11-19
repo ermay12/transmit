@@ -20,6 +20,8 @@ import androidx.core.content.LocusIdCompat
 import androidx.core.graphics.drawable.IconCompat
 import app.transmit.MainActivity
 import app.transmit.R
+import app.transmit.access.EndReason
+import app.transmit.ui.access.AccessText
 import app.transmit.ai.ChatPolicy
 import app.transmit.ai.TranslationManager
 import app.transmit.data.ContactsRepository
@@ -64,6 +66,8 @@ class Notifier(
                     .setShowBadge(false).build(),
                 NotificationChannelCompat.Builder(CHANNEL_PAIRING, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Pairing").setDescription("When Transmit needs to be paired with Google Messages again").build(),
+                NotificationChannelCompat.Builder(CHANNEL_PLAN, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                    .setName("Plan").setDescription("When your free trial or subscription is ending or has ended").build(),
             ),
         )
         // A channel's badge setting can't change once created, so the old badging one is replaced.
@@ -212,6 +216,38 @@ class Notifier(
         runCatching { nm.notify(LOGGED_OUT_ID, n) }
     }
 
+    // ---- plan ------------------------------------------------------------------------------------
+
+    /** Day 6 of the free week. */
+    fun notifyTrialEndsTomorrow() = notifyPlan(
+        "Your free trial ends tomorrow",
+        "Subscribe to keep translating and getting help with your replies.",
+    )
+
+    /** The trial or subscription ended (or the trial's AI ran out) while the app wasn't open. */
+    fun notifyAccessEnded(reason: EndReason) = notifyPlan(AccessText.ended(reason), AccessText.KEEP_GOING)
+
+    /** Another device took the subscription while the app wasn't open. */
+    fun notifyInUseElsewhere() = notifyPlan(AccessText.IN_USE_ELSEWHERE, "Open Transmit to use it on this phone.")
+
+    /** The plans screen is showing: its notification has done its job. */
+    fun cancelPlan() = nm.cancel(PLAN_ID)
+
+    private fun notifyPlan(title: String, text: String) {
+        if (!canPost()) return
+        val n = NotificationCompat.Builder(context, CHANNEL_PLAN)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(
+                PendingIntent.getActivity(context, PLAN_ID, MainActivity.plansIntent(context), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
+            )
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(PLAN_ID, n) }
+    }
+
     private fun openThreadIntent(threadId: Long): PendingIntent = PendingIntent.getActivity(
         context, notificationId(threadId), MainActivity.threadIntent(context, threadId),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -259,8 +295,10 @@ class Notifier(
         const val CHANNEL_CONNECTION = "connection_quiet"
         private const val OLD_CHANNEL_CONNECTION = "connection"
         const val CHANNEL_PAIRING = "pairing"
+        const val CHANNEL_PLAN = "plan"
         const val CONNECTION_ID = Int.MAX_VALUE - 1
         const val LOGGED_OUT_ID = Int.MAX_VALUE - 3
+        const val PLAN_ID = Int.MAX_VALUE - 5
         fun notificationId(threadId: Long) = (threadId % 1_000_000).toInt() * 2
     }
 }

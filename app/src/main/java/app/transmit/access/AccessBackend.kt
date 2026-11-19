@@ -177,4 +177,18 @@ interface AccessListener {
 
     /** Another device took the subscription's key while no screen of the app was showing. */
     fun onInUseElsewhereInBackground() {}
+
+    /** A trial key was stored (a new trial, or one re-issued after a reinstall): time the day-6 reminder. */
+    fun onTrialGranted(endsAt: Long) {}
+
+    /** A subscription key was stored: no trial reminder any more. */
+    fun onSubscriptionGranted() {}
 }
+
+/** What each build type provides for AI access: see `AccessBuild` in the debug and release source sets. */
+data class AccessServices(
+    val backend: AccessBackend,
+    val allowance: AllowanceSource,
+    val store: Storefront,
+    val attestation: TrialAttestation,
+)

@@ -72,6 +72,8 @@ sealed interface NavRequest {
     /** A share sent straight to a conversation: its shortcut was picked in the system share sheet. */
     data class ShareToThread(val threadId: Long, val share: Share) : NavRequest
     data class PickRecipient(val share: Share) : NavRequest
+    /** From a trial or subscription notification. */
+    data object Plans : NavRequest
 }
 
 /** A share on its way to a conversation; [threadId] is null while the user picks one. */
@@ -131,6 +133,7 @@ class MainActivity : ComponentActivity() {
         intent ?: return null
         return when (intent.action) {
             ACTION_VIEW_THREAD -> intent.getLongExtra(EXTRA_THREAD, -1).takeIf { it > 0 }?.let { NavRequest.Thread(it) }
+            ACTION_OPEN_PLANS -> NavRequest.Plans
             Intent.ACTION_SENDTO, Intent.ACTION_VIEW, Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> {
                 val data = intent.data?.takeIf { it.scheme in SMS_SCHEMES }
                 val recipients = data?.let(::recipientsOf).orEmpty()
@@ -162,6 +165,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_VIEW_THREAD = "app.transmit.VIEW_THREAD"
+        const val ACTION_OPEN_PLANS = "app.transmit.OPEN_PLANS"
         const val EXTRA_THREAD = "thread_id"
         private val SMS_SCHEMES = setOf("sms", "smsto", "mms", "mmsto")
 
@@ -169,6 +173,11 @@ class MainActivity : ComponentActivity() {
             Intent(context, MainActivity::class.java)
                 .setAction(ACTION_VIEW_THREAD)
                 .putExtra(EXTRA_THREAD, threadId)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+        fun plansIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_PLANS)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
         /** `smsto:+1555,+1666?body=hi` → numbers. */
@@ -242,6 +251,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 val exists = runCatching { withContext(Dispatchers.IO) { c.messaging.recipientsForThread(r.threadId).isNotEmpty() } }.getOrDefault(false)
                 if (exists) openWithShare(r.threadId, r.share) else pickFor(r.share)
             }
+            NavRequest.Plans -> nav.navigate(Routes.PLANS) { launchSingleTop = true }
             is NavRequest.PickRecipient -> {
                 if (!r.share.isEmpty) {
                     pickFor(r.share)

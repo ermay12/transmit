@@ -56,6 +56,8 @@ class AccessManager(
     /** Whether a screen of the app is showing, so the end of a trial can open the plans screen. */
     private val isForeground: () -> Boolean = { true },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** False to hold off noticing transitions until [start], once [listener] is set. */
+    autoStart: Boolean = true,
 ) {
     var listener: AccessListener = object : AccessListener {}
 
@@ -99,9 +101,13 @@ class AccessManager(
     /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
     private var keyCheckedAt = 0L
 
+    private val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+
     init {
+        if (autoStart) started.complete(Unit)
         scope.launch {
             store.migrate()
+            started.await()
             access.filterNotNull().collect { noticeTransition(it) }
         }
         // Used up: the dismissal is spent, so the 80% banner shows again if a correction brings it back below 100%.
@@ -110,6 +116,11 @@ class AccessManager(
                 store.update { s -> if (s.warningDismissedFor != null) s.copy(warningDismissedFor = null) else s }
             }
         }
+    }
+
+    /** Starts noticing transitions (an end found at launch, say) for [listener]. */
+    fun start() {
+        started.complete(Unit)
     }
 
     suspend fun dismissWarning() = store.update { it.copy(warningDismissedFor = it.allowancePeriod) }
@@ -257,6 +268,10 @@ class AccessManager(
                 // A key from the Worker works here, whichever device had it before.
                 inUseElsewhere = false,
             )
+        }
+        when (val e = g.entitlement) {
+            is Entitlement.Trial -> listener.onTrialGranted(e.endsAt)
+            is Entitlement.Subscription -> listener.onSubscriptionGranted()
         }
     }
 
