@@ -15,7 +15,8 @@ class CopyTest {
 
     /**
      * Moving down from Plus is "Switch to Transmit", offered calmly beside Manage subscription: never called a
-     * downgrade, and with no new words about cancelling (only Play's "Cancel anytime" and the dialogs' Cancel).
+     * downgrade, and with no new words about cancelling (only the auto-renew line the Subscriptions policy asks for,
+     * "…until you cancel in Google Play", and the dialogs' Cancel).
      */
     @Test
     fun plusMovesDownBySwitchingToTransmitAndNothingNewTalksAboutCancelling() {
@@ -26,7 +27,7 @@ class CopyTest {
         assertEquals("Switches to Transmit on %1\$s", TestStrings.all["plan_switches_on"])
         assertEquals("Keep Plus", TestStrings.all["plan_keep_plus"])
         val cancelling = TestStrings.all.filterValues { it.contains("cancel", ignoreCase = true) }.keys
-        assertEquals(setOf("action_cancel", "plans_cancel_anytime"), cancelling)
+        assertEquals(setOf("action_cancel", "plan_auto_renew", "plan_auto_renew_no_price"), cancelling)
     }
 
     @Test

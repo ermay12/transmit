@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
@@ -24,6 +25,9 @@ import app.transmit.access.AiAccess
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.AllowanceBar
 import app.transmit.ui.access.GetOnPlay
+import app.transmit.ui.access.PRIVACY_POLICY_URL
+import app.transmit.ui.access.PrivacyNote
+import app.transmit.ui.access.ownKeyAiDisclosure
 import app.transmit.ui.theme.LocalTransmitColors
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
@@ -280,6 +284,11 @@ fun SettingsScreen(
                     Spacer(Modifier.width(6.dp))
                     Text("Source code", style = MaterialTheme.typography.labelMedium)
                 }
+                TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))) } }) {
+                    Icon(Icons.Outlined.PrivacyTip, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.privacy_policy), style = MaterialTheme.typography.labelMedium)
+                }
             }
             AccessBuild.DebugPanel(vm.accessManager)
         }
@@ -529,6 +538,8 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
                         Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.own_key_get))
                     }
                 }
+                // What happens to messages on this provider, before the key is saved.
+                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 4.dp), textAlign = TextAlign.Start)
             }
         },
         confirmButton = {
@@ -719,6 +730,8 @@ fun KeyDialog(vm: SettingsViewModel, provider: ProviderType, onDismiss: () -> Un
                         Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.own_key_get))
                     }
                 }
+                // What happens to messages on this provider, before the key is saved.
+                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 4.dp), textAlign = TextAlign.Start)
             }
         },
         confirmButton = {

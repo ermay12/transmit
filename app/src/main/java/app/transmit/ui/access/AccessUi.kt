@@ -370,6 +370,8 @@ fun TurnOnTranslationSheet(
                     )
                 }
             }
+            // The free week and the plans send messages to Transmit's AI provider; say so where they start.
+            PrivacyNote(if (canBuy) managedAiDisclosure() else null, Modifier.fillMaxWidth().padding(top = 10.dp))
             TextButton(onClick = onDismiss, enabled = trial != TrialUi.Starting, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text(stringResource(R.string.action_not_now))
             }

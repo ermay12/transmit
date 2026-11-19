@@ -59,6 +59,8 @@ import app.transmit.data.AppSettings
 import app.transmit.gm.BridgeState
 import app.transmit.ui.Permissions
 import app.transmit.ui.access.GetOnPlay
+import app.transmit.ui.access.PrivacyNote
+import app.transmit.ui.access.managedAiDisclosure
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.LanguagePickerDialog
@@ -222,11 +224,15 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     Benefit(Icons.Default.Lightbulb, stringResource(R.string.onboarding_benefit_explain))
     Spacer(Modifier.height(28.dp))
     val failed = trial as? TrialUi.Failed
+    // Under the way to turn it on: what happens to messages sent to the AI, and the privacy policy.
+    val disclosure = @Composable { PrivacyNote(managedAiDisclosure(), Modifier.fillMaxWidth().padding(top = 12.dp)) }
     if (!vm.canBuy) {
         // Not installed from Play (a GitHub APK): no free week here. The Play version, then the user's own key.
         GetOnPlay(subscribe = false, onOwnKey = { ownKey = true }, buttonHeight = 56.dp)
+        PrivacyNote(null, Modifier.fillMaxWidth().padding(top = 4.dp))
     } else if (failed != null) {
         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = { ownKey = true }, onRetry = { vm.trial.start() })
+        disclosure()
     } else {
         Button(
             onClick = { vm.trial.start() }, enabled = trial != TrialUi.Starting,
@@ -239,6 +245,7 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
             stringResource(R.string.access_trial_subtext), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
+        disclosure()
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = { ownKey = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
     }

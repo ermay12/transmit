@@ -23,6 +23,13 @@
     <string name="action_try_again">Try again</string>
     <string name="action_ok">OK</string>
     <string name="action_cancel">Cancel</string>
+    <!-- Privacy (Google Play's User Data policy): the policy link, and what happens to messages sent to the AI. -->
+    <string name="privacy_policy">Privacy policy</string>
+    <!-- Wherever the free week or a plan can start. Matches the privacy policy: no prompt logging, no training. -->
+    <string name="ai_disclosure_managed">Messages you translate or ask the tutor about are sent to our AI provider to process them. They aren\'t stored or used for training.</string>
+    <!-- The own-key dialog, for the provider picked (%1$s). Transmit can't speak for that provider, so its terms decide. -->
+    <string name="ai_disclosure_own_key">Messages you translate or ask the tutor about are sent to %1$s to process them. Its terms say whether they\'re stored or used for training.</string>
+    <string name="ai_disclosure_own_key_custom">Messages you translate or ask the tutor about are sent to the provider you choose to process them. Its terms say whether they\'re stored or used for training.</string>
 
     <!-- Onboarding: what you're practicing, connecting Google Messages, turning on translation. -->
     <string name="onboarding_continue">Continue</string>
@@ -199,7 +206,6 @@
     <string name="plans_headline_ended">Keep translating</string>
     <string name="plans_headline_subscribed">Your plan</string>
     <string name="plans_benefits">Translations as you chat, and a tutor for your replies.</string>
-    <string name="plans_cancel_anytime">Cancel anytime in Google Play</string>
     <string name="plan_standard_name">Transmit</string>
     <string name="plan_plus_name">Transmit Plus</string>
     <!--
@@ -214,6 +220,9 @@
     <string name="plan_per_month">/month</string>
     <string name="plan_price_unavailable">Prices are shown in Google Play</string>
     <string name="plan_subscribe">Subscribe</string>
+    <!-- Under Subscribe and Upgrade (Subscriptions policy: say that it renews, and at what price). %1$s is Play's price for the plan chosen. -->
+    <string name="plan_auto_renew">Renews automatically each month at %1$s until you cancel in Google Play.</string>
+    <string name="plan_auto_renew_no_price">Renews automatically each month until you cancel in Google Play.</string>
     <string name="plan_upgrade">Upgrade to Plus</string>
     <string name="plan_upgrade_note">Starts today at the full price. What\'s left of this month on Transmit is added to Plus as extra days.</string>
     <string name="plan_current">Current plan</string>

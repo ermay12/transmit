@@ -221,6 +221,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 }
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
+                PrivacyNote(null, Modifier.fillMaxWidth().padding(top = 8.dp))
                 return@Column
             }
             if (owned == null) {
@@ -303,11 +304,20 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) { Text(stringResource(if (upgrade) R.string.plan_upgrade else R.string.plan_subscribe), style = MaterialTheme.typography.titleMedium) }
                 Spacer(Modifier.height(10.dp))
+                // Subscriptions policy: that it renews, and at Play's price for the plan chosen.
+                val price = offers?.get(selected)?.price
                 Text(
-                    stringResource(if (upgrade) R.string.plan_upgrade_note else R.string.plans_cancel_anytime),
+                    if (price != null) stringResource(R.string.plan_auto_renew, price) else stringResource(R.string.plan_auto_renew_no_price),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                 )
+                if (upgrade) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(R.string.plan_upgrade_note), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -322,6 +332,8 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             if (switchAt != null) {
                 SmallLink(stringResource(R.string.plan_switch_instead), enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) { confirmSwitch = true }
             }
+            Spacer(Modifier.height(8.dp))
+            PrivacyNote(managedAiDisclosure(), Modifier.fillMaxWidth().padding(bottom = 16.dp))
         }
     }
 
