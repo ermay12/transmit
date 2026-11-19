@@ -217,7 +217,8 @@ fun HomeScreen(
                 allowanceBanner(context, access, allowance)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
                     item("allowance-banner") {
                         StatusBanner(
-                            Icons.Default.AutoAwesome, b.title, b.body, b.action, onPlans.takeIf { b.action != null },
+                            Icons.Default.AutoAwesome, b.title, b.body, b.action,
+                            (if (b.useHere) vm::useSubscriptionHere else onPlans).takeIf { b.action != null },
                             onDismiss = if (b.dismissible) vm::dismissWarning else null,
                         )
                     }

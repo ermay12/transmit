@@ -17,6 +17,9 @@ sealed interface AiBlock {
 
     data class Ended(val reason: EndReason) : AiBlock
 
+    /** Another device took the subscription's key (it has one working key at a time). Ask before taking it back. */
+    data object InUseElsewhere : AiBlock
+
     val canAllowOnce get() = this is Budget
 
     /** One line for banners and toasts. Never mentions keys, models, settings or dollars outside BYOK budgets. */
@@ -29,6 +32,7 @@ sealed interface AiBlock {
             }
             is AllowanceUsedUp -> if (access is AiAccess.Trial) "Your free trial's AI is used up." else "You've used this month's AI."
             NotSetUp -> "Translation is off."
+            InUseElsewhere -> "Your subscription is in use on another device."
             is Ended -> when (reason) {
                 EndReason.TRIAL_USED_UP -> "Your free trial's AI is used up."
                 EndReason.TRIAL_EXPIRED -> "Your free trial has ended."
@@ -53,7 +57,12 @@ object AiGate {
         AiAccess.None -> AiBlock.NotSetUp
         is AiAccess.Ended -> AiBlock.Ended(access.reason)
         AiAccess.Byok -> if (overrideBudget) null else byokBudget().takeIf { it != BudgetStatus.Ok }?.let { AiBlock.Budget(it) }
-        is AiAccess.Trial, is AiAccess.Subscribed -> if (allowanceUsedUp()) AiBlock.AllowanceUsedUp(access) else null
+        is AiAccess.Subscribed -> when {
+            access.inUseElsewhere -> AiBlock.InUseElsewhere
+            allowanceUsedUp() -> AiBlock.AllowanceUsedUp(access)
+            else -> null
+        }
+        is AiAccess.Trial -> if (allowanceUsedUp()) AiBlock.AllowanceUsedUp(access) else null
     }
 }
 

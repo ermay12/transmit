@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -37,16 +38,22 @@ class AccessManagerTest {
     private var backgroundEnds = mutableListOf<EndReason>()
 
     private var stores = 0
+    private var check: AllowanceCheck = AllowanceCheck.Unavailable
+    private var inUseElsewhereNotices = 0
 
-    private fun manager(): AccessManager {
-        val file = java.io.File(tmp.root, "access${stores++}.preferences_pb")
+    /** A manager on a fresh store, or on [file] again to stand for a restart (with its own scope). */
+    private fun manager(file: java.io.File = java.io.File(tmp.root, "access${stores++}.preferences_pb"), scope: CoroutineScope = this.scope): AccessManager {
         val store = AccessStore(PreferenceDataStoreFactory.create(scope = scope) { file }) {
             vault.has(ProviderType.OPENROUTER.secretName)
         }
-        return AccessManager(store, vault, backend, { AllowanceCheck.Unavailable }, { spent }, scope, isForeground = { foreground }).also {
+        return AccessManager(store, vault, backend, { check }, { spent }, scope, isForeground = { foreground }).also {
             it.listener = object : AccessListener {
                 override fun onEndedInBackground(reason: EndReason) {
                     backgroundEnds += reason
+                }
+
+                override fun onInUseElsewhereInBackground() {
+                    inUseElsewhereNotices++
                 }
             }
         }
@@ -54,6 +61,8 @@ class AccessManagerTest {
 
     @Before fun setUp() { scope = CoroutineScope(SupervisorJob() + Dispatchers.Default) }
     @After fun tearDown() { scope.cancel() }
+
+    private val refused = AiException("OpenRouter: User not found.", AiException.Kind.AUTH, httpStatus = 401)
 
     private fun trialGrant(remaining: Double = 0.5) =
         Grant(Entitlement.Trial(System.currentTimeMillis() + 7 * day), "sk-managed", "hash", 0.5, remaining)
@@ -201,6 +210,137 @@ class AccessManagerTest {
         assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
     }
 
+    @Test
+    fun aDismissedWarningStaysHiddenAcrossRestartsUntilThePeriodResets() = runBlocking {
+        val file = java.io.File(tmp.root, "restart.preferences_pb")
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val m = manager(file, first)
+        val periodEnd = System.currentTimeMillis() + 20 * day
+        val grant = subGrant().copy(entitlement = Entitlement.Subscription(Tier.STANDARD, periodEnd))
+        m.applyGrant(grant, activate = true)
+        spent.value = 3.9
+        withTimeout(5_000) { m.allowance.first { it?.nearlyUsedUp == true } }
+        assertFalse(m.warningDismissed.value)
+        m.dismissWarning()
+        withTimeout(5_000) { m.warningDismissed.first { it } }
+        // DataStore lets the file be opened again only once the first store's scope has finished.
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+
+        // After a restart it is still dismissed, and a daily refresh in the same period doesn't bring it back.
+        val again = manager(file)
+        assertTrue(withTimeout(5_000) { again.warningDismissed.first { it } })
+        again.applyGrant(grant.copy(key = null), activate = false)
+        delay(100)
+        assertTrue(again.warningDismissed.value)
+
+        // A renewal is a new period: the banner shows again.
+        again.applyGrant(grant.copy(key = null, entitlement = Entitlement.Subscription(Tier.STANDARD, periodEnd + 30 * day)), activate = false)
+        assertFalse(withTimeout(5_000) { again.warningDismissed.first { !it } })
+    }
+
+    @Test
+    fun aDismissalLastsOnlyUntilTheAllowanceRunsOut() = runBlocking {
+        val m = manager()
+        m.applyGrant(trialGrant(), activate = true)
+        spent.value = 0.42
+        withTimeout(5_000) { m.allowance.first { it?.nearlyUsedUp == true } }
+        m.dismissWarning()
+        withTimeout(5_000) { m.warningDismissed.first { it } }
+        spent.value = 0.5
+        withTimeout(5_000) { m.warningDismissed.first { !it } }
+        // A correction back below 100% shows the 80% banner again.
+        spent.value = 0.42
+        delay(200)
+        assertFalse(m.warningDismissed.value)
+    }
+
+    @Test
+    fun aKeyAnotherDeviceTookIsNotTakenBackWithoutAsking() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        backend.onPlay = true
+        assertEquals(AiBlock.InUseElsewhere, m.onManagedError(refused))
+        // No Worker call: with this device's stale keyHash, it would rotate the other device's key away.
+        assertEquals(0, backend.refreshes)
+        val a = m.current() as AiAccess.Subscribed
+        assertTrue(a.inUseElsewhere)
+        assertEquals(AiBlock.InUseElsewhere, app.transmit.ai.AiGate.check(a, false, { false }, { app.transmit.ai.BudgetStatus.Ok }))
+        // The daily refresh leaves it alone too.
+        assertNull(m.refresh(force = true))
+        assertEquals(0, backend.refreshes)
+
+        // "Use it here" restores with the old hash, so the Worker rotates the key to this device.
+        backend.restore = AccessResult.Granted(subGrant().copy(key = "sk-sub-2", keyHash = "subhash2"))
+        assertNull(m.useHere())
+        assertEquals("subhash", backend.restoredWith)
+        assertEquals("sk-sub-2", m.managedKey())
+        assertFalse((m.current() as AiAccess.Subscribed).inUseElsewhere)
+    }
+
+    @Test
+    fun aRefusedKeyThatPlayNoLongerListsAsksTheWorkerOnce() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        backend.onPlay = false
+        backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        assertEquals(AiBlock.Ended(EndReason.SUBSCRIPTION_ENDED), m.onManagedError(refused))
+        assertEquals(1, backend.refreshes)
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
+    }
+
+    @Test
+    fun aBurstOfRefusedCallsLooksIntoItOnce() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        backend.onPlay = false
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.NETWORK))
+        repeat(3) { assertNull(m.onManagedError(refused)) }
+        assertEquals(1, backend.refreshes)
+    }
+
+    @Test
+    fun theDailyRefreshFirstChecksTheKeyStillWorks() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        check = AllowanceCheck.Reading(3.0, System.currentTimeMillis())
+        backend.refresh = AccessResult.Granted(subGrant().copy(key = null))
+        assertNull(m.refresh(force = true))
+        assertEquals(1, backend.refreshes)
+
+        check = AllowanceCheck.KeyRejected
+        backend.onPlay = true
+        foreground = false
+        assertNull(m.refresh(force = true))
+        assertEquals(1, backend.refreshes)
+        assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
+        assertEquals(1, inUseElsewhereNotices)
+    }
+
+    @Test
+    fun reconcilingNoticesAUsedUpOrRefusedTrialKey() = runBlocking {
+        val m = manager()
+        m.applyGrant(trialGrant(), activate = true)
+        check = AllowanceCheck.Reading(0.2, System.currentTimeMillis())
+        m.reconcile()
+        assertEquals(60, m.allowanceNow()!!.percent)
+        check = AllowanceCheck.UsedUp
+        m.reconcile()
+        assertEquals(AiAccess.Ended(EndReason.TRIAL_USED_UP), m.current())
+
+        val other = manager()
+        other.applyGrant(trialGrant(), activate = true)
+        check = AllowanceCheck.KeyRejected
+        other.reconcile()
+        assertEquals(AiAccess.Ended(EndReason.TRIAL_EXPIRED), other.current())
+    }
+
+    @Test
+    fun aTrialKeyRefusedWithAnyWordingEndsTheTrial() = runBlocking {
+        val m = manager()
+        m.applyGrant(trialGrant(), activate = true)
+        assertEquals(AiBlock.Ended(EndReason.TRIAL_EXPIRED), m.onManagedError(refused))
+    }
+
     private class MapVault : KeyVault {
         private val map = HashMap<String, String>()
         override fun get(name: String) = map[name]
@@ -215,9 +355,16 @@ class AccessManagerTest {
         var throwOnTrial = false
         var refresh: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
         var refreshes = 0
+        var onPlay: Boolean? = null
+        var restore: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        var restoredWith: String? = null
         override suspend fun startTrial(): AccessResult = if (throwOnTrial) throw java.io.IOException("offline") else trial
         override suspend fun activatePurchase(purchase: PlayPurchase, currentKeyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
-        override suspend fun restore(currentKeyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        override suspend fun restore(currentKeyHash: String?): AccessResult {
+            restoredWith = currentKeyHash
+            return restore
+        }
+        override suspend fun activeOnPlay() = onPlay
         override suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult {
             refreshes++
             return refresh

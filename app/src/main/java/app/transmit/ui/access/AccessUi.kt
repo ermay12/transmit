@@ -82,6 +82,9 @@ object AccessText {
     const val SUBSCRIBE = "Subscribe"
     const val UPGRADE = "Upgrade to Plus"
     const val RESTORE = "Restore purchase"
+    const val IN_USE_ELSEWHERE = "Your subscription is in use on another device"
+    const val USE_HERE = "Use it here"
+    const val USE_HERE_EXPLAINED = "A subscription works on one device at a time. Using it here stops it on the other device."
     const val KEEP_GOING = "Subscribe to keep translating and getting help with your replies."
 
     /** Plain language: never about integrity verdicts, keys or servers. */
@@ -212,6 +215,7 @@ fun AiBlockDialog(
     onPlans: () -> Unit,
     onOwnKey: () -> Unit,
     onAllowOnce: () -> Unit,
+    onUseHere: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -227,6 +231,7 @@ fun AiBlockDialog(
             else -> Content(AccessText.ended(EndReason.TRIAL_USED_UP), AccessText.KEEP_GOING, AccessText.SUBSCRIBE, onPlans, "Not now")
         }
         is AiBlock.Ended -> Content(AccessText.ended(block.reason), AccessText.KEEP_GOING, AccessText.SUBSCRIBE, onPlans, "Not now")
+        AiBlock.InUseElsewhere -> Content("${AccessText.IN_USE_ELSEWHERE}. Use it here?", AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, onUseHere, "Not now")
         AiBlock.NotSetUp -> when (trial) {
             is TrialUi.Failed -> Content(
                 "Couldn't start your free week", AccessText.trialFailure(trial.error.code),
@@ -266,7 +271,14 @@ fun AiBlockDialog(
 }
 
 /** The Home banner when the managed AI is nearly or entirely used, or the trial or subscription is over. */
-data class AllowanceBannerContent(val title: String, val body: String?, val action: String?, val dismissible: Boolean)
+data class AllowanceBannerContent(
+    val title: String,
+    val body: String?,
+    val action: String?,
+    val dismissible: Boolean,
+    /** The action is "Use it here" rather than opening the plans. */
+    val useHere: Boolean = false,
+)
 
 fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?): AllowanceBannerContent? {
     fun resets(at: Long?) = at?.let { "Resets ${AccessText.date(context, it)}." }
@@ -280,6 +292,7 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         is AiAccess.Subscribed -> {
             val upgrade = if (access.tier == Tier.STANDARD) "Upgrade" else null
             when {
+                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, false, useHere = true)
                 allowance == null || !allowance.nearlyUsedUp -> null
                 allowance.usedUp -> AllowanceBannerContent(
                     "You've used this month's AI",

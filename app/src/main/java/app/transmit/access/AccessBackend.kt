@@ -27,6 +27,12 @@ interface AccessBackend {
      * up. Picks up renewals, upgrades, lapses and refunds. The key is kept when [keyHash] still matches.
      */
     suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult
+
+    /**
+     * Whether Google Play lists a Transmit subscription on this device's account that is paid up (not on hold or
+     * paused), without asking the Worker. Null when Play can't be asked.
+     */
+    suspend fun activeOnPlay(): Boolean? = null
 }
 
 /**
@@ -169,6 +175,6 @@ interface AccessListener {
     /** Managed access ended while no screen of the app was showing: link to the plans screen. */
     fun onEndedInBackground(reason: EndReason) {}
 
-    /** OpenRouter refused the subscription key (rotated on another device, or turned off). */
-    fun onSubscriptionKeyRejected() {}
+    /** Another device took the subscription's key while no screen of the app was showing. */
+    fun onInUseElsewhereInBackground() {}
 }

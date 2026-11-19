@@ -33,6 +33,10 @@ data class StoredAccess(
     val baseline: AllowanceBaseline? = null,
     /** [AiAccess.kind] when last seen, to notice that a trial or subscription ended while the app was closed. */
     val lastKind: String? = null,
+    /** The [allowancePeriod] the Home "nearly used up" banner was dismissed for. */
+    val warningDismissedFor: String? = null,
+    /** OpenRouter refused the subscription key while Play still lists the subscription: another device took it. */
+    val inUseElsewhere: Boolean = false,
 ) {
     fun resolve(now: Long): AiAccess {
         if (ownKey) return AiAccess.Byok
@@ -40,9 +44,22 @@ data class StoredAccess(
         return when (val e = entitlement) {
             null -> AiAccess.None
             is Entitlement.Trial -> if (now >= e.endsAt) AiAccess.Ended(EndReason.TRIAL_EXPIRED) else AiAccess.Trial(e.endsAt)
-            is Entitlement.Subscription -> AiAccess.Subscribed(e.tier, e.periodEndsAt.takeIf { e.autoRenewing })
+            is Entitlement.Subscription -> AiAccess.Subscribed(e.tier, e.periodEndsAt.takeIf { e.autoRenewing }, inUseElsewhere)
         }
     }
+
+    /**
+     * Names the allowance period now: the trial, or a plan's billing period. A renewal, an upgrade or a new trial
+     * is a new period, so a dismissed banner shows again then.
+     */
+    val allowancePeriod: String?
+        get() = when (val e = entitlement) {
+            null -> null
+            is Entitlement.Trial -> "trial:${e.endsAt}"
+            is Entitlement.Subscription -> "sub:${e.tier.name}:${e.periodEndsAt ?: 0}"
+        }
+
+    val warningDismissed: Boolean get() = warningDismissedFor != null && warningDismissedFor == allowancePeriod
 
     /** A trial or subscription that still gives AI, whichever mode the user picked. */
     fun hasActiveEntitlement(now: Long) = copy(ownKey = false).resolve(now).isManaged
@@ -76,6 +93,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val remainingUsd = doublePreferencesKey("allowance_remaining_usd")
         val baselineAt = longPreferencesKey("allowance_at")
         val lastKind = stringPreferencesKey("last_kind")
+        val warningDismissedFor = stringPreferencesKey("warning_dismissed_for")
+        val inUseElsewhere = booleanPreferencesKey("in_use_elsewhere")
     }
 
     companion object {
@@ -102,6 +121,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 keyHash = p[K.keyHash],
                 baseline = baseline,
                 lastKind = p[K.lastKind],
+                warningDismissedFor = p[K.warningDismissedFor],
+                inUseElsewhere = p[K.inUseElsewhere] ?: false,
             )
         }
 
@@ -136,6 +157,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 p.remove(K.baselineAt)
             }
             if (s.lastKind != null) p[K.lastKind] = s.lastKind else p.remove(K.lastKind)
+            if (s.warningDismissedFor != null) p[K.warningDismissedFor] = s.warningDismissedFor else p.remove(K.warningDismissedFor)
+            if (s.inUseElsewhere) p[K.inUseElsewhere] = true else p.remove(K.inUseElsewhere)
         }
     }
 }

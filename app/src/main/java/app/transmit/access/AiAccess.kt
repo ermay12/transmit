@@ -37,8 +37,11 @@ sealed interface AiAccess {
 
     data class Trial(val endsAt: Long) : AiAccess
 
-    /** [renewsAt] is the end of the paid period when it renews automatically, and also when the allowance resets. */
-    data class Subscribed(val tier: Tier, val renewsAt: Long?) : AiAccess
+    /**
+     * [renewsAt] is the end of the paid period when it renews automatically, and also when the allowance resets.
+     * [inUseElsewhere]: another device holds the subscription's key; "Use it here" takes it back.
+     */
+    data class Subscribed(val tier: Tier, val renewsAt: Long?, val inUseElsewhere: Boolean = false) : AiAccess
 
     data class Ended(val reason: EndReason) : AiAccess
 

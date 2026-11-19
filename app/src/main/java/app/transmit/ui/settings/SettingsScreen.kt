@@ -375,7 +375,10 @@ private fun PlanCard(
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
                 }
-                is AiAccess.Subscribed -> {
+                is AiAccess.Subscribed -> if (access.inUseElsewhere) {
+                    PlanTitle(access.tier.label, "${AccessText.IN_USE_ELSEWHERE}. ${AccessText.USE_HERE_EXPLAINED}")
+                    Button(onClick = { vm.restore(onMessage) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(AccessText.USE_HERE) }
+                } else {
                     PlanTitle(access.tier.label, access.renewsAt?.let { "Renews ${AccessText.date(context, it)}" })
                     AllowanceBar(allowance?.copy(resetsAt = null), trial = false)
                     Spacer(Modifier.height(16.dp))

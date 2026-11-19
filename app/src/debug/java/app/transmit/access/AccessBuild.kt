@@ -62,7 +62,7 @@ object AccessBuild {
         var preview by remember { mutableStateOf<AiBlock?>(null) }
         preview?.let { block ->
             val close = { preview = null }
-            AiBlockDialog(block, TrialUi.Idle, onStartTrial = close, onPlans = close, onOwnKey = close, onAllowOnce = close, onDismiss = close)
+            AiBlockDialog(block, TrialUi.Idle, onStartTrial = close, onPlans = close, onOwnKey = close, onAllowOnce = close, onUseHere = close, onDismiss = close)
         }
         Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text("Debug · AI access", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
@@ -89,7 +89,8 @@ object AccessBuild {
             }
             // The dialog a chat shows when AI is blocked in this mode, without needing a chat.
             val block = when (val a = current) {
-                is AiAccess.Trial, is AiAccess.Subscribed -> AiBlock.AllowanceUsedUp(a)
+                is AiAccess.Subscribed -> if (a.inUseElsewhere) AiBlock.InUseElsewhere else AiBlock.AllowanceUsedUp(a)
+                is AiAccess.Trial -> AiBlock.AllowanceUsedUp(a)
                 AiAccess.None -> AiBlock.NotSetUp
                 is AiAccess.Ended -> AiBlock.Ended(a.reason)
                 AiAccess.Byok, null -> null

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -85,18 +86,33 @@ class AccessManager(
     /** A trial or subscription that just ended, for the UI to open the plans screen; cleared by [acknowledgeEnd]. */
     val pendingEnd: StateFlow<EndReason?> = _pendingEnd
 
-    /** The Home "nearly used up" banner was dismissed (until the allowance runs out or the app restarts). */
-    val warningDismissed = MutableStateFlow(false)
+    /**
+     * The Home "nearly used up" banner was dismissed. It stays hidden, across restarts, until the allowance period
+     * resets (a renewal, an upgrade) or the allowance reaches 100%.
+     */
+    val warningDismissed: StateFlow<Boolean> = store.state.map { it.warningDismissed }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     private val refreshLock = Mutex()
     private var lastRefreshAt = 0L
+    /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
+    private var keyCheckedAt = 0L
 
     init {
         scope.launch {
             store.migrate()
             access.filterNotNull().collect { noticeTransition(it) }
         }
+        // Used up: the dismissal is spent, so the 80% banner shows again if a correction brings it back below 100%.
+        scope.launch {
+            allowance.filterNotNull().filter { it.usedUp }.collect {
+                store.update { s -> if (s.warningDismissedFor != null) s.copy(warningDismissedFor = null) else s }
+            }
+        }
     }
+
+    suspend fun dismissWarning() = store.update { it.copy(warningDismissedFor = it.allowancePeriod) }
 
     suspend fun current(): AiAccess = store.current().resolve(clock())
 
@@ -136,15 +152,71 @@ class AccessManager(
         return handle(activate = true) { backend.restore(hash) }
     }
 
-    /** Re-checks the subscription with the backend, at most every few minutes unless [force]d. */
+    /**
+     * Re-checks the subscription with the backend, at most every few minutes unless [force]d.
+     *
+     * The Worker rotates a key whose hash doesn't match, so refreshing with a key another device has since taken
+     * would silently take it back (and the two devices would keep taking it from each other). So the key is first
+     * checked with OpenRouter, and a refused key goes through [subscriptionKeyRefused] instead.
+     */
     suspend fun refresh(force: Boolean = false): AccessError? = refreshLock.withLock {
         val s = store.current()
-        if (s.entitlement !is Entitlement.Subscription || s.ended != null) return null
+        if (s.entitlement !is Entitlement.Subscription || s.ended != null || s.inUseElsewhere) return null
         val token = vault.get(PURCHASE_TOKEN) ?: return null
         if (!force && clock() - lastRefreshAt < REFRESH_INTERVAL_MS) return null
         lastRefreshAt = clock()
+        val key = managedKey()
+        if (key != null && read(key) == AllowanceCheck.KeyRejected) {
+            refusedLocked(token, s)
+            return null
+        }
         handle(activate = false) { backend.refresh(token, s.keyHash) }
     }
+
+    private suspend fun read(key: String): AllowanceCheck = try {
+        allowanceSource.read(key)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Allowance check failed", e)
+        AllowanceCheck.Unavailable
+    }
+
+    /**
+     * OpenRouter refused the subscription key. If Play still lists the subscription as paid up, another device
+     * took the key: mark it so the app asks before taking it back (`backend/API.md`). Otherwise it lapsed or was
+     * refunded, and a refresh lets the Worker say so. Returns the block for the call that failed, if any.
+     */
+    private suspend fun subscriptionKeyRefused(): AiBlock? {
+        refreshLock.withLock {
+            val s = store.current()
+            if (s.entitlement is Entitlement.Subscription && s.ended == null && !s.inUseElsewhere) {
+                val token = vault.get(PURCHASE_TOKEN)
+                if (token != null && clock() - keyCheckedAt >= REFRESH_INTERVAL_MS) refusedLocked(token, s)
+            }
+        }
+        return when (val a = current()) {
+            is AiAccess.Subscribed -> if (a.inUseElsewhere) AiBlock.InUseElsewhere else null
+            is AiAccess.Ended -> AiBlock.Ended(a.reason)
+            else -> null
+        }
+    }
+
+    private suspend fun refusedLocked(token: String, s: StoredAccess) {
+        keyCheckedAt = clock()
+        when (backend.activeOnPlay()) {
+            true -> {
+                store.update { it.copy(inUseElsewhere = true) }
+                if (!isForeground()) listener.onInUseElsewhereInBackground()
+            }
+            false -> handle(activate = false) { backend.refresh(token, s.keyHash) }
+            // Play can't be asked now: a service problem; the next failure or refresh looks again.
+            null -> Unit
+        }
+    }
+
+    /** "Use it here": takes the subscription's key back from the other device. Null on success. */
+    suspend fun useHere(): AccessError? = restore()
 
     private suspend fun handle(activate: Boolean, call: suspend () -> AccessResult): AccessError? {
         val result = try {
@@ -182,9 +254,10 @@ class AccessManager(
                 ended = null,
                 keyHash = g.keyHash ?: it.keyHash.takeIf { g.key == null },
                 baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, clock()),
+                // A key from the Worker works here, whichever device had it before.
+                inUseElsewhere = false,
             )
         }
-        warningDismissed.value = false
     }
 
     suspend fun markEnded(reason: EndReason) = store.update { it.copy(ended = reason) }
@@ -232,13 +305,33 @@ class AccessManager(
         }
     }
 
-    /** Corrects the local tally with OpenRouter's (lagging) figure. */
+    /** Corrects the local tally with OpenRouter's (lagging) figure, and notices a key that stopped working. */
     suspend fun reconcile() {
         val key = managedKey() ?: return
-        if (!current().isManaged) return
-        val reading = runCatching { allowanceSource.read(key) }.getOrNull() as? AllowanceCheck.Reading ?: return
-        setBaseline { b -> b.copy(remainingUsd = reading.remainingUsd, at = reading.at) }
-        afterManagedCall()
+        val a = current()
+        if (!a.isManaged) return
+        when (val check = read(key)) {
+            is AllowanceCheck.Reading -> {
+                setBaseline { b -> b.copy(remainingUsd = check.remainingUsd, at = check.at) }
+                afterManagedCall()
+            }
+            AllowanceCheck.UsedUp -> {
+                setBaseline { b -> b.copy(remainingUsd = 0.0, at = clock()) }
+                afterManagedCall()
+            }
+            AllowanceCheck.KeyRejected -> keyRefused(a)
+            AllowanceCheck.Unavailable -> Unit
+        }
+    }
+
+    /** A 401 for the managed key: a trial is over; a subscription key was taken or turned off. */
+    private suspend fun keyRefused(a: AiAccess): AiBlock? = when (a) {
+        is AiAccess.Trial -> {
+            markEnded(EndReason.TRIAL_EXPIRED)
+            AiBlock.Ended(EndReason.TRIAL_EXPIRED)
+        }
+        is AiAccess.Subscribed -> subscriptionKeyRefused()
+        else -> null
     }
 
     suspend fun setBaseline(block: (AllowanceBaseline) -> AllowanceBaseline) =
@@ -257,22 +350,15 @@ class AccessManager(
                 if (a is AiAccess.Trial) markEnded(EndReason.TRIAL_USED_UP)
                 AiBlock.AllowanceUsedUp(a)
             }
-            e.httpStatus == 401 && a is AiAccess.Trial -> {
-                markEnded(EndReason.TRIAL_EXPIRED)
-                AiBlock.Ended(EndReason.TRIAL_EXPIRED)
-            }
-            e.httpStatus == 401 -> {
-                listener.onSubscriptionKeyRejected()
-                null
-            }
+            // By status, never by wording: "API key expired." and "User not found." are both a refused key.
+            e.httpStatus == 401 -> keyRefused(a)
             else -> null
         }
     }
 
     /** Debug builds only: edits the stored state directly. */
     suspend fun debugEdit(block: (StoredAccess) -> StoredAccess) {
-        store.update(block)
-        warningDismissed.value = false
+        store.update { block(it).copy(warningDismissedFor = null) }
     }
 
     companion object {

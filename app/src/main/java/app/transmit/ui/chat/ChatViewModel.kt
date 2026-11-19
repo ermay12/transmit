@@ -717,6 +717,11 @@ class ChatViewModel(
 
     fun useHere() = c.bridge.useHere()
 
+    /** "Use it here" for a subscription another device has: takes its key back. */
+    fun useSubscriptionHere() {
+        c.scope.launch { c.access.useHere() }
+    }
+
     // ---- compose -------------------------------------------------------------------------------
 
     fun onNativeChange(value: String) = compose.update {

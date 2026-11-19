@@ -65,7 +65,12 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val warningDismissed = c.access.warningDismissed
 
     fun dismissWarning() {
-        c.access.warningDismissed.value = true
+        c.scope.launch { c.access.dismissWarning() }
+    }
+
+    /** Takes the subscription back from the other device that has it. */
+    fun useSubscriptionHere() {
+        c.scope.launch { c.access.useHere() }
     }
 
     /** Corrects the allowance with the backend's figure when the app comes back. */
