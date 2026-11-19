@@ -99,6 +99,18 @@ Finish → Home.
 - (User, after phase 2b) **Conversion first.** When the free week ends on a Play install, the only CTA is **Subscribe** (Home, plan card, chat sheet, dialogs, notifications). "Use my own AI key" appears only in Settings → Advanced. For copies not installed from Play, the primary CTA is **Get Transmit on Google Play** (the Play listing), and "Use my own AI key" is a secondary link.
 - (User, after phase 2b) **Paying customers don't get a plan card at the top of Settings.** For SUBSCRIBED, Settings starts with Languages. A compact **Subscription** section near the bottom, above Advanced, has one row: the plan, "Renews <date>" and the percent of AI used. Tapping it opens the Plans screen, which holds upgrade, downgrade, restore and Manage in Play. This keeps account management out of the way, so subscribers aren't nudged to change it. TRIAL, NONE and ENDED keep the plan card at the top.
 
+## Play compliance (decided after the launch-docs review, see docs/launch/)
+
+- **Privacy policy link** in the Settings footer, on onboarding step 3, on the Plans screen and in the own-key dialog. It's hosted on the Worker at `https://transmit.ermay12.workers.dev/privacy`.
+- **AI disclosure:**
+  - Onboarding step 3 (managed) says, under the CTA: "Messages you translate or ask the tutor about are sent to our AI provider to process them. They aren't stored or used for training. Privacy policy".
+  - The own-key dialog says the same about "the provider you choose".
+- **Auto-renew disclosure** on the Plans screen, near Subscribe: "Renews automatically each month at <price> until you cancel in Google Play."
+- **Contact names never go to the AI.** Prompts use neutral labels ("Me" / "Them", or "Person 1/2/…" in groups), so Data safety needs no Contacts sharing.
+- **Reviewer demo mode:** a hidden entry, long-pressing the "Connect your messages" heading on onboarding step 2, opens sample conversations so Play reviewers can try translation and the tutor without pairing. It's documented in the App access notes. Demo chats are clearly labelled and can be exited.
+- **Retention:** subscription rows are deleted 90 days after the subscription ends or is refunded. Trial device hashes are kept, because they enforce one free week per device.
+- **Target audience:** 18+.
+
 ## Technical requirements from the launch plan (mostly phase 2)
 
 - **Spend tracking:** count spending in the app from each response's `usage.cost`. OpenRouter reports usage about 3 minutes late, so its own figure lags. The percent bar and the after-each-call allowance check use the local ledger, reconciled with `GET /api/v1/key`.
