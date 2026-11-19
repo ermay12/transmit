@@ -13,10 +13,11 @@ class CopyTest {
         assertEquals("Your free week has ended", TestStrings.all["ended_free_week"])
     }
 
+    /** Moving down from Plus comes with backend work. Until then the app says nothing about it, either way. */
     @Test
-    fun nothingPromisesAMoveDownFromPlus() {
-        val promises = TestStrings.all.filterValues { v -> listOf("downgrade", "switch plans", "change plans", "move down").any { v.contains(it, ignoreCase = true) } }
-        assertEquals(emptyMap<String, String>(), promises)
+    fun nothingSaysWhetherPlusCanMoveDown() {
+        val mentions = TestStrings.all.filterValues { v -> listOf("downgrad", "switch plans", "change plans", "move down").any { v.contains(it, ignoreCase = true) } }
+        assertEquals(emptyMap<String, String>(), mentions)
     }
 
     @Test
