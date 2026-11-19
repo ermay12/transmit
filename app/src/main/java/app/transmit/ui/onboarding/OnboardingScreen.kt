@@ -1,5 +1,7 @@
 package app.transmit.ui.onboarding
 
+import androidx.compose.ui.res.stringResource
+import app.transmit.R
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -56,7 +58,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.data.AppSettings
 import app.transmit.gm.BridgeState
 import app.transmit.ui.Permissions
-import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.LanguagePickerDialog
@@ -226,7 +227,7 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     if (!vm.canBuy) {
         // Not installed from Play (a GitHub APK): no free week, only the user's own key.
         Button(onClick = { ownKey = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text(AccessText.OWN_KEY, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.access_own_key), style = MaterialTheme.typography.titleMedium)
         }
     } else if (failed != null) {
         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = { ownKey = true }, onRetry = { vm.trial.start() })
@@ -236,14 +237,14 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
             if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-            else Text(AccessText.START_TRIAL, style = MaterialTheme.typography.titleMedium)
+            else Text(stringResource(R.string.access_start_trial), style = MaterialTheme.typography.titleMedium)
         }
         Text(
-            AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            stringResource(R.string.access_trial_subtext), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = { ownKey = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(AccessText.OWN_KEY) }
+        TextButton(onClick = { ownKey = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
     }
     TextButton(
         onClick = { vm.turnOffAi(); onFinish() }, enabled = trial != TrialUi.Starting,

@@ -1,5 +1,8 @@
 package app.transmit.ui.home
 
+import app.transmit.R
+import app.transmit.string
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -231,12 +234,13 @@ fun HomeScreen(
                         null -> false
                     }
                 }
-                allowanceBanner(context, access, allowance, vm.canBuy)?.takeUnless(dismissed)?.let { b ->
+                allowanceBanner(access, allowance, vm.canBuy)?.takeUnless(dismissed)?.let { b ->
                     item("allowance-banner") {
                         val starting = b.does == BannerAction.START_TRIAL && trial == TrialUi.Starting
                         StatusBanner(
                             if (access == AiAccess.None) Icons.Default.Translate else Icons.Default.AutoAwesome,
-                            b.title, b.body, if (starting) "Starting…" else b.action,
+                            b.title.string(), b.body?.string(),
+                            if (starting) stringResource(R.string.banner_starting) else b.action?.let { stringResource(it) },
                             when (b.does) {
                                 BannerAction.PLANS -> onPlans
                                 BannerAction.USE_HERE -> vm::useSubscriptionHere

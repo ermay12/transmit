@@ -1,5 +1,6 @@
 package app.transmit.notify
 
+import androidx.annotation.StringRes
 import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
@@ -67,7 +68,8 @@ class Notifier(
                 NotificationChannelCompat.Builder(CHANNEL_PAIRING, NotificationManagerCompat.IMPORTANCE_DEFAULT)
                     .setName("Pairing").setDescription("When Transmit needs to be paired with Google Messages again").build(),
                 NotificationChannelCompat.Builder(CHANNEL_PLAN, NotificationManagerCompat.IMPORTANCE_DEFAULT)
-                    .setName("Plan").setDescription("When your free week or subscription is ending or has ended").build(),
+                    .setName(context.getString(R.string.notify_plan_channel))
+                    .setDescription(context.getString(R.string.notify_plan_channel_description)).build(),
             ),
         )
         // A channel's badge setting can't change once created, so the old badging one is replaced.
@@ -219,22 +221,21 @@ class Notifier(
     // ---- plan ------------------------------------------------------------------------------------
 
     /** Day 6 of the free week. */
-    fun notifyTrialEndsTomorrow() = notifyPlan(
-        "Your free week ends tomorrow",
-        "Subscribe to keep translating and getting help with your replies.",
-    )
+    fun notifyTrialEndsTomorrow() = notifyPlan(R.string.notify_trial_ends_tomorrow, R.string.access_keep_going)
 
     /** The trial or subscription ended (or the trial's AI ran out) while the app wasn't open. */
-    fun notifyAccessEnded(reason: EndReason) = notifyPlan(AccessText.ended(reason), AccessText.KEEP_GOING)
+    fun notifyAccessEnded(reason: EndReason) = notifyPlan(AccessText.ended(reason), R.string.access_keep_going)
 
     /** Another device took the subscription while the app wasn't open. */
-    fun notifyInUseElsewhere() = notifyPlan(AccessText.IN_USE_ELSEWHERE, "Open Transmit to use it on this phone.")
+    fun notifyInUseElsewhere() = notifyPlan(R.string.access_in_use_elsewhere, R.string.notify_in_use_elsewhere_body)
 
     /** The plans screen is showing: its notification has done its job. */
     fun cancelPlan() = nm.cancel(PLAN_ID)
 
-    private fun notifyPlan(title: String, text: String) {
+    private fun notifyPlan(@StringRes titleRes: Int, @StringRes textRes: Int) {
         if (!canPost()) return
+        val title = context.getString(titleRes)
+        val text = context.getString(textRes)
         val n = NotificationCompat.Builder(context, CHANNEL_PLAN)
             .setSmallIcon(R.drawable.ic_stat_message)
             .setContentTitle(title)

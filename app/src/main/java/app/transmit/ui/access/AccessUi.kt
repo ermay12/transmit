@@ -21,7 +21,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.annotation.StringRes
 import app.transmit.R
+import app.transmit.UiText
+import app.transmit.string
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,29 +94,19 @@ class TrialStarter(private val scope: CoroutineScope, private val access: Access
     }
 }
 
+/** Wording that depends on the outcome; the strings themselves are resources. */
 object AccessText {
-    const val START_TRIAL = "Start your free week"
-    const val TRIAL_SUBTEXT = "7 days free. No card needed."
-    const val OWN_KEY = "Use my own AI key"
-    const val SUBSCRIBE = "Subscribe"
-    const val UPGRADE = "Upgrade to Plus"
-    const val RESTORE = "Restore purchase"
-    const val IN_USE_ELSEWHERE = "Your subscription is in use on another device"
-    const val USE_HERE = "Use it here"
-    const val USE_HERE_EXPLAINED = "A subscription works on one device at a time. Using it here stops it on the other device."
-    const val KEEP_GOING = "Subscribe to keep translating and getting help with your replies."
-    const val OWN_KEY_TO_KEEP_GOING = "Use your own AI key to keep translating."
-
-    /** Plain language: never about integrity verdicts, keys or servers. */
-    fun trialFailure(code: AccessErrorCode): String = when (code) {
-        AccessErrorCode.TRIAL_ALREADY_USED -> "This device has already used its free week."
-        AccessErrorCode.DEVICE_NOT_SUPPORTED -> "This device isn't supported for the free week."
-        AccessErrorCode.NOT_FROM_PLAY -> "The free week needs Transmit installed from Google Play."
-        AccessErrorCode.TRIALS_FULL -> "Today's free weeks are all taken. Try again tomorrow."
-        AccessErrorCode.RATE_LIMITED -> "Too many attempts from this network. Try again later."
-        AccessErrorCode.NETWORK -> AiMessages.NO_CONNECTION
-        AccessErrorCode.BUSY -> "Still working on it. Try again in a moment."
-        else -> "Your free week couldn't start right now. Try again later."
+    /** Why the free week couldn't start. Plain language: never about integrity verdicts, keys or servers. */
+    @StringRes
+    fun trialFailure(code: AccessErrorCode): Int = when (code) {
+        AccessErrorCode.TRIAL_ALREADY_USED -> R.string.trial_failed_already_used
+        AccessErrorCode.DEVICE_NOT_SUPPORTED -> R.string.trial_failed_device
+        AccessErrorCode.NOT_FROM_PLAY -> R.string.trial_failed_not_from_play
+        AccessErrorCode.TRIALS_FULL -> R.string.trial_failed_full
+        AccessErrorCode.RATE_LIMITED -> R.string.trial_failed_rate_limited
+        AccessErrorCode.NETWORK -> R.string.ai_no_connection
+        AccessErrorCode.BUSY -> R.string.trial_failed_busy
+        else -> R.string.trial_failed_other
     }
 
     /** A copy not installed from Play can't buy either, so it isn't offered Subscribe. */
@@ -121,37 +114,32 @@ object AccessText {
 
     fun canRetry(code: AccessErrorCode) = code == AccessErrorCode.NETWORK || code == AccessErrorCode.BUSY || code == AccessErrorCode.SERVICE
 
-    fun restoreResult(error: AccessError?, access: AiAccess): String = when (error?.code) {
+    fun restoreResult(error: AccessError?, access: AiAccess): UiText = when (error?.code) {
         null -> when (access) {
-            is AiAccess.Subscribed -> "${access.tier.label} is restored."
-            is AiAccess.Ended -> "Your subscription has ended."
-            else -> "No subscription found on this Google account."
+            is AiAccess.Subscribed -> UiText.res(R.string.restore_done, UiText.res(access.tier.nameRes))
+            is AiAccess.Ended -> UiText.res(R.string.ai_subscription_ended)
+            else -> UiText.res(R.string.restore_none)
         }
-        AccessErrorCode.NO_PURCHASE -> "No subscription found on this Google account."
-        AccessErrorCode.NOT_FROM_PLAY -> "Restoring needs Transmit installed from Google Play."
-        AccessErrorCode.PAYMENT_PENDING -> "Your payment is still being processed."
-        AccessErrorCode.PAYMENT_PROBLEM -> "There's a problem with your payment. Fix it in Google Play."
+        AccessErrorCode.NO_PURCHASE -> UiText.res(R.string.restore_none)
+        AccessErrorCode.NOT_FROM_PLAY -> UiText.res(R.string.restore_not_from_play)
+        AccessErrorCode.PAYMENT_PENDING -> UiText.res(R.string.restore_pending)
+        AccessErrorCode.PAYMENT_PROBLEM -> UiText.res(R.string.restore_payment_problem)
         AccessErrorCode.NETWORK -> AiMessages.NO_CONNECTION
-        else -> "Couldn't restore right now. Try again later."
+        else -> UiText.res(R.string.restore_failed)
     }
 
-    fun ended(reason: EndReason) = when (reason) {
-        // One name for the end of the free week, whether its days or its AI ran out.
-        EndReason.TRIAL_USED_UP, EndReason.TRIAL_EXPIRED -> "Your free week has ended"
-        EndReason.SUBSCRIPTION_ENDED -> "Your subscription has ended"
-    }
+    /** One name for the end of the free week, whether its days or its AI ran out. */
+    @StringRes
+    fun ended(reason: EndReason): Int = if (reason.wasTrial) R.string.ended_free_week else R.string.ended_subscription
 
-    fun date(context: Context, at: Long): String =
-        DateUtils.formatDateTime(context, at, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH)
+    fun date(context: Context, at: Long): String = UiText.Date(at).resolve(context)
 
     fun daysLeft(endsAt: Long, now: Long = System.currentTimeMillis()): Int =
         ((endsAt - now + DateUtils.DAY_IN_MILLIS - 1) / DateUtils.DAY_IN_MILLIS).toInt().coerceAtLeast(0)
-
-    fun trialTitle(endsAt: Long): String = when (val d = daysLeft(endsAt)) {
-        0, 1 -> "Free week · 1 day left"
-        else -> "Free week · $d days left"
-    }
 }
+
+/** The plan's name: "Transmit" or "Transmit Plus". */
+val Tier.nameRes: Int @StringRes get() = if (this == Tier.PLUS) R.string.plan_plus_name else R.string.plan_standard_name
 
 /** Google Play's page for this app's subscription. */
 fun openManageSubscription(context: Context, tier: Tier?) {
@@ -170,9 +158,9 @@ fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modi
     Column(modifier.fillMaxWidth()) {
         Text(
             when {
-                view == null -> if (trial) "Your free week's AI" else "This month's AI"
-                trial -> "${view.percent}% of your free week's AI used"
-                else -> "${view.percent}% of this month's AI used"
+                view == null -> stringResource(if (trial) R.string.allowance_trial else R.string.allowance_month)
+                trial -> stringResource(R.string.allowance_trial_used, view.percent)
+                else -> stringResource(R.string.allowance_month_used, view.percent)
             },
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -189,7 +177,7 @@ fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modi
         )
         view?.resetsAt?.let {
             Spacer(Modifier.height(4.dp))
-            Text("Resets ${AccessText.date(context, it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.allowance_resets, AccessText.date(context, it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -212,13 +200,13 @@ fun TrialFailure(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Spacer(Modifier.width(10.dp))
-                Text(AccessText.trialFailure(error.code), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(stringResource(AccessText.trialFailure(error.code)), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (AccessText.canSubscribeAfter(error.code)) Button(onClick = onSubscribe) { Text(AccessText.SUBSCRIBE) }
-                if (AccessText.canRetry(error.code)) TextButton(onClick = onRetry) { Text("Try again") }
-                TextButton(onClick = onOwnKey) { Text(AccessText.OWN_KEY) }
+                if (AccessText.canSubscribeAfter(error.code)) Button(onClick = onSubscribe) { Text(stringResource(R.string.plan_subscribe)) }
+                if (AccessText.canRetry(error.code)) TextButton(onClick = onRetry) { Text(stringResource(R.string.action_try_again)) }
+                TextButton(onClick = onOwnKey) { Text(stringResource(R.string.access_own_key)) }
             }
         }
     }
@@ -241,40 +229,40 @@ fun AiBlockDialog(
     /** False when not installed from Play: no free week or Subscribe, only the user's own key. */
     canBuy: Boolean = true,
 ) {
-    val context = LocalContext.current
-    data class Content(val title: String, val text: String, val confirm: String?, val onConfirm: () -> Unit, val dismiss: String)
+    data class Content(val title: UiText, val text: UiText, @StringRes val confirm: Int?, val onConfirm: () -> Unit, @StringRes val dismiss: Int)
     val content = if (!canBuy && block !is AiBlock.Budget && block != AiBlock.InUseElsewhere) {
-        Content(block.message.removeSuffix("."), "Use your own AI key to translate messages and get help with your replies.", AccessText.OWN_KEY, onOwnKey, "Not now")
+        Content(blockTitle(block), UiText.res(R.string.block_own_key_body), R.string.access_own_key, onOwnKey, R.string.action_not_now)
     } else when (block) {
-        is AiBlock.Budget -> Content("Budget reached", block.message, "Allow once", onAllowOnce, "Cancel")
+        is AiBlock.Budget -> Content(UiText.res(R.string.block_budget_title), block.message, R.string.block_allow_once, onAllowOnce, R.string.action_cancel)
         is AiBlock.AllowanceUsedUp -> when (val a = block.access) {
             is AiAccess.Subscribed -> {
-                val reset = a.renewsAt?.let { "It resets ${AccessText.date(context, it)}." } ?: "It resets when your subscription renews."
-                if (a.tier == Tier.STANDARD) Content("You've used this month's AI", "$reset Transmit Plus has twice the AI.", AccessText.UPGRADE, onPlans, "OK")
-                else Content("You've used this month's AI", reset, null, onDismiss, "OK")
+                val standard = a.tier == Tier.STANDARD
+                val text = a.renewsAt?.let { UiText.res(if (standard) R.string.block_resets_upgrade else R.string.block_resets, UiText.Date(it)) }
+                    ?: UiText.res(if (standard) R.string.block_resets_at_renewal_upgrade else R.string.block_resets_at_renewal)
+                if (standard) Content(UiText.res(R.string.access_month_used), text, R.string.plan_upgrade, onPlans, R.string.action_ok)
+                else Content(UiText.res(R.string.access_month_used), text, null, onDismiss, R.string.action_ok)
             }
-            else -> Content(AccessText.ended(EndReason.TRIAL_USED_UP), AccessText.KEEP_GOING, AccessText.SUBSCRIBE, onPlans, "Not now")
+            else -> Content(UiText.res(R.string.ended_free_week), UiText.res(R.string.access_keep_going), R.string.plan_subscribe, onPlans, R.string.action_not_now)
         }
-        is AiBlock.Ended -> Content(AccessText.ended(block.reason), AccessText.KEEP_GOING, AccessText.SUBSCRIBE, onPlans, "Not now")
-        AiBlock.InUseElsewhere -> Content("${AccessText.IN_USE_ELSEWHERE}. Use it here?", AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, onUseHere, "Not now")
+        is AiBlock.Ended -> Content(UiText.res(AccessText.ended(block.reason)), UiText.res(R.string.access_keep_going), R.string.plan_subscribe, onPlans, R.string.action_not_now)
+        AiBlock.InUseElsewhere -> Content(
+            UiText.res(R.string.block_in_use_title), UiText.res(R.string.access_use_here_explained), R.string.access_use_here, onUseHere, R.string.action_not_now,
+        )
         AiBlock.NotSetUp -> when (trial) {
             is TrialUi.Failed -> Content(
-                "Couldn't start your free week", AccessText.trialFailure(trial.error.code),
-                AccessText.SUBSCRIBE.takeIf { AccessText.canSubscribeAfter(trial.error.code) }, onPlans, "Not now",
+                UiText.res(R.string.trial_failed_title), UiText.res(AccessText.trialFailure(trial.error.code)),
+                R.string.plan_subscribe.takeIf { AccessText.canSubscribeAfter(trial.error.code) }, onPlans, R.string.action_not_now,
             )
-            else -> Content(
-                "Translation is off", "Start your free week to translate messages and get help with your replies. ${AccessText.TRIAL_SUBTEXT}",
-                AccessText.START_TRIAL, onStartTrial, "Not now",
-            )
+            else -> Content(UiText.res(R.string.translation_off), UiText.res(R.string.block_off_body), R.string.access_start_trial, onStartTrial, R.string.action_not_now)
         }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(if (block is AiBlock.Budget) Icons.Outlined.Savings else Icons.Default.AutoAwesome, null) },
-        title = { Text(content.title) },
+        title = { Text(content.title.string()) },
         text = {
             Column {
-                Text(content.text)
+                Text(content.text.string())
                 if (block == AiBlock.NotSetUp && trial == TrialUi.Starting) {
                     Spacer(Modifier.height(12.dp))
                     CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.CenterHorizontally), strokeWidth = 2.dp)
@@ -283,17 +271,26 @@ fun AiBlockDialog(
         },
         confirmButton = {
             if (content.confirm != null) {
-                TextButton(onClick = content.onConfirm, enabled = trial != TrialUi.Starting) { Text(content.confirm) }
+                TextButton(onClick = content.onConfirm, enabled = trial != TrialUi.Starting) { Text(stringResource(content.confirm)) }
             }
         },
         dismissButton = {
             Row {
-                if (canBuy && block == AiBlock.NotSetUp && trial is TrialUi.Failed) TextButton(onClick = onOwnKey) { Text(AccessText.OWN_KEY) }
-                TextButton(onClick = onDismiss) { Text(content.dismiss) }
+                if (canBuy && block == AiBlock.NotSetUp && trial is TrialUi.Failed) TextButton(onClick = onOwnKey) { Text(stringResource(R.string.access_own_key)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(content.dismiss)) }
             }
         },
     )
 }
+
+/** A blocked call's title when the only way on is the user's own key: what stopped, without the full stop. */
+private fun blockTitle(block: AiBlock): UiText = UiText.res(
+    when (block) {
+        is AiBlock.AllowanceUsedUp -> if (block.access is AiAccess.Trial) R.string.ended_free_week else R.string.access_month_used
+        is AiBlock.Ended -> AccessText.ended(block.reason)
+        else -> R.string.translation_off
+    },
+)
 
 /**
  * What a chat's translate icons and actions open while translation is off: a small sheet to turn it on. With no AI
@@ -317,7 +314,7 @@ fun TurnOnTranslationSheet(
             Icon(Icons.Default.Translate, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
             ended?.let {
-                Text(AccessText.ended(it.reason), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(AccessText.ended(it.reason)), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(4.dp))
             }
             Text(stringResource(R.string.turn_on_title), style = MaterialTheme.typography.headlineSmall)
@@ -325,24 +322,24 @@ fun TurnOnTranslationSheet(
             Text(
                 when {
                     ended == null -> stringResource(R.string.plans_benefits)
-                    canBuy -> AccessText.KEEP_GOING
-                    else -> AccessText.OWN_KEY_TO_KEEP_GOING
+                    canBuy -> stringResource(R.string.access_keep_going)
+                    else -> stringResource(R.string.access_own_key_to_keep_going)
                 },
                 style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
             val failed = trial as? TrialUi.Failed
             when {
-                !canBuy -> Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
-                ended != null -> Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                !canBuy -> Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
+                ended != null -> Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                 failed != null -> TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = onStartTrial)
                 else -> {
                     Button(onClick = onStartTrial, enabled = trial != TrialUi.Starting, modifier = Modifier.fillMaxWidth()) {
                         if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                        else Text(AccessText.START_TRIAL)
+                        else Text(stringResource(R.string.access_start_trial))
                     }
                     Text(
-                        AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        stringResource(R.string.access_trial_subtext), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     )
                 }
@@ -361,18 +358,22 @@ fun TurnOnTranslationSheet(
 @Composable
 fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val onColor = MaterialTheme.colorScheme.onSecondaryContainer
-    val action = when {
-        !canBuy -> AccessText.OWN_KEY
-        starting -> "Starting your free week…"
-        else -> AccessText.START_TRIAL
-    }
+    val action = stringResource(
+        when {
+            !canBuy -> R.string.access_own_key
+            starting -> R.string.strip_starting
+            else -> R.string.access_start_trial
+        },
+    )
+    val off = stringResource(R.string.translation_off)
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier.fillMaxWidth()) {
         Row(Modifier.heightIn(min = 40.dp).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Translate, null, Modifier.size(16.dp), tint = onColor)
             Spacer(Modifier.width(10.dp))
             Text(
                 buildAnnotatedString {
-                    append("Translation is off · ")
+                    append(off)
+                    append(" · ")
                     withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)) { append(action) }
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -403,47 +404,67 @@ enum class BannerDismiss {
  * [action] is the button's label, and [does] what it does. [dismiss] is null for a banner that can't be closed.
  */
 data class AllowanceBannerContent(
-    val title: String,
-    val body: String?,
-    val action: String?,
+    val title: UiText,
+    val body: UiText?,
+    @StringRes val action: Int?,
     val dismiss: BannerDismiss?,
     val does: BannerAction = BannerAction.PLANS,
 )
 
-fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? {
-    fun resets(at: Long?) = at?.let { "Resets ${AccessText.date(context, it)}." }
-    val banner = when (access) {
-        // Dismissible for good: someone who only wants messaging can put it away. The Settings plan card stays.
-        AiAccess.None ->
-            if (canBuy) AllowanceBannerContent("Translation is off", AccessText.TRIAL_SUBTEXT, AccessText.START_TRIAL, BannerDismiss.TRANSLATION_OFF, BannerAction.START_TRIAL)
-            else AllowanceBannerContent("Translation is off", null, AccessText.OWN_KEY, BannerDismiss.TRANSLATION_OFF, BannerAction.OWN_KEY)
-        is AiAccess.Ended -> AllowanceBannerContent(AccessText.ended(access.reason), "Subscribe to keep translating.", AccessText.SUBSCRIBE, null)
-        is AiAccess.Trial -> when {
+/** [canBuy] is false when not installed from Play: then nothing offers Subscribe or Upgrade. */
+fun allowanceBanner(access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? = when (access) {
+    // Dismissible for good: someone who only wants messaging can put it away. The Settings plan card stays.
+    AiAccess.None ->
+        if (canBuy) {
+            AllowanceBannerContent(
+                UiText.res(R.string.translation_off), UiText.res(R.string.access_trial_subtext), R.string.access_start_trial,
+                BannerDismiss.TRANSLATION_OFF, BannerAction.START_TRIAL,
+            )
+        } else {
+            AllowanceBannerContent(UiText.res(R.string.translation_off), null, R.string.access_own_key, BannerDismiss.TRANSLATION_OFF, BannerAction.OWN_KEY)
+        }
+    is AiAccess.Ended -> stopped(AccessText.ended(access.reason), canBuy)
+    is AiAccess.Trial -> when {
+        allowance == null || !allowance.nearlyUsedUp -> null
+        allowance.usedUp -> stopped(R.string.ended_free_week, canBuy)
+        else -> AllowanceBannerContent(
+            UiText.res(R.string.banner_trial_nearly, allowance.percent),
+            UiText.res(R.string.banner_trial_nearly_body).takeIf { canBuy }, R.string.plan_subscribe.takeIf { canBuy },
+            BannerDismiss.NEARLY_USED_UP,
+        )
+    }
+    is AiAccess.Subscribed -> {
+        // Upgrade to Plus is for Standard, and only where there's something to buy.
+        val upgrade = access.tier == Tier.STANDARD && canBuy
+        val resets = allowance?.resetsAt
+        when {
+            access.inUseElsewhere -> AllowanceBannerContent(
+                UiText.res(R.string.access_in_use_elsewhere), UiText.res(R.string.access_use_here_explained), R.string.access_use_here,
+                null, BannerAction.USE_HERE,
+            )
             allowance == null || !allowance.nearlyUsedUp -> null
-            allowance.usedUp -> AllowanceBannerContent(AccessText.ended(EndReason.TRIAL_USED_UP), "Subscribe to keep translating.", AccessText.SUBSCRIBE, null)
-            else -> AllowanceBannerContent("You've used ${allowance.percent}% of your free week's AI", "Subscribe to keep translating after it runs out.", AccessText.SUBSCRIBE, BannerDismiss.NEARLY_USED_UP)
+            allowance.usedUp -> AllowanceBannerContent(
+                UiText.res(R.string.access_month_used),
+                when {
+                    resets != null -> UiText.res(if (upgrade) R.string.banner_resets_upgrade else R.string.banner_resets, UiText.Date(resets))
+                    upgrade -> UiText.res(R.string.banner_plus_twice)
+                    else -> null
+                },
+                R.string.banner_upgrade.takeIf { upgrade }, null,
+            )
+            else -> AllowanceBannerContent(
+                UiText.res(R.string.banner_month_nearly, allowance.percent), resets?.let { UiText.res(R.string.banner_resets, UiText.Date(it)) },
+                R.string.banner_upgrade.takeIf { upgrade }, BannerDismiss.NEARLY_USED_UP,
+            )
         }
-        is AiAccess.Subscribed -> {
-            val upgrade = if (access.tier == Tier.STANDARD) "Upgrade" else null
-            when {
-                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, null, BannerAction.USE_HERE)
-                allowance == null || !allowance.nearlyUsedUp -> null
-                allowance.usedUp -> AllowanceBannerContent(
-                    "You've used this month's AI",
-                    listOfNotNull(resets(allowance.resetsAt), "Transmit Plus has twice the AI.".takeIf { upgrade != null }).joinToString(" "),
-                    upgrade, null,
-                )
-                else -> AllowanceBannerContent("You've used ${allowance.percent}% of this month's AI", resets(allowance.resetsAt), upgrade, BannerDismiss.NEARLY_USED_UP)
-            }
-        }
-        else -> null
     }
-    // Not installed from Play: nothing to buy, so no Subscribe or Upgrade. Where AI has stopped, the user's own
-    // key is the way on (as in Settings), so the banner isn't a dead end.
-    return when {
-        canBuy || banner == null || banner.does != BannerAction.PLANS -> banner
-        access is AiAccess.Ended || (access is AiAccess.Trial && allowance?.usedUp == true) ->
-            banner.copy(body = AccessText.OWN_KEY_TO_KEEP_GOING, action = AccessText.OWN_KEY, does = BannerAction.OWN_KEY)
-        else -> banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
-    }
+    else -> null
 }
+
+/**
+ * The managed AI has stopped: Subscribe, or where nothing can be bought, the user's own key (as in Settings), so the
+ * banner is never a dead end. It can't be dismissed.
+ */
+private fun stopped(@StringRes title: Int, canBuy: Boolean) =
+    if (canBuy) AllowanceBannerContent(UiText.res(title), UiText.res(R.string.banner_subscribe_to_keep), R.string.plan_subscribe, null)
+    else AllowanceBannerContent(UiText.res(title), UiText.res(R.string.access_own_key_to_keep_going), R.string.access_own_key, null, BannerAction.OWN_KEY)

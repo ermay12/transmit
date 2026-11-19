@@ -2,6 +2,102 @@
 <resources>
     <string name="app_name">Transmit</string>
 
+    <!-- Turning translation on, and the plans: shared by onboarding, Settings, Home, chats and Plans. -->
+    <string name="translation_off">Translation is off</string>
+    <string name="access_start_trial">Start your free week</string>
+    <string name="access_trial_subtext">7 days free. No card needed.</string>
+    <string name="access_own_key">Use my own AI key</string>
+    <string name="access_keep_going">Subscribe to keep translating and getting help with your replies.</string>
+    <string name="access_own_key_to_keep_going">Use your own AI key to keep translating.</string>
+    <string name="access_month_used">You\'ve used this month\'s AI</string>
+    <string name="access_in_use_elsewhere">Your subscription is in use on another device</string>
+    <string name="access_use_here">Use it here</string>
+    <string name="access_use_here_explained">A subscription works on one device at a time. Using it here stops it on the other device.</string>
+    <string name="access_in_use_elsewhere_explained">Your subscription is in use on another device. A subscription works on one device at a time. Using it here stops it on the other device.</string>
+    <string name="ended_free_week">Your free week has ended</string>
+    <string name="ended_subscription">Your subscription has ended</string>
+    <string name="action_not_now">Not now</string>
+    <string name="action_try_again">Try again</string>
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- Why the free week couldn't start: plain language, never about integrity verdicts, keys or servers. -->
+    <string name="trial_failed_title">Couldn\'t start your free week</string>
+    <string name="trial_failed_already_used">This device has already used its free week.</string>
+    <string name="trial_failed_device">This device isn\'t supported for the free week.</string>
+    <string name="trial_failed_not_from_play">The free week needs Transmit installed from Google Play.</string>
+    <string name="trial_failed_full">Today\'s free weeks are all taken. Try again tomorrow.</string>
+    <string name="trial_failed_rate_limited">Too many attempts from this network. Try again later.</string>
+    <string name="trial_failed_busy">Still working on it. Try again in a moment.</string>
+    <string name="trial_failed_other">Your free week couldn\'t start right now. Try again later.</string>
+
+    <!-- What managed and NONE users see when AI fails or is blocked (toasts, chat notices, the explanation sheet). -->
+    <string name="ai_service_problem">Translation is having trouble. Try again later.</string>
+    <string name="ai_no_connection">No connection. Check your internet and try again.</string>
+    <string name="ai_refused">The AI couldn\'t help with this message.</string>
+    <string name="ai_something_wrong">Something went wrong</string>
+    <string name="ai_translation_off">Translation is off.</string>
+    <string name="ai_free_week_ended">Your free week has ended.</string>
+    <string name="ai_subscription_ended">Your subscription has ended.</string>
+    <string name="ai_month_used">You\'ve used this month\'s AI.</string>
+    <string name="ai_in_use_elsewhere">Your subscription is in use on another device.</string>
+    <!-- BYOK only: dollar budgets are for people paying for their own AI. -->
+    <string name="ai_budget_reached">Monthly AI budget reached (%1$s of %2$s).</string>
+    <string name="ai_chat_budget_reached">This chat\'s AI budget is used up (%1$s of %2$s).</string>
+
+    <!-- Chats: the dialog a blocked AI call shows. -->
+    <string name="block_off_body">Start your free week to translate messages and get help with your replies. 7 days free. No card needed.</string>
+    <string name="block_own_key_body">Use your own AI key to translate messages and get help with your replies.</string>
+    <string name="block_in_use_title">Your subscription is in use on another device. Use it here?</string>
+    <string name="block_resets">It resets %1$s.</string>
+    <string name="block_resets_upgrade">It resets %1$s. Transmit Plus has twice the AI.</string>
+    <string name="block_resets_at_renewal">It resets when your subscription renews.</string>
+    <string name="block_resets_at_renewal_upgrade">It resets when your subscription renews. Transmit Plus has twice the AI.</string>
+    <string name="block_budget_title">Budget reached</string>
+    <string name="block_allow_once">Allow once</string>
+
+    <!-- Chats with translation off (no AI set up, or it ended): the strip, the plain composer and the turn-on sheet. -->
+    <string name="strip_starting">Starting your free week…</string>
+    <string name="compose_plain_hint">Message</string>
+    <string name="turn_on_title">Turn on translation</string>
+
+    <!-- Home banners. -->
+    <string name="banner_starting">Starting…</string>
+    <string name="banner_subscribe_to_keep">Subscribe to keep translating.</string>
+    <string name="banner_trial_nearly">You\'ve used %1$d%% of your free week\'s AI</string>
+    <string name="banner_trial_nearly_body">Subscribe to keep translating after it runs out.</string>
+    <string name="banner_month_nearly">You\'ve used %1$d%% of this month\'s AI</string>
+    <string name="banner_resets">Resets %1$s.</string>
+    <string name="banner_resets_upgrade">Resets %1$s. Transmit Plus has twice the AI.</string>
+    <string name="banner_plus_twice">Transmit Plus has twice the AI.</string>
+    <string name="banner_upgrade">Upgrade</string>
+
+    <!-- How much of the managed AI is used: a percentage, never dollars. -->
+    <string name="allowance_trial">Your free week\'s AI</string>
+    <string name="allowance_month">This month\'s AI</string>
+    <string name="allowance_trial_used">%1$d%% of your free week\'s AI used</string>
+    <string name="allowance_month_used">%1$d%% of this month\'s AI used</string>
+    <string name="allowance_resets">Resets %1$s</string>
+
+    <!-- Settings: the plan card, and Advanced for managed modes. -->
+    <plurals name="settings_plan_trial_days">
+        <item quantity="one">Free week · %d day left</item>
+        <item quantity="other">Free week · %d days left</item>
+    </plurals>
+    <string name="settings_plan_byok">Using your own AI key</string>
+    <string name="settings_plan_byok_detail">%1$s · models, budgets and usage are under Advanced</string>
+    <string name="settings_plan_byok_advanced">Advanced settings</string>
+    <string name="settings_own_key_summary">Pay an AI provider such as OpenAI or Google yourself</string>
+    <string name="settings_translation_off_caption">These apply once translation is on.</string>
+
+    <!-- Restore purchase (Settings and Plans). -->
+    <string name="restore_done">%1$s is restored.</string>
+    <string name="restore_none">No subscription found on this Google account.</string>
+    <string name="restore_not_from_play">Restoring needs Transmit installed from Google Play.</string>
+    <string name="restore_pending">Your payment is still being processed.</string>
+    <string name="restore_payment_problem">There\'s a problem with your payment. Fix it in Google Play.</string>
+    <string name="restore_failed">Couldn\'t restore right now. Try again later.</string>
+
     <!-- Plans screen (the paywall). Prices come from Google Play. -->
     <string name="plans_title">Plans</string>
     <string name="plans_headline_none">Translate every chat</string>
@@ -30,7 +126,6 @@
     <string name="plan_manage">Manage subscription</string>
     <string name="plan_restore">Restore purchase</string>
     <string name="plan_restoring">Restoring…</string>
-    <string name="plan_own_key">Use my own AI key</string>
     <string name="plans_not_from_play">Subscriptions need Transmit installed from Google Play. You can still use your own AI key.</string>
     <string name="purchase_working">Setting up your plan…</string>
     <string name="purchase_pending">Your payment is being processed. Translation starts as soon as Google Play confirms it.</string>
@@ -40,11 +135,9 @@
     <string name="purchase_play_unavailable">Google Play isn\'t available right now. Try again later.</string>
     <string name="purchase_already_owned">You already have this plan. Manage it in Google Play.</string>
 
-    <!-- Chats with translation off (no AI set up, or it ended): the plain composer and the sheet translate actions open. -->
-    <string name="compose_plain_hint">Message</string>
-    <string name="turn_on_title">Turn on translation</string>
-    <string name="action_not_now">Not now</string>
-
-    <!-- Settings. -->
-    <string name="settings_translation_off_caption">These apply once translation is on.</string>
+    <!-- Notifications about the plan. -->
+    <string name="notify_plan_channel">Plan</string>
+    <string name="notify_plan_channel_description">When your free week or subscription is ending or has ended</string>
+    <string name="notify_trial_ends_tomorrow">Your free week ends tomorrow</string>
+    <string name="notify_in_use_elsewhere_body">Open Transmit to use it on this phone.</string>
 </resources>

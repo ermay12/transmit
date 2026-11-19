@@ -1,5 +1,7 @@
 package app.transmit.ai
 
+import app.transmit.R
+import app.transmit.UiText
 import app.transmit.access.AiAccess
 import app.transmit.access.EndReason
 import app.transmit.access.Tier
@@ -23,24 +25,23 @@ sealed interface AiBlock {
     val canAllowOnce get() = this is Budget
 
     /** One line for banners and toasts. Never mentions keys, models, settings or dollars outside BYOK budgets. */
-    val message: String
+    val message: UiText
         get() = when (this) {
             is Budget -> when (val s = status) {
-                is BudgetStatus.GlobalExceeded -> "Monthly AI budget reached (${usd(s.spent)} of ${usd(s.limit)})."
-                is BudgetStatus.ChatExceeded -> "This chat's AI budget is used up (${usd(s.spent)} of ${usd(s.limit)})."
-                BudgetStatus.Ok -> "Budget OK"
+                is BudgetStatus.GlobalExceeded -> UiText.res(R.string.ai_budget_reached, usd(s.spent), usd(s.limit))
+                is BudgetStatus.ChatExceeded -> UiText.res(R.string.ai_chat_budget_reached, usd(s.spent), usd(s.limit))
+                BudgetStatus.Ok -> UiText.Plain("Budget OK")
             }
-            is AllowanceUsedUp -> if (access is AiAccess.Trial) "Your free week has ended." else "You've used this month's AI."
-            NotSetUp -> "Translation is off."
-            InUseElsewhere -> "Your subscription is in use on another device."
-            is Ended -> when (reason) {
-                EndReason.TRIAL_USED_UP, EndReason.TRIAL_EXPIRED -> "Your free week has ended."
-                EndReason.SUBSCRIPTION_ENDED -> "Your subscription has ended."
-            }
+            is AllowanceUsedUp -> UiText.res(if (access is AiAccess.Trial) R.string.ai_free_week_ended else R.string.ai_month_used)
+            NotSetUp -> UiText.res(R.string.ai_translation_off)
+            InUseElsewhere -> UiText.res(R.string.ai_in_use_elsewhere)
+            // One name for the end of the free week, whether its days or its AI ran out.
+            is Ended -> UiText.res(if (reason.wasTrial) R.string.ai_free_week_ended else R.string.ai_subscription_ended)
         }
 }
 
-class AiBlockedException(val block: AiBlock) : Exception(block.message)
+/** Its message is for logs; the user sees [AiBlock.message]. */
+class AiBlockedException(val block: AiBlock) : Exception(block.toString())
 
 /**
  * Decides whether an AI call may go ahead. Dollar budgets are BYOK's alone: managed modes are limited only by the
@@ -67,13 +68,13 @@ object AiGate {
 
 /** What to tell the user when AI fails. BYOK users see the provider's message; everyone else, plain language. */
 object AiMessages {
-    const val SERVICE_PROBLEM = "Translation is having trouble. Try again later."
-    const val NO_CONNECTION = "No connection. Check your internet and try again."
-    const val REFUSED = "The AI couldn't help with this message."
+    val SERVICE_PROBLEM: UiText = UiText.res(R.string.ai_service_problem)
+    val NO_CONNECTION: UiText = UiText.res(R.string.ai_no_connection)
+    val REFUSED: UiText = UiText.res(R.string.ai_refused)
 
-    fun describe(e: Throwable, access: AiAccess?): String = when {
+    fun describe(e: Throwable, access: AiAccess?): UiText = when {
         e is AiBlockedException -> e.block.message
-        access == null || access is AiAccess.Byok -> e.message ?: "Something went wrong"
+        access == null || access is AiAccess.Byok -> e.message?.let { UiText.Plain(it) } ?: UiText.res(R.string.ai_something_wrong)
         e is AiException && e.kind == AiException.Kind.NETWORK -> NO_CONNECTION
         e is AiException && e.kind == AiException.Kind.REFUSAL -> REFUSED
         else -> SERVICE_PROBLEM

@@ -82,7 +82,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         launch {
             val error = c.access.restore()
             restoring.value = false
-            onResult(AccessText.restoreResult(error, c.access.current()))
+            onResult(AccessText.restoreResult(error, c.access.current()).resolve(c.context))
         }
     }
 

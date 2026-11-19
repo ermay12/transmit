@@ -372,7 +372,7 @@ class ChatViewModel(
         viewModelScope.launch {
             c.translations.events.filter { it.threadId == threadId }.collect { e ->
                 banner.value = when (e) {
-                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> ChatBanner(e.block.message, budget = e.block is AiBlock.Budget)
+                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> ChatBanner(e.block.message.resolve(c.context), budget = e.block is AiBlock.Budget)
                     is app.transmit.ai.TranslationManager.Event.Failed -> ChatBanner(describe(e.error))
                 }
             }
@@ -725,7 +725,7 @@ class ChatViewModel(
                 val e = c.tutor.explain(original, rendered, lang, threadId, key, overrideBudget, refresh)
                 sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(text = e.text, cost = e.cost, cached = e.cached, error = null) else s }
             } catch (e: AiBlockedException) {
-                sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = e.message) else s }
+                sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = describe(e)) else s }
                 budgetPrompt.value = BudgetPrompt(e.block) { openExplanation(original, rendered, lang, key, refresh, true) }
             } catch (e: AiException) {
                 sheet.update { s -> if (s is Sheet.Explain && s.cacheKey == key) s.copy(error = describe(e)) else s }
@@ -961,7 +961,7 @@ class ChatViewModel(
     }
 
     /** Plain language outside BYOK: no keys, models or settings. */
-    private fun describe(e: Throwable): String = AiMessages.describe(e, access.value)
+    private fun describe(e: Throwable): String = AiMessages.describe(e, access.value).resolve(c.context)
 
     private fun toast(message: String?) {
         _toasts.tryEmit(message ?: "Something went wrong")

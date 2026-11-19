@@ -108,7 +108,7 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val error = c.access.restore()
             restoring.value = false
-            onResult(AccessText.restoreResult(error, c.access.current()))
+            onResult(AccessText.restoreResult(error, c.access.current()).resolve(c.context))
         }
     }
 
@@ -133,7 +133,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
     LaunchedEffect(purchase) {
         when (val p = purchase) {
             is PurchaseUi.Done -> {
-                Toast.makeText(context, context.getString(R.string.purchase_done, p.tier.label), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.purchase_done, context.getString(p.tier.nameRes)), Toast.LENGTH_SHORT).show()
                 vm.purchaseSeen()
                 onBack()
             }
@@ -159,12 +159,12 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             val subscribed = current as? AiAccess.Subscribed
             val owned = subscribed?.tier
             (current as? AiAccess.Ended)?.let {
-                Text(AccessText.ended(it.reason), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(AccessText.ended(it.reason)), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(6.dp))
             }
             if (subscribed?.inUseElsewhere == true) {
-                Notice("${AccessText.IN_USE_ELSEWHERE}. ${AccessText.USE_HERE_EXPLAINED}")
-                Button(onClick = { vm.restore(::show) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(AccessText.USE_HERE) }
+                Notice(stringResource(R.string.access_in_use_elsewhere_explained))
+                Button(onClick = { vm.restore(::show) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_use_here)) }
                 Spacer(Modifier.height(24.dp))
             }
             Text(
@@ -182,7 +182,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             if (!vm.canBuy) {
                 Text(stringResource(R.string.plans_not_from_play), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.plan_own_key)) }
+                Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.access_own_key)) }
                 return@Column
             }
             if (owned == null) {
@@ -273,7 +273,6 @@ private fun Notice(text: String, busy: Boolean = false) {
     Spacer(Modifier.height(16.dp))
 }
 
-private val Tier.nameRes @StringRes get() = if (this == Tier.PLUS) R.string.plan_plus_name else R.string.plan_standard_name
 private val Tier.allowanceRes @StringRes get() = if (this == Tier.PLUS) R.string.plan_plus_allowance else R.string.plan_standard_allowance
 
 /**

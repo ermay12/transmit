@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import app.transmit.TestStrings
 import org.junit.Test
 
 /** Dollar budgets are BYOK's; managed modes answer only to the allowance; no AI set up blocks everything. */
@@ -43,8 +44,8 @@ class AiGateTest {
         val block = check(standard, override = true, usedUp = true)
         assertEquals(AiBlock.AllowanceUsedUp(standard), block)
         assertFalse(block!!.canAllowOnce)
-        assertEquals("You've used this month's AI.", block.message)
-        assertEquals("Your free week has ended.", check(trial, usedUp = true)!!.message)
+        assertEquals("You've used this month's AI.", TestStrings.resolve(block.message))
+        assertEquals("Your free week has ended.", TestStrings.resolve(check(trial, usedUp = true)!!.message))
     }
 
     @Test
@@ -67,12 +68,27 @@ class AiGateTest {
         )
         for (access in listOf(trial, standard, AiAccess.None, AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED))) {
             for (e in errors) {
-                val text = AiMessages.describe(e, access)
+                val text = TestStrings.resolve(AiMessages.describe(e, access))
                 for (word in listOf("key", "model", "Settings", "OpenRouter", "$")) assertFalse("$text mentions $word", text.contains(word, ignoreCase = true))
             }
         }
         assertEquals(AiMessages.SERVICE_PROBLEM, AiMessages.describe(errors[3], standard))
         // BYOK users see what the provider said.
-        assertEquals("Add your OpenRouter API key in Settings.", AiMessages.describe(errors[0], AiAccess.Byok))
+        assertEquals("Add your OpenRouter API key in Settings.", TestStrings.resolve(AiMessages.describe(errors[0], AiAccess.Byok)))
+    }
+
+    @Test
+    fun blockedCallsSayWhatStoppedInPlainWords() {
+        val texts = listOf(
+            AiBlock.NotSetUp, AiBlock.InUseElsewhere, AiBlock.AllowanceUsedUp(trial), AiBlock.AllowanceUsedUp(standard),
+            AiBlock.Ended(EndReason.TRIAL_EXPIRED), AiBlock.Ended(EndReason.TRIAL_USED_UP), AiBlock.Ended(EndReason.SUBSCRIPTION_ENDED),
+        ).map { TestStrings.resolve(it.message) }
+        for (text in texts) for (word in listOf("key", "model", "Settings", "OpenRouter", "$", "trial")) {
+            assertFalse("$text mentions $word", text.contains(word, ignoreCase = true))
+        }
+        // The free week ends one way, whether its days or its AI ran out.
+        assertEquals(setOf("Your free week has ended."), setOf(texts[2], texts[4], texts[5]))
+        // BYOK budgets keep their dollars.
+        assertEquals("Monthly AI budget reached ($1.00 of $1.00).", TestStrings.resolve(AiBlock.Budget(BudgetStatus.GlobalExceeded(1.0, 1.0)).message))
     }
 }

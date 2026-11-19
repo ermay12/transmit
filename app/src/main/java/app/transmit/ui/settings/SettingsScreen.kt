@@ -1,5 +1,6 @@
 package app.transmit.ui.settings
 
+import androidx.compose.ui.res.pluralStringResource
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -26,6 +27,7 @@ import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.AllowanceBar
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
+import app.transmit.ui.access.nameRes
 import app.transmit.ui.access.openManageSubscription
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
@@ -256,7 +258,7 @@ fun SettingsScreen(
                             vm.switchToManaged(onNoPlan = onPlans)
                         }
                     } else {
-                        Row0(Icons.Default.Key, AccessText.OWN_KEY, "Pay an AI provider such as OpenAI or Google yourself") { ownKeyDialog = true }
+                        Row0(Icons.Default.Key, stringResource(R.string.access_own_key), stringResource(R.string.settings_own_key_summary)) { ownKeyDialog = true }
                     }
                 }
             }
@@ -362,56 +364,58 @@ private fun PlanCard(
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = if (access is AiAccess.Byok) 12.dp else 6.dp)) {
             when (access) {
                 AiAccess.None -> {
-                    PlanTitle("Translation is off", "Translations as you chat, and a tutor for your replies.")
+                    PlanTitle(stringResource(R.string.translation_off), stringResource(R.string.plans_benefits))
                     val failed = trial as? TrialUi.Failed
                     if (!vm.canBuy) {
                         // Not installed from Play: no free week or subscription, only the user's own key.
-                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
+                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
                     } else if (failed != null) {
                         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = { vm.trial.start() })
                     } else {
                         Button(onClick = { vm.trial.start() }, enabled = trial != TrialUi.Starting, modifier = Modifier.fillMaxWidth()) {
                             if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                            else Text(AccessText.START_TRIAL)
+                            else Text(stringResource(R.string.access_start_trial))
                         }
                         Text(
-                            AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            stringResource(R.string.access_trial_subtext), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center,
                         )
-                        TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(AccessText.OWN_KEY) }
+                        TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
                     }
                 }
                 is AiAccess.Trial -> {
-                    PlanTitle(AccessText.trialTitle(access.endsAt), null)
+                    // The last day reads "1 day left", not "0 days left".
+                    val days = AccessText.daysLeft(access.endsAt).coerceAtLeast(1)
+                    PlanTitle(pluralStringResource(R.plurals.settings_plan_trial_days, days, days), null)
                     AllowanceBar(allowance, trial = true)
                     Spacer(Modifier.height(16.dp))
-                    if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                    if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                 }
                 is AiAccess.Subscribed -> if (access.inUseElsewhere) {
-                    PlanTitle(access.tier.label, "${AccessText.IN_USE_ELSEWHERE}. ${AccessText.USE_HERE_EXPLAINED}")
-                    Button(onClick = { vm.restore(onMessage) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(AccessText.USE_HERE) }
+                    PlanTitle(stringResource(access.tier.nameRes), stringResource(R.string.access_in_use_elsewhere_explained))
+                    Button(onClick = { vm.restore(onMessage) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_use_here)) }
                 } else {
-                    PlanTitle(access.tier.label, access.renewsAt?.let { "Renews ${AccessText.date(context, it)}" })
+                    PlanTitle(stringResource(access.tier.nameRes), access.renewsAt?.let { stringResource(R.string.plan_renews, AccessText.date(context, it)) })
                     AllowanceBar(allowance?.copy(resetsAt = null), trial = false)
                     Spacer(Modifier.height(16.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (access.tier == Tier.STANDARD && vm.canBuy) Button(onClick = onPlans) { Text(AccessText.UPGRADE) }
-                        OutlinedButton(onClick = { openManageSubscription(context, access.tier) }) { Text("Manage subscription") }
+                        if (access.tier == Tier.STANDARD && vm.canBuy) Button(onClick = onPlans) { Text(stringResource(R.string.plan_upgrade)) }
+                        OutlinedButton(onClick = { openManageSubscription(context, access.tier) }) { Text(stringResource(R.string.plan_manage)) }
                     }
                 }
                 is AiAccess.Ended -> {
                     if (vm.canBuy) {
-                        PlanTitle(AccessText.ended(access.reason), AccessText.KEEP_GOING)
-                        Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                        PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_keep_going))
+                        Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                     } else {
-                        PlanTitle(AccessText.ended(access.reason), AccessText.OWN_KEY_TO_KEEP_GOING)
-                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
+                        PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_own_key_to_keep_going))
+                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
                     }
                 }
                 AiAccess.Byok -> {
                     val s by vm.settings.collectAsStateWithLifecycle()
-                    PlanTitle("Using your own AI key", s?.provider?.label?.let { "$it · models, budgets and usage are under Advanced" })
-                    TextButton(onClick = onAdvanced, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Advanced settings") }
+                    PlanTitle(stringResource(R.string.settings_plan_byok), s?.provider?.label?.let { stringResource(R.string.settings_plan_byok_detail, it) })
+                    TextButton(onClick = onAdvanced, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text(stringResource(R.string.settings_plan_byok_advanced)) }
                 }
             }
             if (access !is AiAccess.Byok && vm.canBuy) {
@@ -419,7 +423,7 @@ private fun PlanCard(
                     onClick = { vm.restore(onMessage) }, enabled = !restoring,
                     // Under NONE's centred buttons it's centred too; elsewhere it sits at the end.
                     modifier = Modifier.align(if (access == AiAccess.None) Alignment.CenterHorizontally else Alignment.End),
-                ) { Text(if (restoring) "Restoring…" else AccessText.RESTORE, style = MaterialTheme.typography.labelMedium) }
+                ) { Text(stringResource(if (restoring) R.string.plan_restoring else R.string.plan_restore), style = MaterialTheme.typography.labelMedium) }
             }
         }
     }
@@ -451,7 +455,7 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Key, null) },
-        title = { Text(AccessText.OWN_KEY) },
+        title = { Text(stringResource(R.string.access_own_key)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
