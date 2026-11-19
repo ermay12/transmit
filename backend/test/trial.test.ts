@@ -116,7 +116,7 @@ describe("POST /v1/trial", () => {
     expect((await call(world, "/v1/trial", undefined, { raw: "{not json" })).body.error).toBe("bad_request");
   });
 
-  it("answers busy while another request for the same device holds the lock", async () => {
+  it("answers busy, without an Integrity check, while another request for the same device holds the lock", async () => {
     const world = new FakeWorld();
     await world.addIntegrity("tok", ANDROID_ID);
     const { keyedHash, dataKeys } = await import("../src/crypto");
@@ -125,6 +125,9 @@ describe("POST /v1/trial", () => {
     const r = await call(world, "/v1/trial", { androidId: ANDROID_ID, integrityToken: "tok" });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("busy");
+    expect(world.count("POST", ":decodeIntegrityToken")).toBe(0);
+    // The other request's lease is left alone.
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM locks").first("n")).toBe(1);
   });
 });
 

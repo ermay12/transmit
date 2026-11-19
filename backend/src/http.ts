@@ -8,6 +8,7 @@ export type ErrorCode =
   | "purchase_invalid"
   | "purchase_not_active"
   | "busy"
+  | "rate_limited"
   | "upstream_error"
   | "not_found"
   | "method_not_allowed"
@@ -21,6 +22,7 @@ const STATUS: Record<ErrorCode, number> = {
   purchase_invalid: 400,
   purchase_not_active: 402,
   busy: 409,
+  rate_limited: 429,
   upstream_error: 502,
   not_found: 404,
   method_not_allowed: 405,

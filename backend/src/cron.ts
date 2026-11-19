@@ -1,15 +1,20 @@
-// The scheduled job (hourly). Each run stays inside a fixed subrequest budget
-// (fetches and D1 calls together; the Workers Free plan allows 50 per
-// invocation) and leaves the rest for the next run:
+// The scheduled job (every 10 minutes). Each run stays inside a fixed
+// subrequest budget (fetches and D1 calls together) and leaves the rest for the
+// next run. The budget is set by CPU, not by the Free plan's 50 subrequests:
+// each subrequest costs about 0.5 ms of CPU in production, and a run gets 10 ms.
+// It reads everything in one D1 batch and writes everything in another, then:
 //   1. refunds: Google's voided purchases, scanned once a day, page by page;
 //   2. purchases past their period end (renewal or lapse), on hold, or unacknowledged;
 //   3. expired trial keys, which are deleted.
+// It also clears stale locks and old per-client trial counts, and shares a fresh
+// Google token with the request isolates (shared-token.ts).
 
 import type { Ctx } from "./context";
 import { decrypt, keyedHash } from "./crypto";
-import { putSubscription, type SubscriptionRow } from "./db";
+import { putSubscription, type SubscriptionRow, utcDay } from "./db";
 import type { VoidedPurchase } from "./google";
 import { log } from "./http";
+import { adoptSharedToken, SHARED_TOKEN_ROW, shareTokenWrites } from "./shared-token";
 import { nextCheckAt, recheck, splitOrders, type SubState } from "./subscription";
 
 /** Counts subrequests. The fetch wrapper charges network calls; D1 calls are charged explicitly. */
@@ -32,6 +37,11 @@ export class Budget {
       return fetcher(input, init);
     };
   }
+}
+
+interface ExpiredTrial {
+  device_hash: string;
+  key_hash: string;
 }
 
 type Touched = Map<string, { next: SubscriptionRow; expectedUpdatedAt: number }>;
@@ -79,26 +89,58 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
   /** Refund updates of this run, by token hash, merged across pages; the re-check skips these purchases. */
   const touched: Touched = new Map();
 
+  // Everything the run reads, in one D1 call: the refund scan's progress, the Google token other
+  // isolates shared, the purchases due for a re-check and the expired trial keys. The loops below
+  // stop at the budget, so the limits only keep the reads small.
+  let reads: { state: Map<string, string>; due: SubscriptionRow[]; trials: ExpiredTrial[] } | undefined;
   try {
-    await scanVoided(ctx, budget, now, writes, report, touched);
+    const dueRoom = Math.max(1, Math.floor((budget.left - 2) / RECHECK_TYPICAL_COST));
+    const trialRoom = Math.max(1, budget.left - 2);
+    budget.spend();
+    const [state, due, trials] = await ctx.db.batch([
+      ctx.db.prepare("SELECT name, value FROM job_state WHERE name IN ('voided', ?1)").bind(SHARED_TOKEN_ROW),
+      ctx.db
+        .prepare("SELECT * FROM subscriptions WHERE next_check_at IS NOT NULL AND next_check_at <= ?1 ORDER BY next_check_at LIMIT ?2")
+        .bind(now, dueRoom),
+      ctx.db
+        .prepare("SELECT device_hash, key_hash FROM trials WHERE key_hash IS NOT NULL AND expires_at <= ?1 ORDER BY expires_at LIMIT ?2")
+        .bind(now, trialRoom),
+    ]);
+    reads = {
+      state: new Map((state!.results as { name: string; value: string }[]).map((r) => [r.name, r.value])),
+      due: due!.results as SubscriptionRow[],
+      trials: trials!.results as ExpiredTrial[],
+    };
+    await adoptSharedToken(ctx, reads.state.get(SHARED_TOKEN_ROW));
   } catch (err) {
     report.errors++;
-    log("cron_voided_failed", { error: String(err) });
-  }
-  try {
-    await recheckDue(ctx, budget, now, writes, report, touched);
-  } catch (err) {
-    report.errors++;
-    log("cron_recheck_failed", { error: String(err) });
-  }
-  try {
-    await deleteExpiredTrialKeys(ctx, budget, now, writes, report);
-  } catch (err) {
-    report.errors++;
-    log("cron_trials_failed", { error: String(err) });
+    log("cron_read_failed", { error: String(err) });
   }
 
+  if (reads) {
+    try {
+      await scanVoided(ctx, budget, now, reads.state.get("voided"), writes, report, touched);
+    } catch (err) {
+      report.errors++;
+      log("cron_voided_failed", { error: String(err) });
+    }
+    try {
+      await recheckDue(ctx, budget, now, reads.due, writes, report, touched);
+    } catch (err) {
+      report.errors++;
+      log("cron_recheck_failed", { error: String(err) });
+    }
+    try {
+      await deleteExpiredTrialKeys(ctx, budget, now, reads.trials, writes, report);
+    } catch (err) {
+      report.errors++;
+      log("cron_trials_failed", { error: String(err) });
+    }
+  }
+
+  writes.push(...(await shareTokenWrites(ctx)));
   writes.push(ctx.db.prepare("DELETE FROM locks WHERE until < ?1").bind(now));
+  writes.push(ctx.db.prepare("DELETE FROM trial_calls WHERE day < ?1").bind(utcDay(now - DAY)));
   budget.spend();
   await ctx.db.batch(writes);
   report.subrequests = budget.used;
@@ -110,12 +152,13 @@ async function scanVoided(
   ctx: Ctx,
   budget: Budget,
   now: number,
+  stored: string | undefined,
   writes: D1PreparedStatement[],
   report: CronReport,
   touched: Touched,
 ): Promise<void> {
   try {
-    await scanVoidedPages(ctx, budget, now, writes, report, touched);
+    await scanVoidedPages(ctx, budget, now, stored, writes, report, touched);
   } finally {
     for (const { next, expectedUpdatedAt } of touched.values()) writes.push(putSubscription(ctx.db, next, expectedUpdatedAt));
   }
@@ -125,13 +168,12 @@ async function scanVoidedPages(
   ctx: Ctx,
   budget: Budget,
   now: number,
+  stored: string | undefined,
   writes: D1PreparedStatement[],
   report: CronReport,
   touched: Touched,
 ): Promise<void> {
-  budget.spend();
-  const stored = await ctx.db.prepare("SELECT value FROM job_state WHERE name = 'voided'").first<{ value: string }>();
-  const state: VoidedState = stored ? (JSON.parse(stored.value) as VoidedState) : {};
+  const state: VoidedState = stored ? (JSON.parse(stored) as VoidedState) : {};
   let page = state.page;
   if (!page) {
     if (state.lastEnd !== undefined && now - state.lastEnd < ctx.config.voidedCheckIntervalMs) return;
@@ -221,19 +263,12 @@ async function recheckDue(
   ctx: Ctx,
   budget: Budget,
   now: number,
+  due: SubscriptionRow[],
   writes: D1PreparedStatement[],
   report: CronReport,
   touched: Touched,
 ): Promise<void> {
-  if (!budget.allows(RECHECK_COST + 1)) return;
-  const room = Math.floor((budget.left - 2) / RECHECK_TYPICAL_COST);
-  budget.spend();
-  const due = await ctx.db
-    .prepare("SELECT * FROM subscriptions WHERE next_check_at IS NOT NULL AND next_check_at <= ?1 ORDER BY next_check_at LIMIT ?2")
-    .bind(now, room)
-    .all<SubscriptionRow>();
-
-  for (const row of due.results) {
+  for (const row of due) {
     if (!budget.allows(RECHECK_COST)) break;
     if (touched.has(row.token_hash)) continue;
     try {
@@ -255,17 +290,11 @@ async function deleteExpiredTrialKeys(
   ctx: Ctx,
   budget: Budget,
   now: number,
+  rows: ExpiredTrial[],
   writes: D1PreparedStatement[],
   report: CronReport,
 ): Promise<void> {
-  const room = budget.left - 2;
-  if (room < 1) return;
-  budget.spend();
-  const rows = await ctx.db
-    .prepare("SELECT device_hash, key_hash FROM trials WHERE key_hash IS NOT NULL AND expires_at <= ?1 ORDER BY expires_at LIMIT ?2")
-    .bind(now, room)
-    .all<{ device_hash: string; key_hash: string }>();
-  for (const t of rows.results) {
+  for (const t of rows) {
     if (!budget.allows(1)) break;
     await ctx.openrouter.deleteKey(t.key_hash);
     writes.push(

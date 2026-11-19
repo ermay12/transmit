@@ -13,9 +13,11 @@ OpenRouter directly with that key. The contract with the app is in
 | --- | --- |
 | `src/trial.ts` | `POST /v1/trial`: Play Integrity check, one trial per ANDROID_ID, daily cap |
 | `src/subscription.ts` | `POST /v1/subscription` and the per-purchase re-check |
-| `src/cron.ts` | Hourly job: refunds, renewals and lapses, expired trial keys |
+| `src/cron.ts` | Job every 10 minutes: refunds, renewals and lapses, expired trial keys |
 | `src/google.ts`, `src/openrouter.ts` | API clients |
-| `src/crypto.ts` | Keyed hashes (device, purchase token) and AES-GCM for stored purchase tokens |
+| `src/shared-token.ts` | Shares the Google access token between isolates through D1 |
+| `src/ratelimit.ts` | Per-network call limits (Workers Rate Limiting binding) |
+| `src/crypto.ts` | Keyed hashes (device, purchase token, network) and AES-GCM for stored secrets |
 | `migrations/` | D1 schema |
 | `test/` | Vitest suite in the Workers runtime, with fake Google and OpenRouter |
 
@@ -23,7 +25,9 @@ OpenRouter directly with that key. The contract with the app is in
 
 Only keyed hashes of ANDROID_ID and purchase tokens, the purchase token
 encrypted (the job must show it to Google again), and OpenRouter key hashes.
-Never a key string. See `migrations/0001_init.sql`.
+Never a key string. Also the current Google access token, encrypted, and
+per-day counts of `/v1/trial` calls under a keyed hash of the network (IPv4
+address or IPv6 /64). See `migrations/`.
 
 ## Config
 
@@ -35,11 +39,16 @@ and run `npm run deploy`.
 | `TRIAL_ALLOWANCE_USD` | `0.50` | AI allowance of one trial |
 | `TRIAL_DAYS` | `7` | Trial length (the key's `expires_at`) |
 | `TRIAL_DAILY_BUDGET_USD` | `30` | New trial allowance per UTC day (60 trials) |
+| `TRIAL_CALLS_PER_IP_PER_DAY` | `30` | `/v1/trial` calls per network per UTC day (protects the 10,000 Play Integrity checks a day) |
 | `PLAN_ALLOWANCES_USD` | `{"transmit_monthly": 4.50, "transmit_plus": 9.00}` | Allowance per billing period, keyed by `productId` or `productId/basePlanId` |
 | `INTEGRITY_MAX_AGE_SECONDS` | `600` | Oldest Integrity token accepted |
-| `CRON_SUBREQUEST_BUDGET` | `45` | Fetches + D1 calls per job run (Free plan limit: 50) |
+| `CRON_SUBREQUEST_BUDGET` | `10` | Fetches + D1 calls per job run. Set by CPU (about 0.5 ms each), not by the Free plan's 50 |
 | `VOIDED_CHECK_INTERVAL_HOURS` | `24` | How often the job scans voided purchases |
 | `PACKAGE_NAME`, `OPENROUTER_WORKSPACE_ID`, `KEY_NAME_PREFIX` | | App package, the "Transmit Customers" workspace, key name prefix (`transmit`) |
+
+The per-minute limits are the `ratelimits` bindings in `wrangler.jsonc`:
+`TRIAL_RATE_LIMIT` (10 calls a minute per network) and `SUBSCRIPTION_RATE_LIMIT`
+(30). The period can only be 10 or 60 s. If a binding is missing, that limit is skipped.
 
 ## Secrets
 
@@ -96,13 +105,22 @@ If `npm install` fails with "Cannot read properties of null (reading
 
 - **Logs:** `npx wrangler tail`, or the Worker's Observability tab. Each line is
   JSON with an `event` (`trial_started`, `subscription_synced`, `refund_applied`,
-  `cron_done`, `upstream_error`, …). Logs never contain keys, tokens or device IDs.
-- **The job** runs hourly at minute 23. Each run handles what fits in
-  `CRON_SUBREQUEST_BUDGET` and leaves the rest for the next run; `cron_done`
-  reports what it did and how many subrequests it used.
-- **CPU:** the Free plan allows 10 ms of CPU per request and per job run.
-  Waiting on Google or OpenRouter doesn't count. If the logs show "exceeded CPU",
-  lower `CRON_SUBREQUEST_BUDGET` or move to the paid plan.
+  `cron_done`, `rate_limited`, `upstream_error`, …). Logs never contain keys,
+  tokens, device IDs or IP addresses.
+- **The job** runs every 10 minutes (minutes 3, 13, …, 53). Each run handles what fits in
+  `CRON_SUBREQUEST_BUDGET` (one or two purchases) and leaves the rest for the
+  next run. The refund scan runs once a day. `cron_done` reports what a run did
+  and how many subrequests it used.
+- **CPU:** the Free plan allows 10 ms of CPU per request and per job run, with
+  some leeway for occasional overruns. Waiting on Google or OpenRouter doesn't
+  count, but each fetch or D1 call still costs about 0.5 ms (measured
+  2026-11-18), signing the Google token exchange 1–3 ms, and a cold isolate a few
+  ms more. So the code batches D1 calls (one read batch and one write batch per
+  request) and shares the Google token. Measured with the real code and a real D1:
+  every endpoint path has a median of 3–5 ms, and about 6% of calls go over 10 ms
+  on a cold isolate (up to 19 ms). Every call succeeded. If the Observability tab shows
+  `exceededCpu` outcomes or error 1102, lower `CRON_SUBREQUEST_BUDGET` (job) or
+  move to the paid plan ($5/month, 30 s of CPU).
 - **Keys** are named `transmit-trial-<id>` and `transmit-sub-<id>` and live in
   the Transmit Customers workspace. The Worker only touches keys it created.
 - **Trial abuse:** watch `trial_capacity_reached` lines; if the cap fills every
@@ -112,15 +130,18 @@ If `npm install` fails with "Cannot read properties of null (reading
 
 As of 2026-11-18, deployed and smoke-tested (invalid inputs return the right
 codes, and the Google calls work in production). The OpenRouter client was checked
-live with one throwaway key, since deleted. Not done yet:
+live with one throwaway key, since deleted. The hourly job ran cleanly from the
+first deploy on (`cron_done`, no errors); it now runs every 10 minutes with a
+smaller budget, for CPU. Rate limits and the shared Google token went live on
+2026-11-18. Not done yet:
 
-- **First production job run unconfirmed.** Check that `job_state` has a
-  `voided` row: `npx wrangler d1 execute transmit --remote --command "SELECT * FROM job_state"`,
-  or look for `cron_done` in the logs.
 - **No real trial or purchase tested end to end.** That needs a Play-installed
   build (internal testing track) on a Pixel, and a license-tester purchase
   (test renewals come every 5 minutes, so the app's refresh call picks them up).
-- **CPU time under load is unmeasured** (10 ms Free-plan limit; see above).
-- **No IP rate limiting.** Junk calls to `/v1/trial` could use up Play
-  Integrity's 10,000 checks a day. Add a Workers rate-limit binding if that happens.
+- **Cold-isolate CPU outliers** (above 10 ms on about 6% of calls in testing)
+  remain. Cloudflare tolerated them, but watch the Observability tab for
+  `exceededCpu` once real users arrive.
+- **Rate limits are per network.** Someone with many addresses can still use up
+  the Play Integrity quota (Google then returns errors, so trials fail with
+  `upstream_error`). If that happens, add sign-in or ask Google for more quota.
 - **A workspace-scoped OpenRouter management key** has not replaced the account-wide one yet.

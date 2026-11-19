@@ -55,7 +55,7 @@ export async function sha256Hex(text: string): Promise<string> {
 }
 
 /** Keyed hash used as a database key: HMAC-SHA256(purpose + ":" + value), hex. */
-export async function keyedHash(keys: DataKeys, purpose: "device" | "purchase", value: string): Promise<string> {
+export async function keyedHash(keys: DataKeys, purpose: "device" | "purchase" | "ip", value: string): Promise<string> {
   return hex(await crypto.subtle.sign("HMAC", keys.hmac, enc.encode(`${purpose}:${value}`)));
 }
 

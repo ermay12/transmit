@@ -9,10 +9,10 @@ async function buy(world: FakeWorld, token: string, o: Parameters<FakeWorld["add
   return r.body.keyHash as string;
 }
 
-/** Fetches the fake saw plus the D1 calls the job charged itself; must stay under the Free plan's 50. */
+/** Fetches the fake saw plus the D1 calls the job charged itself; must stay within CRON_SUBREQUEST_BUDGET (10). */
 function expectWithinBudget(report: { subrequests: number }, world: FakeWorld, before: number) {
   expect(world.calls.length - before).toBeLessThanOrEqual(report.subrequests);
-  expect(report.subrequests).toBeLessThanOrEqual(45);
+  expect(report.subrequests).toBeLessThanOrEqual(10);
 }
 
 describe("scheduled job", () => {
@@ -151,15 +151,17 @@ describe("scheduled job", () => {
     let renewed = 0;
     let deleted = 0;
     let refunds = 0;
-    for (let run = 0; run < 8; run++) {
+    let runs = 0;
+    for (; runs < 60 && (renewed < 29 || deleted < 12); runs++) {
       const before = world.calls.length;
       const report = await cron(world);
       expectWithinBudget(report, world, before);
       renewed += report.outcomes.filter((o) => o.endsWith(":renewed")).length;
       deleted += report.trialKeysDeleted;
       refunds += report.refundsApplied;
-      world.now += 3_600_000;
+      world.now += 10 * 60_000;
     }
+    expect(runs).toBeLessThanOrEqual(40); // under 7 hours of 10-minute runs for 30 renewals, 12 trials and 3 refund pages
     expect(refunds).toBe(0); // recorded, but it wasn't the credited order yet
     expect(renewed).toBe(29); // t29's re-check sees its new order is refunded and disables instead
     expect(deleted).toBe(12);

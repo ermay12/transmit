@@ -3,6 +3,9 @@
 
 export interface Env {
   DB: D1Database;
+  /** Workers Rate Limiting bindings (calls per minute per client); limiting is skipped if one is missing. */
+  TRIAL_RATE_LIMIT?: RateLimit;
+  SUBSCRIPTION_RATE_LIMIT?: RateLimit;
 
   // vars
   PACKAGE_NAME: string;
@@ -11,6 +14,7 @@ export interface Env {
   TRIAL_ALLOWANCE_USD: string | number;
   TRIAL_DAYS: string | number;
   TRIAL_DAILY_BUDGET_USD: string | number;
+  TRIAL_CALLS_PER_IP_PER_DAY: string | number;
   PLAN_ALLOWANCES_USD: string | Record<string, number>;
   INTEGRITY_MAX_AGE_SECONDS: string | number;
   CRON_SUBREQUEST_BUDGET: string | number;
@@ -29,6 +33,8 @@ export interface Config {
   trialAllowanceUsd: number;
   trialDurationMs: number;
   trialDailyBudgetUsd: number;
+  /** /v1/trial calls one IPv4 address or IPv6 /64 may make per UTC day. */
+  trialCallsPerIpPerDay: number;
   /** Allowance per billing period, by "productId/basePlanId" or "productId". */
   planAllowances: Record<string, number>;
   integrityMaxAgeMs: number;
@@ -66,6 +72,7 @@ export function loadConfig(env: Env): Config {
     trialAllowanceUsd: num("TRIAL_ALLOWANCE_USD", env.TRIAL_ALLOWANCE_USD, { max: 100 }),
     trialDurationMs: num("TRIAL_DAYS", env.TRIAL_DAYS, { min: 0.001, max: 365 }) * 86_400_000,
     trialDailyBudgetUsd: num("TRIAL_DAILY_BUDGET_USD", env.TRIAL_DAILY_BUDGET_USD, { max: 100_000 }),
+    trialCallsPerIpPerDay: num("TRIAL_CALLS_PER_IP_PER_DAY", env.TRIAL_CALLS_PER_IP_PER_DAY, { min: 1, max: 1_000_000 }),
     planAllowances: plans(env.PLAN_ALLOWANCES_USD),
     integrityMaxAgeMs: num("INTEGRITY_MAX_AGE_SECONDS", env.INTEGRITY_MAX_AGE_SECONDS, { min: 1, max: 86_400 }) * 1000,
     cronSubrequestBudget: num("CRON_SUBREQUEST_BUDGET", env.CRON_SUBREQUEST_BUDGET, { min: 10, max: 1000 }),

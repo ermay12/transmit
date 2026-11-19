@@ -40,7 +40,7 @@ describe("config", () => {
       trialDurationMs: 7 * 86_400_000,
       trialDailyBudgetUsd: 30,
       planAllowances: { transmit_monthly: 4.5, transmit_plus: 9 },
-      cronSubrequestBudget: 45,
+      cronSubrequestBudget: 10,
     });
     expect(loadConfig({ ...base, PLAN_ALLOWANCES_USD: { "transmit_plus/yearly": 100, transmit_plus: 9 } }).planAllowances).toEqual({
       "transmit_plus/yearly": 100,

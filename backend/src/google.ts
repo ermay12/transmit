@@ -15,7 +15,10 @@ interface ServiceAccount {
   token_uri: string;
 }
 
-/** Access tokens are cached per isolate, so most calls skip the token exchange. */
+/**
+ * Access tokens are cached per isolate, and shared between isolates through D1 (see
+ * shared-token.ts), so most calls skip the RS256-signed token exchange.
+ */
 export interface TokenCache {
   entry?: { email: string; token: string; expiresAt: number };
   signingKey?: { email: string; key: Promise<CryptoKey> };
@@ -62,8 +65,13 @@ export interface IntegrityPayload {
   accountDetails?: { appLicensingVerdict?: string };
 }
 
+/** A token is used until a minute before Google's expiry. */
+const TOKEN_MARGIN_MS = 60_000;
+
 export class Google {
   private readonly sa: ServiceAccount;
+  /** A token this instance got from Google, not yet shared with other isolates. */
+  private fresh?: { token: string; expiresAt: number };
 
   constructor(
     serviceAccountJson: string,
@@ -77,6 +85,33 @@ export class Google {
     this.sa = sa as ServiceAccount;
   }
 
+  get email(): string {
+    return this.sa.client_email;
+  }
+
+  /** Whether a token expiring at `expiresAt` is still worth using. */
+  usable(expiresAt: number): boolean {
+    return expiresAt - TOKEN_MARGIN_MS > this.now();
+  }
+
+  /** Whether this isolate already has a usable token. */
+  hasToken(): boolean {
+    const hit = this.cache.entry;
+    return Boolean(hit && hit.email === this.sa.client_email && this.usable(hit.expiresAt));
+  }
+
+  /** Uses a token that another isolate got (read from D1). */
+  adopt(token: string, expiresAt: number): void {
+    if (!this.hasToken() && this.usable(expiresAt)) this.cache.entry = { email: this.sa.client_email, token, expiresAt };
+  }
+
+  /** The token this instance got from Google, once, so the caller can share it. */
+  takeFresh(): { token: string; expiresAt: number } | undefined {
+    const t = this.fresh;
+    this.fresh = undefined;
+    return t;
+  }
+
   private signingKey(): Promise<CryptoKey> {
     if (this.cache.signingKey?.email === this.sa.client_email) return this.cache.signingKey.key;
     const pem = this.sa.private_key.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
@@ -87,9 +122,8 @@ export class Google {
   }
 
   private async accessToken(): Promise<string> {
+    if (this.hasToken()) return this.cache.entry!.token;
     const now = this.now();
-    const hit = this.cache.entry;
-    if (hit && hit.email === this.sa.client_email && hit.expiresAt - 60_000 > now) return hit.token;
     const iat = Math.floor(now / 1000);
     const unsigned = `${b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64url(
       JSON.stringify({ iss: this.sa.client_email, scope: SCOPES, aud: this.sa.token_uri, iat, exp: iat + 3600 }),
@@ -102,7 +136,9 @@ export class Google {
     });
     const body = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
     if (!res.ok || !body.access_token) throw new UpstreamError("google", res.status, `token exchange failed (${body.error ?? "no token"})`);
-    this.cache.entry = { email: this.sa.client_email, token: body.access_token, expiresAt: now + (body.expires_in ?? 3600) * 1000 };
+    const expiresAt = now + (body.expires_in ?? 3600) * 1000;
+    this.cache.entry = { email: this.sa.client_email, token: body.access_token, expiresAt };
+    this.fresh = { token: body.access_token, expiresAt };
     return body.access_token;
   }
 

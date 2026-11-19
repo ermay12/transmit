@@ -8,10 +8,11 @@
 import { planAllowance } from "./config";
 import type { Ctx } from "./context";
 import { encrypt, keyedHash } from "./crypto";
-import { acquireLock, getSubscription, getTrial, putSubscription, type SubscriptionRow } from "./db";
+import { firstRow, getSubscription, Lease, putSubscription, subscriptionStmt, type SubscriptionRow, trialStmt, type TrialRow } from "./db";
 import type { SubscriptionPurchaseV2 } from "./google";
 import { ApiError, json, log, optionalString, readJson, requiredString } from "./http";
 import { isoSeconds, type KeyInfo, money } from "./openrouter";
+import { adoptSharedToken, readSharedToken, shareTokenWrites } from "./shared-token";
 
 export type SubState =
   | "active"
@@ -129,12 +130,28 @@ export async function handleSubscription(ctx: Ctx, request: Request): Promise<Re
   const now = ctx.now();
 
   const tokenHash = await keyedHash(ctx.keys, "purchase", purchaseToken);
-  const release = await acquireLock(ctx.db, `sub:${tokenHash}`, now);
-  if (!release) throw new ApiError("busy", "A request for this purchase is already in progress.");
+  const deviceHash = androidId ? await keyedHash(ctx.keys, "device", androidId) : undefined;
+
+  // One D1 round trip: take the purchase's lease and read everything the sync needs up front.
+  const lease = new Lease(ctx.db, `sub:${tokenHash}`, now, () => shareTokenWrites(ctx));
+  const first = [lease.acquire(), subscriptionStmt(ctx.db, tokenHash), readSharedToken(ctx.db)];
+  if (deviceHash) first.push(trialStmt(ctx.db, deviceHash));
+  const [locked, row, token, trial] = await ctx.db.batch(first);
+  if (!lease.took(locked)) throw new ApiError("busy", "A request for this purchase is already in progress.");
   try {
-    return await sync(ctx, { purchaseToken, tokenHash, productId, keyHash, androidId, now });
+    await adoptSharedToken(ctx, firstRow<{ value: string }>(token)?.value);
+    return await sync(ctx, lease, {
+      purchaseToken,
+      tokenHash,
+      productId,
+      keyHash,
+      row: firstRow<SubscriptionRow>(row),
+      deviceHash,
+      trial: firstRow<TrialRow>(trial),
+      now,
+    });
   } finally {
-    await release();
+    await lease.end();
   }
 }
 
@@ -143,7 +160,11 @@ interface SyncArgs {
   tokenHash: string;
   productId?: string;
   keyHash?: string;
-  androidId?: string;
+  /** This purchase's row, read under the lease. */
+  row: SubscriptionRow | null;
+  deviceHash?: string;
+  /** The trial of the device in `androidId`, if any. */
+  trial: TrialRow | null;
   now: number;
 }
 
@@ -156,13 +177,13 @@ interface KeyPlan {
   retire: string[];
 }
 
-async function sync(ctx: Ctx, a: SyncArgs): Promise<Response> {
+async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
   const lookup = await ctx.google.getSubscription(a.purchaseToken);
   if (lookup.kind === "invalid") throw invalid("token_unknown", "Google does not recognize this purchase token.");
-  const row = await getSubscription(ctx.db, a.tokenHash);
+  const row = a.row;
   if (row?.replaced_by) throw notActive("replaced");
   if (lookup.kind === "gone") {
-    if (row) await lapse(ctx, row, null, "expired", a.now);
+    if (row) await lapse(ctx, lease, row, null, "expired", a.now);
     throw notActive("expired");
   }
 
@@ -175,7 +196,7 @@ async function sync(ctx: Ctx, a: SyncArgs): Promise<Response> {
 
   const { state, entitled } = assess(p, splitOrders(row?.voided_orders), a.now);
   if (!entitled) {
-    if (row) await lapse(ctx, row, p, state, a.now);
+    if (row) await lapse(ctx, lease, row, p, state, a.now);
     log("subscription_not_active", { state });
     throw notActive(state);
   }
@@ -214,29 +235,26 @@ async function sync(ctx: Ctx, a: SyncArgs): Promise<Response> {
   }
 
   // A trial on this device ends when it subscribes (no carry-over).
-  if (a.androidId) {
-    const deviceHash = await keyedHash(ctx.keys, "device", a.androidId);
-    const trial = await getTrial(ctx.db, deviceHash);
-    if (trial && !trial.converted_at) {
-      let deleted = true;
-      if (trial.key_hash) {
-        try {
-          await ctx.openrouter.deleteKey(trial.key_hash);
-        } catch (err) {
-          deleted = false; // the job deletes it when it expires
-          log("trial_key_delete_failed", { error: String(err) });
-        }
+  const trial = a.trial;
+  if (a.deviceHash && trial && !trial.converted_at) {
+    let deleted = true;
+    if (trial.key_hash) {
+      try {
+        await ctx.openrouter.deleteKey(trial.key_hash);
+      } catch (err) {
+        deleted = false; // the job deletes it when it expires
+        log("trial_key_delete_failed", { error: String(err) });
       }
-      statements.push(
-        ctx.db
-          .prepare(
-            deleted
-              ? "UPDATE trials SET converted_at = ?2, key_hash = NULL, ended_at = COALESCE(ended_at, ?2) WHERE device_hash = ?1"
-              : "UPDATE trials SET converted_at = ?2 WHERE device_hash = ?1",
-          )
-          .bind(deviceHash, a.now),
-      );
     }
+    statements.push(
+      ctx.db
+        .prepare(
+          deleted
+            ? "UPDATE trials SET converted_at = ?2, key_hash = NULL, ended_at = COALESCE(ended_at, ?2) WHERE device_hash = ?1"
+            : "UPDATE trials SET converted_at = ?2 WHERE device_hash = ?1",
+        )
+        .bind(a.deviceHash, a.now),
+    );
   }
 
   // Acknowledge only after the key exists. If Google refuses now, the job retries within the hour.
@@ -272,7 +290,7 @@ async function sync(ctx: Ctx, a: SyncArgs): Promise<Response> {
       checked_at: a.now,
     }),
   );
-  await ctx.db.batch(statements);
+  await lease.finish(statements);
   for (const hash of plan.retire) await ctx.openrouter.deleteQuietly(hash);
 
   log("subscription_synced", { product: p.productId, state, newKey: Boolean(plan.key), renewed: newOrder, key: plan.hash.slice(0, 12) });
@@ -321,10 +339,10 @@ async function rotateKey(ctx: Ctx, oldHash: string, newOrder: boolean, allowance
 }
 
 /** The purchase gives no AI now: disable its key and record the state. */
-async function lapse(ctx: Ctx, row: SubscriptionRow, p: Purchase | null, state: SubState, now: number): Promise<void> {
+async function lapse(ctx: Ctx, lease: Lease, row: SubscriptionRow, p: Purchase | null, state: SubState, now: number): Promise<void> {
   if (row.key_hash && !row.key_disabled) await ctx.openrouter.updateKey(row.key_hash, { disabled: true });
   const expiry = p?.expiryTime || row.expiry_time;
-  await putSubscription(ctx.db, {
+  const write = putSubscription(ctx.db, {
     ...row,
     state,
     expiry_time: expiry,
@@ -333,7 +351,8 @@ async function lapse(ctx: Ctx, row: SubscriptionRow, p: Purchase | null, state: 
     next_check_at: nextCheckAt(state, expiry, now, false),
     updated_at: now,
     checked_at: now,
-  }).run();
+  });
+  await lease.finish([write]);
   log("subscription_lapsed", { state, key: row.key_hash?.slice(0, 12) ?? null });
 }
 

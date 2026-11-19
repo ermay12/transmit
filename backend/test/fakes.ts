@@ -74,13 +74,33 @@ export class FakeWorld {
   failAcks = false;
   /** Shared like a warm isolate's cache; reset it to simulate a cold start. */
   tokenCache = {};
+  /** Calls per client the fake rate-limit bindings allow (no time window; a test is one window). */
+  rateLimits: Record<"TRIAL_RATE_LIMIT" | "SUBSCRIPTION_RATE_LIMIT", number> = { TRIAL_RATE_LIMIT: 1000, SUBSCRIPTION_RATE_LIMIT: 1000 };
+  rateCounts = new Map<string, number>();
   private seq = 0;
   private publicKey?: CryptoKey;
 
   async env(overrides: Partial<Env> = {}): Promise<Env> {
     const sa = await fakeServiceAccount();
     this.publicKey = sa.publicKey;
-    return { ...(env as unknown as Env), GOOGLE_SERVICE_ACCOUNT_JSON: sa.json, ...overrides };
+    return {
+      ...(env as unknown as Env),
+      GOOGLE_SERVICE_ACCOUNT_JSON: sa.json,
+      TRIAL_RATE_LIMIT: this.limiter("TRIAL_RATE_LIMIT"),
+      SUBSCRIPTION_RATE_LIMIT: this.limiter("SUBSCRIPTION_RATE_LIMIT"),
+      ...overrides,
+    };
+  }
+
+  private limiter(name: keyof FakeWorld["rateLimits"]): RateLimit {
+    return {
+      limit: async ({ key }) => {
+        const k = `${name}|${key}`;
+        const n = (this.rateCounts.get(k) ?? 0) + 1;
+        this.rateCounts.set(k, n);
+        return { success: n <= this.rateLimits[name] };
+      },
+    };
   }
 
   deps(): Deps {
@@ -283,13 +303,13 @@ export async function call(
   world: FakeWorld,
   path: string,
   body?: unknown,
-  opts: { method?: string; env?: Partial<Env>; raw?: string } = {},
+  opts: { method?: string; env?: Partial<Env>; raw?: string; ip?: string } = {},
 ): Promise<{ status: number; body: Record<string, unknown>; headers: Headers }> {
   const { handleRequest } = await import("../src/index");
   const method = opts.method ?? (body === undefined && opts.raw === undefined ? "GET" : "POST");
   const request = new Request(`https://transmit.test${path}`, {
     method,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "cf-connecting-ip": opts.ip ?? "192.0.2.10" },
     body: method === "GET" ? undefined : (opts.raw ?? JSON.stringify(body)),
   });
   const response = await handleRequest(request, await world.env(opts.env), world.deps());

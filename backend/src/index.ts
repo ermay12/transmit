@@ -5,6 +5,7 @@ import { type Env, loadConfig } from "./config";
 import { makeCtx, defaultDeps, type Deps } from "./context";
 import { Budget, runScheduled, type CronReport } from "./cron";
 import { ApiError, errorResponse, json, log } from "./http";
+import { checkPerMinute, clientKey } from "./ratelimit";
 import { handleSubscription } from "./subscription";
 import { handleTrial } from "./trial";
 
@@ -30,8 +31,19 @@ type Handler = (request: Request, env: Env, deps: Deps) => Promise<Response>;
 
 const ROUTES: Record<string, Record<string, Handler>> = {
   "/v1/health": { GET: async () => json({ ok: true }) },
-  "/v1/trial": { POST: async (req, env, deps) => handleTrial(await makeCtx(env, deps), req) },
-  "/v1/subscription": { POST: async (req, env, deps) => handleSubscription(await makeCtx(env, deps), req) },
+  "/v1/trial": {
+    POST: async (req, env, deps) => {
+      const client = clientKey(req);
+      await checkPerMinute(env.TRIAL_RATE_LIMIT, "/v1/trial", client);
+      return handleTrial(await makeCtx(env, deps), req, client);
+    },
+  },
+  "/v1/subscription": {
+    POST: async (req, env, deps) => {
+      await checkPerMinute(env.SUBSCRIPTION_RATE_LIMIT, "/v1/subscription", clientKey(req));
+      return handleSubscription(await makeCtx(env, deps), req);
+    },
+  },
 };
 
 export async function handleScheduled(env: Env, deps: Deps): Promise<CronReport> {

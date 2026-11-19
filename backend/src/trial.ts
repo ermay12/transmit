@@ -2,10 +2,12 @@
 
 import type { Ctx } from "./context";
 import { keyedHash, trialRequestHash } from "./crypto";
-import { acquireLock, getTrial, utcDay } from "./db";
+import { firstRow, Lease, secondsToNextUtcMidnight, trialStmt, type TrialRow, utcDay } from "./db";
 import type { IntegrityPayload } from "./google";
 import { ApiError, json, log, readJson, requiredString } from "./http";
 import { isoSeconds, money } from "./openrouter";
+import { rateLimited } from "./ratelimit";
+import { adoptSharedToken, readSharedToken, shareTokenWrites } from "./shared-token";
 
 const ANDROID_ID = /^[A-Za-z0-9]+$/;
 const INTEGRITY_TOKEN = /^[A-Za-z0-9._\-+/=]+$/;
@@ -15,23 +17,43 @@ const FUTURE_SKEW_MS = 5 * 60_000;
 const MIN_REMAINING_MS = 60_000;
 const MIN_REMAINING_USD = 0.001;
 
-export async function handleTrial(ctx: Ctx, request: Request): Promise<Response> {
+export async function handleTrial(ctx: Ctx, request: Request, client: string | null): Promise<Response> {
   const body = await readJson(request);
   const androidId = requiredString(body, "androidId", ANDROID_ID, 64);
   const integrityToken = requiredString(body, "integrityToken", INTEGRITY_TOKEN, 20_000);
   const now = ctx.now();
 
-  await verifyIntegrity(ctx, integrityToken, await trialRequestHash(androidId), now);
-
+  // One D1 round trip: take the device's lease, read its trial and the shared Google token,
+  // and count this call against the client's daily limit.
   const deviceHash = await keyedHash(ctx.keys, "device", androidId);
-  const release = await acquireLock(ctx.db, `trial:${deviceHash}`, now);
-  if (!release) throw new ApiError("busy", "A trial request for this device is already in progress.");
+  const lease = new Lease(ctx.db, `trial:${deviceHash}`, now, () => shareTokenWrites(ctx));
+  const first = [lease.acquire(), trialStmt(ctx.db, deviceHash), readSharedToken(ctx.db)];
+  if (client) {
+    first.push(
+      ctx.db
+        .prepare(
+          `INSERT INTO trial_calls (day, ip_hash, calls) VALUES (?1, ?2, 1)
+           ON CONFLICT(day, ip_hash) DO UPDATE SET calls = calls + 1 RETURNING calls`,
+        )
+        .bind(utcDay(now), await keyedHash(ctx.keys, "ip", client)),
+    );
+  }
+  const [locked, trial, token, calls] = await ctx.db.batch(first);
+  const held = lease.took(locked);
   try {
-    const existing = await getTrial(ctx.db, deviceHash);
-    if (existing) return await restoreTrial(ctx, existing.device_hash, existing, now);
-    return await startTrial(ctx, deviceHash, now);
+    if ((firstRow<{ calls: number }>(calls)?.calls ?? 0) > ctx.config.trialCallsPerIpPerDay) {
+      log("rate_limited", { path: "/v1/trial", window: "day" });
+      throw rateLimited(secondsToNextUtcMidnight(now));
+    }
+    // Checked before the Integrity call, so a concurrent duplicate doesn't spend one.
+    if (!held) throw new ApiError("busy", "A trial request for this device is already in progress.");
+    await adoptSharedToken(ctx, firstRow<{ value: string }>(token)?.value);
+    await verifyIntegrity(ctx, integrityToken, await trialRequestHash(androidId), now);
+    const existing = firstRow<TrialRow>(trial);
+    if (existing) return await restoreTrial(ctx, lease, deviceHash, existing, now);
+    return await startTrial(ctx, lease, deviceHash, now);
   } finally {
-    await release();
+    await lease.end();
   }
 }
 
@@ -65,13 +87,7 @@ async function verifyIntegrity(ctx: Ctx, token: string, expectedHash: string, no
   }
 }
 
-function secondsToNextUtcMidnight(now: number): number {
-  const d = new Date(now);
-  const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((next - now) / 1000));
-}
-
-async function startTrial(ctx: Ctx, deviceHash: string, now: number): Promise<Response> {
+async function startTrial(ctx: Ctx, lease: Lease, deviceHash: string, now: number): Promise<Response> {
   const { trialAllowanceUsd: allowance, trialDailyBudgetUsd: budget } = ctx.config;
   const day = utcDay(now);
 
@@ -110,10 +126,11 @@ async function startTrial(ctx: Ctx, deviceHash: string, now: number): Promise<Re
       .run();
     throw err;
   }
-  await ctx.db
-    .prepare("INSERT INTO trials (device_hash, created_at, expires_at, allowance_usd, key_hash) VALUES (?1, ?2, ?3, ?4, ?5)")
-    .bind(deviceHash, now, expiresAt, allowance, created.hash)
-    .run();
+  await lease.finish([
+    ctx.db
+      .prepare("INSERT INTO trials (device_hash, created_at, expires_at, allowance_usd, key_hash) VALUES (?1, ?2, ?3, ?4, ?5)")
+      .bind(deviceHash, now, expiresAt, allowance, created.hash),
+  ]);
   log("trial_started", { key: created.hash.slice(0, 12) });
   return json({
     kind: "trial",
@@ -127,12 +144,7 @@ async function startTrial(ctx: Ctx, deviceHash: string, now: number): Promise<Re
 }
 
 /** The device already had a trial. If it's still running, re-issue its key (reinstall); otherwise refuse. */
-async function restoreTrial(
-  ctx: Ctx,
-  deviceHash: string,
-  trial: { key_hash: string | null; expires_at: number; allowance_usd: number; converted_at: number | null },
-  now: number,
-): Promise<Response> {
+async function restoreTrial(ctx: Ctx, lease: Lease, deviceHash: string, trial: TrialRow, now: number): Promise<Response> {
   const used = () => new ApiError("trial_already_used", "This device has already used its free trial.");
   if (!trial.key_hash || trial.converted_at || trial.expires_at - now < MIN_REMAINING_MS) throw used();
   // Disable the old key first: that stops it at once and tells us what's left on it.
@@ -145,7 +157,7 @@ async function restoreTrial(
     limit: remaining,
     expiresAt: trial.expires_at,
   });
-  await ctx.db.prepare("UPDATE trials SET key_hash = ?2 WHERE device_hash = ?1").bind(deviceHash, created.hash).run();
+  await lease.finish([ctx.db.prepare("UPDATE trials SET key_hash = ?2 WHERE device_hash = ?1").bind(deviceHash, created.hash)]);
   await ctx.openrouter.deleteQuietly(trial.key_hash);
   log("trial_restored", { key: created.hash.slice(0, 12) });
   return json({

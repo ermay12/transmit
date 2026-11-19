@@ -46,7 +46,8 @@ listed below. `message` is English text for logs, not for users.
 | `trial_capacity_reached` | 429 | Today's trial quota is used up; `retryAfterSeconds` = seconds to the next UTC midnight (also in the `Retry-After` header) | "Free trials are full today, try again tomorrow"; offer Subscribe or BYOK |
 | `purchase_invalid` | 400 | Google doesn't know the token, or it's not a Transmit subscription; `reason` below | Don't retry with that token |
 | `purchase_not_active` | 402 | The purchase exists but gives no AI right now; `state` below | `pending`: wait for Play's purchase update. `on_hold`, `paused`: "Fix your payment in Google Play" + Manage subscription. `expired`, `canceled_pending`, `refunded`: ENDED. `replaced`: call again with the newer purchase token from `queryPurchasesAsync` |
-| `busy` | 409 | Another call for the same device or purchase is in progress | Retry after 2–5 s |
+| `busy` | 409 | Another call for the same device or purchase is in progress | Retry after 2–5 s (for `/v1/trial`, see [Concurrent calls](#concurrent-calls)) |
+| `rate_limited` | 429 | Too many calls from this network; `retryAfterSeconds` = seconds to wait (also in the `Retry-After` header). See [Rate limits](#rate-limits) | Wait `retryAfterSeconds`, then retry once; don't retry in a loop. For a trial: "Too many attempts from this network, try again later"; offer Subscribe or BYOK |
 | `upstream_error` | 502 | Google or OpenRouter failed; `service` is `google` or `openrouter` | Retry with backoff; nothing was charged or lost |
 | `not_found` | 404 | Unknown path | |
 | `method_not_allowed` | 405 | Wrong HTTP method for the path | Bug in the app |
@@ -63,6 +64,10 @@ listed below. `message` is English text for logs, not for users.
 | `app_not_recognized` | `appRecognitionVerdict` isn't `PLAY_RECOGNIZED` (sideloaded, GitHub APK, debug build, modified app) |
 | `unlicensed` | `appLicensingVerdict` isn't `LICENSED` (not installed from Play, or no Play account on the device) |
 | `device_integrity` | `deviceRecognitionVerdict` lacks `MEETS_DEVICE_INTEGRITY` (emulator, rooted, unlocked bootloader) |
+
+On `token_expired`, request a fresh Integrity token and call `/v1/trial` once
+more. If the retry gets `token_expired` again, the phone's clock is probably
+wrong: handle it like the other `integrity_failed` reasons.
 
 `purchase_invalid` reasons: `token_unknown` (Google rejects the token),
 `unknown_product` (not `transmit_monthly` or `transmit_plus`),
@@ -137,7 +142,30 @@ Response `200`:
   subscribed, the answer is `trial_already_used`.
 
 Errors: `bad_request`, `integrity_failed`, `trial_already_used`,
-`trial_capacity_reached`, `busy`, `upstream_error`.
+`trial_capacity_reached`, `busy`, `rate_limited`, `upstream_error`.
+
+### Concurrent calls
+
+The Worker handles one `/v1/trial` call per `androidId` at a time. While one is
+in progress, another call with the same `androidId` gets, right away:
+
+```
+HTTP/1.1 409 Conflict
+Content-Type: application/json; charset=utf-8
+
+{ "error": "busy", "message": "A trial request for this device is already in progress." }
+```
+
+- No other fields and no `Retry-After` header.
+- `busy` is checked before the Integrity token, so the second call uses no
+  Play Integrity check. It changes nothing: the first call finishes normally.
+  Only `bad_request` and `rate_limited` come before `busy`.
+- A call holds the device for at most 30 s, even if it dies halfway.
+- Wait 2–5 s and retry with a fresh Integrity token. The retry gets this
+  device's normal answer. If the first call started the trial, the retry gets
+  `200` with `restored: true` and a **new** key, and the first call's key is
+  deleted. So keep only the key from the latest `200`. Better still, never send
+  two `/v1/trial` calls at once.
 
 ## POST /v1/subscription
 
@@ -210,7 +238,7 @@ Response `200`:
   "Renews <date>" and "Resets <date>". If not, the subscription ends then.
 
 Errors: `bad_request`, `purchase_invalid`, `purchase_not_active`, `busy`,
-`upstream_error`. On `purchase_not_active` the Worker has also disabled the
+`rate_limited`, `upstream_error`. On `purchase_not_active` the Worker has also disabled the
 purchase's key, if it had one; it is re-enabled automatically if the
 subscription recovers (for example `on_hold` → paid).
 
@@ -219,6 +247,23 @@ subscription recovers (for example `on_hold` → paid).
 `canceled_pending` (a pending purchase was canceled), `refunded` (the current
 order was refunded or charged back), `replaced` (this token was superseded by an
 upgrade; use the newer token).
+
+## Rate limits
+
+The Worker counts calls per network: an IPv4 address, or an IPv6 `/64` (one
+phone or one home network). Every limit answers `rate_limited` (429) with
+`retryAfterSeconds` and a `Retry-After` header. A rate-limited call does
+nothing and uses no Google check.
+
+| Endpoint | Limit | `retryAfterSeconds` |
+| --- | --- | --- |
+| `POST /v1/trial` | 10 calls per minute | `60` |
+| `POST /v1/trial` | 30 calls per UTC day (well-formed calls only) | seconds to the next UTC midnight |
+| `POST /v1/subscription` | 30 calls per minute | `60` |
+
+The per-minute counts are kept per Cloudflare location and are approximate.
+The app's normal flows stay far below these limits, even with retries and a
+few phones behind one address. Hitting one usually means a retry loop.
 
 ## Allowance
 
@@ -258,7 +303,10 @@ OpenRouter errors with the managed key:
 2. `POST /v1/trial`. On `200`, save `key`, `keyHash`, `allowanceUsd`,
    `expiresAt`, and set the mode to TRIAL. Schedule the day-6 notification.
 3. On `integrity_failed`, `trial_already_used` or `trial_capacity_reached`, show
-   the matching plain-language reason and offer Subscribe or BYOK.
+   the matching plain-language reason and offer Subscribe or BYOK. On
+   `integrity_failed` with `reason: "token_expired"`, first retry once with a
+   fresh token. On `busy`, see [Concurrent calls](#concurrent-calls); on
+   `rate_limited`, wait `retryAfterSeconds`.
 
 **Trial runs out** (401 expired, 403 key limit, or the local tally reaches the
 allowance): set ENDED and show the paywall (a notification if in the
