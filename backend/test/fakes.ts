@@ -72,6 +72,8 @@ export class FakeWorld {
   /** Make the next N OpenRouter key creations fail with 500. */
   failCreates = 0;
   failAcks = false;
+  /** Purchase token -> the only productId Google accepts when acknowledging it (default: any of its items). */
+  ackOnly = new Map<string, string>();
   /** Shared like a warm isolate's cache; reset it to simulate a cold start. */
   tokenCache = {};
   /** Calls per client the fake rate-limit bindings allow (no time window; a test is one window). */
@@ -173,7 +175,9 @@ export class FakeWorld {
     if (ack && method === "POST") {
       if (this.failAcks) return res(503, { error: { message: "backend error" } });
       const p = this.purchases.get(ack[2]!);
-      if (!p || p.lineItems?.[0]?.productId !== ack[1]) return res(400, { error: { message: "Invalid Value" } });
+      const only = this.ackOnly.get(ack[2]!);
+      const ok = only ? only === ack[1] : p?.lineItems?.some((it) => it.productId === ack[1]);
+      if (!p || !ok) return res(400, { error: { message: "Invalid Value" } });
       p.acknowledgementState = "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
       return new Response(null, { status: 204 });
     }
@@ -253,10 +257,14 @@ export class FakeWorld {
       orderId?: string;
       acknowledged?: boolean;
       linked?: string;
+      /** itemReplacement.replacementMode of a purchase with `linked` (default CHARGE_FULL_PRICE, as the app's upgrades); null: none. */
+      replacementMode?: string | null;
       autoRenew?: boolean;
       basePlanId?: string;
     } = {},
   ): SubscriptionPurchaseV2 {
+    const mode = o.linked ? (o.replacementMode === undefined ? "CHARGE_FULL_PRICE" : o.replacementMode) : null;
+    const old = o.linked ? this.purchases.get(o.linked)?.lineItems?.[0] : undefined;
     const p: SubscriptionPurchaseV2 = {
       lineItems: [
         {
@@ -265,6 +273,7 @@ export class FakeWorld {
           latestSuccessfulOrderId: o.orderId ?? "GPA.0000-0000-0000-00001",
           autoRenewingPlan: { autoRenewEnabled: o.autoRenew ?? true },
           offerDetails: { basePlanId: o.basePlanId ?? "monthly" },
+          ...(mode ? { itemReplacement: { productId: old?.productId ?? "transmit_monthly", basePlanId: "monthly", replacementMode: mode } } : {}),
         },
       ],
       subscriptionState: o.state ?? "SUBSCRIPTION_STATE_ACTIVE",
@@ -273,6 +282,63 @@ export class FakeWorld {
     };
     this.purchases.set(token, p);
     return p;
+  }
+
+  /**
+   * The user switches `oldToken` to `productId` with ReplacementMode.DEFERRED, as Google documents it
+   * (developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement and the
+   * play-billing-subs-replacement codelab): a new token right away, with two line items — the new
+   * plan first, with no expiryTime and no order yet, and the old plan, still current, with renewal off,
+   * the old period end and a deferredItemReplacement. The old token is expired at once, replaced.
+   */
+  deferredSwitch(oldToken: string, newToken: string, o: { productId?: string; orderId?: string } = {}): SubscriptionPurchaseV2 {
+    const prev = this.purchases.get(oldToken)!;
+    const cur = prev.lineItems![0]!;
+    const productId = o.productId ?? "transmit_monthly";
+    const orderId = o.orderId ?? "GPA.2222-2222-2222-22222";
+    const p: SubscriptionPurchaseV2 = {
+      startTime: new Date(this.now).toISOString(),
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      latestOrderId: orderId,
+      linkedPurchaseToken: oldToken,
+      acknowledgementState: "ACKNOWLEDGEMENT_STATE_PENDING",
+      lineItems: [
+        {
+          productId,
+          autoRenewingPlan: { autoRenewEnabled: true },
+          offerDetails: { basePlanId: "monthly" },
+          itemReplacement: { productId: cur.productId, basePlanId: "monthly", replacementMode: "DEFERRED" },
+        },
+        {
+          productId: cur.productId,
+          expiryTime: cur.expiryTime,
+          autoRenewingPlan: {},
+          offerDetails: { basePlanId: "monthly" },
+          deferredItemReplacement: { productId },
+          latestSuccessfulOrderId: orderId,
+        },
+      ],
+    };
+    this.purchases.set(newToken, p);
+    prev.subscriptionState = "SUBSCRIPTION_STATE_EXPIRED";
+    prev.canceledStateContext = { replacementCancellation: {} };
+    cur.expiryTime = new Date(this.now).toISOString();
+    cur.autoRenewingPlan = { autoRenewEnabled: false };
+    return p;
+  }
+
+  /** The renewal at which a DEFERRED switch takes effect: the new item starts (codelab step 4). */
+  completeDeferred(token: string, orderId: string, expiry: number): void {
+    const p = this.purchases.get(token)!;
+    const [next, old] = p.lineItems!;
+    next!.expiryTime = new Date(expiry).toISOString();
+    next!.latestSuccessfulOrderId = orderId;
+    next!.autoRenewingPlan = { autoRenewEnabled: true };
+    delete old!.deferredItemReplacement;
+    delete old!.autoRenewingPlan;
+    old!.latestSuccessfulOrderId = orderId;
+    delete p.startTime;
+    p.latestOrderId = orderId;
   }
 
   /** Google renews a subscription: new order, new expiry. */

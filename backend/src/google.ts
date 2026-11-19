@@ -27,17 +27,31 @@ export const isolateTokenCache: TokenCache = {};
 
 export interface PurchaseLineItem {
   productId?: string;
+  /** Not set on the item a DEFERRED change switches to, until it starts. */
   expiryTime?: string;
+  /** Not set on an item the user doesn't own yet (the one a DEFERRED change switches to). */
   latestSuccessfulOrderId?: string;
   autoRenewingPlan?: { autoRenewEnabled?: boolean };
   offerDetails?: { basePlanId?: string; offerId?: string };
+  /** On the current item while a DEFERRED change is pending: the product that replaces it at expiryTime. */
+  deferredItemReplacement?: { productId?: string };
+  /** On an item that replaced one of an older purchase (for 60 days). */
+  itemReplacement?: { productId?: string; basePlanId?: string; offerId?: string; replacementMode?: string };
 }
 
 export interface SubscriptionPurchaseV2 {
   lineItems?: PurchaseLineItem[];
+  startTime?: string;
   subscriptionState?: string;
   linkedPurchaseToken?: string;
   acknowledgementState?: string;
+  /** Why a CANCELED or EXPIRED subscription ended; exactly one reason is set. */
+  canceledStateContext?: {
+    userInitiatedCancellation?: Record<string, unknown>;
+    systemInitiatedCancellation?: Record<string, unknown>;
+    developerInitiatedCancellation?: Record<string, unknown>;
+    replacementCancellation?: Record<string, unknown>;
+  };
   testPurchase?: Record<string, never>;
   /** Deprecated top-level order ID, used only if the line item lacks one. */
   latestOrderId?: string;

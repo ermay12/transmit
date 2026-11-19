@@ -12,7 +12,7 @@ OpenRouter directly with that key. The contract with the app is in
 | Path | What it is |
 | --- | --- |
 | `src/trial.ts` | `POST /v1/trial`: Play Integrity check, one trial per ANDROID_ID, daily cap |
-| `src/subscription.ts` | `POST /v1/subscription` and the per-purchase re-check |
+| `src/subscription.ts` | `POST /v1/subscription` and the per-purchase re-check, including plan changes (upgrade, DEFERRED switch to Transmit) |
 | `src/cron.ts` | Job every 10 minutes: refunds, renewals and lapses, expired trial keys |
 | `src/google.ts`, `src/openrouter.ts` | API clients |
 | `src/shared-token.ts` | Shares the Google access token between isolates through D1 |
@@ -133,7 +133,8 @@ codes, and the Google calls work in production). The OpenRouter client was check
 live with one throwaway key, since deleted. The hourly job ran cleanly from the
 first deploy on (`cron_done`, no errors); it now runs every 10 minutes with a
 smaller budget, for CPU. Rate limits and the shared Google token went live on
-2026-11-18. Not done yet:
+2026-11-18. Switching Plus → Transmit (ReplacementMode.DEFERRED) went live on
+2026-11-18 with migration `0003` (see API.md, "Switch to Transmit"). Not done yet:
 
 - **No real trial or purchase tested end to end.** That needs a Play-installed
   build (internal testing track) on a Pixel, and a license-tester purchase
@@ -145,3 +146,10 @@ smaller budget, for CPU. Rate limits and the shared Google token went live on
   the Play Integrity quota (Google then returns errors, so trials fail with
   `upstream_error`). If that happens, add sign-in or ask Google for more quota.
 - **A workspace-scoped OpenRouter management key** has not replaced the account-wide one yet.
+- **The DEFERRED switch is built from Google's documented shapes, not a real
+  purchase.** On a device (test renewals every 5 minutes, so about 10 minutes
+  end to end), confirm: the new token's two line items and that its
+  acknowledgement works with the old product ID (the Worker falls back to the
+  other); that the old token shows `canceledStateContext.replacementCancellation`;
+  that the response shows `pendingProductId` and keeps $9.00 until the renewal,
+  then usage + $4.50; and which replacement mode Play accepts for "Keep Plus".

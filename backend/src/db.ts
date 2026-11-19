@@ -29,6 +29,9 @@ export interface SubscriptionRow {
   acknowledged: number;
   replaced_by: string | null;
   next_check_at: number | null;
+  /** Product a DEFERRED plan change switches to at expiry_time (null: none pending). */
+  pending_product_id: string | null;
+  pending_base_plan_id: string | null;
   created_at: number;
   updated_at: number;
   checked_at: number;
@@ -60,7 +63,7 @@ export function putSubscription(db: D1Database, row: SubscriptionRow, expectedUp
   const cols = [
     "token_hash", "token_enc", "product_id", "base_plan_id", "state", "expiry_time", "auto_renewing", "order_id",
     "allowance_usd", "key_hash", "key_disabled", "limit_usd", "voided_orders", "acknowledged", "replaced_by",
-    "next_check_at", "created_at", "updated_at", "checked_at",
+    "next_check_at", "created_at", "updated_at", "checked_at", "pending_product_id", "pending_base_plan_id",
   ] as const;
   const values = cols.map((c) => row[c]);
   if (expectedUpdatedAt !== undefined) {
