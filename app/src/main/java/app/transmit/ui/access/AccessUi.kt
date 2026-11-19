@@ -22,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -187,7 +187,10 @@ fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modi
     }
 }
 
-/** Why the free week couldn't start, and the ways forward. */
+/**
+ * Why the free week couldn't start, and the ways forward. It's information, not an error (nothing is wrong with the
+ * user's phone), so it's tonal, never red.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TrialFailure(
@@ -197,12 +200,12 @@ fun TrialFailure(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Spacer(Modifier.width(10.dp))
-                Text(AccessText.trialFailure(error.code), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(AccessText.trialFailure(error.code), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
