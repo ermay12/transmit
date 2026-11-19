@@ -147,6 +147,11 @@ fun SettingsScreen(
     fun show(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
+    // The plan row or card shows what's known now; a refresh updates it in place.
+    LifecycleResumeEffect(Unit) {
+        vm.shown()
+        onPauseOrDispose {}
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },

@@ -24,6 +24,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -176,6 +177,48 @@ class PlanSwitchTest {
         val failed = withTimeout(5_000) { purchases.state.first { it is PurchaseUi.Failed } } as PurchaseUi.Failed
         assertEquals(PurchaseUi.Failed(null, planChange = true), failed)
         assertEquals("Google Play couldn't make that change. Please try again later.", TestStrings.text(AccessText.purchaseProblem(failed)))
+    }
+
+    /**
+     * The device test's stale screen: the switch took effect while the app stayed open. Showing Plans refreshes with
+     * the held token and key, never taking the key (`rotate: false`), and the plan updates in place.
+     */
+    @Test
+    fun aRefreshShowsASwitchThatHasHappenedWithoutLeavingTheApp() = runBlocking {
+        play.owned = listOf(owned("switch-2", 2))
+        access.applyGrant(
+            Grant(Entitlement.Subscription(Tier.PLUS, endsAt, pendingSwitch = PlanSwitch(Tier.STANDARD, endsAt)), "sk-or-v1-plus", "sh", 9.0, 6.0, purchaseToken = "switch-2"),
+            activate = true,
+        )
+        reply(200, """{"kind":"subscription","productId":"transmit_monthly","basePlanId":"monthly","state":"active","keyHash":"sh","newKey":false,"allowanceUsd":4.5,"remainingUsd":4.5,"allowanceRenewed":true,"periodEndsAt":"2027-01-18T19:30:00Z","autoRenewing":true}""")
+        val refresh = PlanRefresher.forPlan(scope, purchases, access)
+        assertTrue(refresh.request(RefreshTrigger.PLANS_OPENED))
+
+        val a = withTimeout(5_000) { access.access.first { (it as? AiAccess.Subscribed)?.tier == Tier.STANDARD } } as AiAccess.Subscribed
+        assertNull(a.pendingSwitch)
+        val body = sent()
+        assertEquals("switch-2", body.s("purchaseToken"))
+        assertEquals("sh", body.s("keyHash"))
+        assertEquals("false", body.s("rotate"))
+        assertEquals("sk-or-v1-plus", access.managedKey())
+        // Settings right after: no second call within 30 s.
+        assertFalse(refresh.request(RefreshTrigger.SETTINGS_OPENED))
+        // After the switch Plus is a plain upgrade again.
+        play.owned = listOf(OwnedPurchase("transmit_monthly", "switch-2", purchased = true, acknowledged = true, purchaseTime = 2))
+        assertEquals(PurchasePlan.Upgrade("switch-2", "transmit_monthly"), purchases.planFor(Tier.PLUS))
+    }
+
+    /** A subscription Play has that the Worker hasn't seen (bought outside the app) starts on the next refresh. */
+    @Test
+    fun aRefreshSendsAPurchaseTheWorkerHasntSeen() = runBlocking {
+        play.owned = listOf(OwnedPurchase("transmit_monthly", "outside-3", purchased = true, acknowledged = false, purchaseTime = 3))
+        val answer = """{"kind":"subscription","productId":"transmit_monthly","basePlanId":"monthly","state":"active","keyHash":"nh","allowanceUsd":4.5,"remainingUsd":4.5,"allowanceRenewed":true,"periodEndsAt":"$ends","autoRenewing":true"""
+        reply(200, "$answer,\"newKey\":true,\"key\":\"sk-or-v1-new\"}")
+        reply(200, "$answer,\"newKey\":false}")
+        PlanRefresher.forPlan(scope, purchases, access).request(RefreshTrigger.SETTINGS_OPENED)
+        withTimeout(5_000) { access.access.first { it is AiAccess.Subscribed } }
+        assertEquals("outside-3", sent().s("purchaseToken"))
+        assertEquals("sk-or-v1-new", access.managedKey())
     }
 
     private object NoAttestation : TrialAttestation {

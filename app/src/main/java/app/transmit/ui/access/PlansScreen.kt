@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
@@ -65,6 +66,7 @@ import app.transmit.R
 import app.transmit.access.AiAccess
 import app.transmit.access.PlanOffer
 import app.transmit.access.PurchaseUi
+import app.transmit.access.RefreshTrigger
 import app.transmit.access.Tier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -128,6 +130,24 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun purchaseSeen() = c.purchases.resetState()
+
+    /** Set while Play's subscription page is open, so coming back refreshes at once. */
+    private var awayInPlay = false
+
+    /**
+     * The screen is showing (opened, or back from elsewhere): bring the plan up to date, while the last known state
+     * stays on screen. Back from Play's subscription page, where the plan may have just changed, it isn't debounced.
+     */
+    fun shown() {
+        c.planRefresh.request(if (awayInPlay) RefreshTrigger.PLAY_PAGE_RETURNED else RefreshTrigger.PLANS_OPENED)
+        awayInPlay = false
+    }
+
+    /** Play's page for this subscription: renewal, payment, resubscribing, cancelling. */
+    fun manage(context: Context, tier: Tier?) {
+        awayInPlay = true
+        openManageSubscription(context, tier)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -164,6 +184,10 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             }
             else -> Unit
         }
+    }
+    LifecycleResumeEffect(Unit) {
+        vm.shown()
+        onPauseOrDispose {}
     }
     var confirmSwitch by rememberSaveable { mutableStateOf(false) }
     val subscribed = access as? AiAccess.Subscribed
@@ -314,7 +338,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 SmallLink(stringResource(if (restoring) R.string.plan_restoring else R.string.plan_restore), enabled = !restoring && !busy) { vm.restore(::show) }
                 if (owned != null) {
                     Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SmallLink(stringResource(R.string.plan_manage)) { openManageSubscription(context, owned) }
+                    SmallLink(stringResource(R.string.plan_manage)) { vm.manage(context, owned) }
                 }
             }
             // Beside Manage subscription, where people go to cancel: a calm alternative, never a hurdle.

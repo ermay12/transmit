@@ -36,6 +36,7 @@ class PurchasesTest {
     private val backend = DeliveryBackend()
     private val store = UpdatesStore()
     private var retriesScheduled = 0
+    private val flowsReturned = java.util.concurrent.atomic.AtomicInteger()
     private lateinit var access: AccessManager
     private lateinit var queue: PurchaseQueue
     private lateinit var purchases: Purchases
@@ -48,7 +49,7 @@ class PurchasesTest {
             vault, backend, { AllowanceCheck.Unavailable }, { kotlinx.coroutines.flow.flowOf(0.0) }, scope,
         )
         queue = PurchaseQueue(vault)
-        purchases = Purchases(store, access, queue, scope) { retriesScheduled++ }
+        purchases = Purchases(store, access, queue, scope, onFlowReturned = { flowsReturned.incrementAndGet() }) { retriesScheduled++ }
     }
 
     @After fun tearDown() { scope.cancel() }
@@ -128,6 +129,54 @@ class PurchasesTest {
         assertEquals(1, queue.all().size)
     }
 
+    /** Every way Play's sheet can come back asks for a plan refresh, once what it returned has been handled. */
+    @Test
+    fun everyPurchaseFlowAsksForARefreshWhateverItsOutcome() = runBlocking {
+        suspend fun returned(n: Int) = withTimeout(5_000) { while (flowsReturned.get() < n) kotlinx.coroutines.delay(10) }
+
+        // Bought: only once the Worker has answered, so the refresh sees the new plan.
+        backend.results["t1"] = ArrayDeque(listOf(AccessResult.Granted(grant("t1"))))
+        emit(PurchaseUpdate.Purchases(listOf(bought("t1"))))
+        returned(1)
+        assertEquals(PurchaseUi.Done(Tier.STANDARD), purchases.state.value)
+
+        emit(PurchaseUpdate.Canceled)
+        returned(2)
+        // Refused by Play (the device test's Keep Plus): the plan may still have changed.
+        emit(PurchaseUpdate.Failed(5, "Requested replacement mode is not supported for this request"))
+        returned(3)
+        assertTrue(purchases.state.value is PurchaseUi.Failed)
+        emit(PurchaseUpdate.AlreadyOwned)
+        returned(4)
+        emit(PurchaseUpdate.Purchases(listOf(OwnedPurchase("transmit_monthly", "p", purchased = false, acknowledged = false))))
+        returned(5)
+
+        // The sheet didn't open: nothing to buy may mean the app's view is stale.
+        store.launchResult = LaunchResult.UNAVAILABLE
+        assertEquals(LaunchResult.UNAVAILABLE, purchases.buy(Activity(), Tier.PLUS))
+        assertEquals(6, flowsReturned.get())
+    }
+
+    /** A refresh sends what Play has that isn't queued yet, and leaves a token that just failed to its retry job. */
+    @Test
+    fun aRefreshSendsOnlyPurchasesNotAlreadyWaiting() = runBlocking {
+        val offline = AccessResult.Failed(AccessError(AccessErrorCode.NETWORK, retryable = true))
+        backend.results["waiting"] = ArrayDeque(listOf(offline))
+        queue.add(PlayPurchase("transmit_monthly", "waiting"))
+        purchases.deliver()
+        assertEquals(listOf("waiting"), backend.sent)
+
+        store.owned = listOf(bought("waiting"), bought("outside", product = "transmit_plus"), bought("done", acknowledged = true))
+        backend.results["outside"] = ArrayDeque(listOf(AccessResult.Granted(grant("outside"))))
+        assertNull(purchases.syncNew())
+        assertEquals(listOf("waiting", "outside"), backend.sent)
+        assertEquals(listOf("waiting"), queue.all().map { it.purchaseToken })
+        // The Worker acknowledged it; nothing new now, so no Worker call at all.
+        store.owned = listOf(bought("waiting"), bought("outside", product = "transmit_plus", acknowledged = true))
+        assertNull(purchases.syncNew())
+        assertEquals(2, backend.sent.size)
+    }
+
     @Test
     fun theQueueSurvivesARestart() {
         queue.add(PlayPurchase("transmit_plus", "a"))
@@ -165,8 +214,9 @@ class PurchasesTest {
         override val available = true
         override val updates = MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = 4)
         var owned: List<OwnedPurchase> = emptyList()
+        var launchResult = LaunchResult.LAUNCHED
         override suspend fun offers(): Map<Tier, PlanOffer>? = null
         override suspend fun purchases() = owned
-        override suspend fun launch(activity: Activity, tier: Tier, plan: PurchasePlan) = LaunchResult.LAUNCHED
+        override suspend fun launch(activity: Activity, tier: Tier, plan: PurchasePlan) = launchResult
     }
 }

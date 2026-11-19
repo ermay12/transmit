@@ -3,6 +3,7 @@ package app.transmit.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
+import app.transmit.access.RefreshTrigger
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.TrialStarter
 import app.transmit.ai.AiException
@@ -85,6 +86,9 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             onResult(AccessText.restoreResult(error, c.access.current()).resolve(c.context))
         }
     }
+
+    /** Settings is showing: bring the plan up to date (at most every 30 s), while the last known state stays. */
+    fun shown() = c.planRefresh.request(RefreshTrigger.SETTINGS_OPENED)
 
     /** Installed from Google Play: only then are the free week and subscriptions offered. */
     val canBuy get() = c.purchases.available

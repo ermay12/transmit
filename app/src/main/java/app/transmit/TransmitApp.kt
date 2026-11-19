@@ -21,8 +21,10 @@ import app.transmit.access.AccessManager
 import app.transmit.access.AccessStore
 import app.transmit.access.AccessWork
 import app.transmit.access.EndReason
+import app.transmit.access.PlanRefresher
 import app.transmit.access.PurchaseQueue
 import app.transmit.access.Purchases
+import app.transmit.access.RefreshTrigger
 import app.transmit.ai.AiService
 import app.transmit.ai.ProviderType
 import app.transmit.ai.BudgetManager
@@ -92,7 +94,15 @@ class AppContainer(val context: Context) {
         autoStart = false,
     )
     /** Play's purchase sheet, and getting every purchase's key from the Worker. */
-    val purchases = Purchases(accessServices.store, access, PurchaseQueue(secrets), scope) { AccessWork.scheduleDelivery(context) }
+    val purchases = Purchases(
+        accessServices.store, access, PurchaseQueue(secrets), scope,
+        onFlowReturned = { planRefresh.request(RefreshTrigger.PURCHASE_FLOW) },
+    ) { AccessWork.scheduleDelivery(context) }
+    /**
+     * Keeps the plan current while the app stays open: the Plans and Settings screens ask when they show, and a
+     * purchase flow asks when it returns.
+     */
+    val planRefresh: PlanRefresher = PlanRefresher.forPlan(scope, purchases, access)
     /** Play Integrity for the trial; warmed when a screen that can start it opens. */
     val trialCheck = accessServices.attestation
     val ai = AiService(settings, secrets)

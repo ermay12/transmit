@@ -83,6 +83,11 @@ class Purchases(
     private val access: AccessManager,
     private val queue: PurchaseQueue,
     private val scope: CoroutineScope,
+    /**
+     * Play's purchase sheet has closed, whatever its outcome, or it didn't open: the plan may have changed (see
+     * [PlanRefresher], [RefreshTrigger.PURCHASE_FLOW]). Called once what the sheet returned has been handled.
+     */
+    private val onFlowReturned: () -> Unit = {},
     /** Schedules a background delivery with backoff, once a network is available. */
     private val scheduleRetry: () -> Unit,
 ) {
@@ -127,6 +132,8 @@ class Purchases(
         if (result != LaunchResult.LAUNCHED) {
             launched = null
             _state.value = PurchaseUi.Idle
+            // Nothing to buy may mean the app's view is out of date (a switch that has already happened, say).
+            onFlowReturned()
         }
         return result
     }
@@ -136,6 +143,11 @@ class Purchases(
     }
 
     private suspend fun onUpdate(u: PurchaseUpdate) {
+        handle(u)
+        onFlowReturned()
+    }
+
+    private suspend fun handle(u: PurchaseUpdate) {
         when (u) {
             is PurchaseUpdate.Purchases -> {
                 val bought = u.purchases.filter { it.purchased && it.tier != null }
@@ -183,21 +195,38 @@ class Purchases(
 
     /** On launch and daily: purchases Play hasn't seen acknowledged yet are queued again, then the queue is sent. */
     suspend fun sync(): AccessError? {
-        store.purchases()?.filter { it.purchased && it.tier != null && !it.acknowledged }
-            ?.forEach { queue.add(PlayPurchase(it.productId, it.purchaseToken)) }
+        queueUnacknowledged()
         return deliver()
     }
 
     /**
-     * Sends every queued token. Returns the last error, if one is still waiting to be retried (then a background
-     * retry is scheduled).
+     * Play's side of a plan refresh ([PlanRefresher]): a purchase Play lists that the Worker hasn't acknowledged and
+     * that isn't queued yet (bought or resubscribed outside the app, say) is sent now. Tokens already waiting keep to
+     * their background retry, so a refresh right after a failed delivery doesn't send it again at once.
      */
-    suspend fun deliver(): AccessError? = delivering.withLock {
+    suspend fun syncNew(): AccessError? {
+        val fresh = queueUnacknowledged()
+        return if (fresh.isEmpty()) null else deliver(only = fresh)
+    }
+
+    /** Queues Play's PURCHASED Transmit purchases the Worker hasn't acknowledged; returns the tokens newly queued. */
+    private suspend fun queueUnacknowledged(): Set<String> {
+        val before = queue.all().mapTo(HashSet()) { it.purchaseToken }
+        store.purchases()?.filter { it.purchased && it.tier != null && !it.acknowledged }
+            ?.forEach { queue.add(PlayPurchase(it.productId, it.purchaseToken)) }
+        return queue.all().mapTo(HashSet()) { it.purchaseToken } - before
+    }
+
+    /**
+     * Sends every queued token (or those in [only]). Returns the last error, if one is still waiting to be retried
+     * (then a background retry is scheduled).
+     */
+    suspend fun deliver(only: Set<String>? = null): AccessError? = delivering.withLock {
         var waiting: AccessError? = null
         var failed: AccessError? = null
         val tried = HashSet<String>()
         while (true) {
-            val next = queue.all().firstOrNull { it.purchaseToken !in tried } ?: break
+            val next = queue.all().firstOrNull { it.purchaseToken !in tried && (only == null || it.purchaseToken in only) } ?: break
             tried += next.purchaseToken
             val error = access.activatePurchase(next)
             if (error == null || !error.retryable) queue.remove(next.purchaseToken)
