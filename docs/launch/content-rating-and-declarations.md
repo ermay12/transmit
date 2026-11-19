@@ -169,3 +169,9 @@ These aren't form answers, but reviewers check them, and the forms above assume 
    You've accepted the policy risk. Just note that a closed-track release is reviewed too, and enforcement applies to the whole developer account, including your other apps on it.
 2. **[Impersonation](https://support.google.com/googleplay/android-developer/answer/9888374).** Covered by keeping Google's name out of the title, icon and developer name, and by the "not made, endorsed or supported by Google" line (`store-listing.md`).
 3. **User Generated Content.** Unlikely to apply. Transmit shows the user's own carrier and RCS messages, and doesn't host content. Blocking and spam reporting stay in Google Messages.
+
+## App access instructions for reviewers (final, from beta4)
+
+Paste into Play Console → App content → App access ("All or some functionality is restricted" → add instructions):
+
+> No login or pairing needed. On onboarding step 2, long-press the heading "Connect your messages". A demo inbox labelled DEMO opens, with sample chats in Spanish and one group. Tap "Start your free week", or use Settings > Advanced > Use my own AI key. Tap a bubble to see the original, long-press it for Explain, and type a reply to translate or check it. "Exit demo" or Back returns to onboarding.
