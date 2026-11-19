@@ -149,6 +149,13 @@ class AccessManager(
 
     fun managedKey(): String? = vault.get(MANAGED_KEY)?.takeIf { it.isNotBlank() }
 
+    /** The Play purchase token the subscription's key belongs to, as the Worker last confirmed it. */
+    fun purchaseToken(): String? = vault.get(PURCHASE_TOKEN)?.takeIf { it.isNotBlank() }
+
+    /** The subscription the app holds, in whichever mode the user picked; null once it has ended. */
+    suspend fun heldSubscription(): Entitlement.Subscription? =
+        store.current().takeIf { it.ended == null }?.entitlement as? Entitlement.Subscription
+
     fun acknowledgeEnd() {
         _pendingEnd.value = null
     }
@@ -353,8 +360,12 @@ class AccessManager(
         }
     }
 
-    /** Corrects the local tally with OpenRouter's (lagging) figure, and notices a key that stopped working. */
+    /**
+     * Corrects the local tally with OpenRouter's (lagging) figure, and notices a key that stopped working. Once a
+     * switch to Transmit is due, it first asks the Worker for the new plan and allowance (at most every few minutes).
+     */
     suspend fun reconcile() {
+        if ((current() as? AiAccess.Subscribed)?.pendingSwitch?.let { clock() >= it.startsAt } == true) refresh()
         val key = managedKey() ?: return
         val a = current()
         if (!a.isManaged) return

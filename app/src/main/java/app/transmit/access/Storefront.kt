@@ -61,28 +61,73 @@ sealed interface PurchasePlan {
     data object New : PurchasePlan
 
     /**
+     * Replaces the subscription item [oldProductId] on [oldPurchaseToken], with the item-level
+     * [SubscriptionProductReplacementParams] (the purchase-level replacement mode is deprecated in Billing 8.1+).
+     * Play issues a new purchase token for it at once.
+     */
+    sealed interface Change : PurchasePlan {
+        val oldPurchaseToken: String
+        val oldProductId: String
+        val replacementMode: Int
+    }
+
+    /**
      * Standard → Plus: replaces [oldPurchaseToken] and charges the full price now, so the whole larger allowance
-     * applies at once (CHARGE_FULL_PRICE, set per item with [SubscriptionProductReplacementParams]).
+     * applies at once (CHARGE_FULL_PRICE).
      */
     data class Upgrade(
-        val oldPurchaseToken: String,
-        val oldProductId: String,
-        val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.CHARGE_FULL_PRICE,
-    ) : PurchasePlan
+        override val oldPurchaseToken: String,
+        override val oldProductId: String,
+        override val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.CHARGE_FULL_PRICE,
+    ) : Change
+
+    /**
+     * Plus → Transmit ("Switch to Transmit"): DEFERRED, so the user keeps Plus and its allowance until the next
+     * renewal, then renews as Transmit. Nothing is charged now.
+     */
+    data class Downgrade(
+        override val oldPurchaseToken: String,
+        override val oldProductId: String,
+        override val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.DEFERRED,
+    ) : Change
+
+    /**
+     * "Keep Plus": undoes a switch to Transmit that hasn't happened yet. Google names no cancel call, only "revert to
+     * the original plan" with another plan change, so this replaces the switch's token with Plus again. DEFERRED, as
+     * `backend/API.md` says to try first, since it charges nothing now (CHARGE_FULL_PRICE would bill a new month).
+     * [oldProductId] is the product Play lists on that token, which stays Plus until the switch takes effect.
+     */
+    data class KeepPlus(
+        override val oldPurchaseToken: String,
+        override val oldProductId: String,
+        override val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.DEFERRED,
+    ) : Change
 
     /** The account already has this plan (renewing, canceled or on hold): Manage subscription is the way. */
     data object AlreadyOwned : PurchasePlan
 
-    /** Plus → Standard isn't offered in 1.0. */
+    /** Nothing to buy for this choice: a switch to Transmit that's already set, or Play can't say what's owned. */
     data object NotOffered : PurchasePlan
 
     companion object {
-        fun choose(target: Tier, owned: List<OwnedPurchase>): PurchasePlan {
+        /**
+         * [switchingTo] is the plan the Worker says is set for the next renewal, and [heldToken] the purchase token
+         * the app holds the key for. Play alone can't tell a switch is set: the switch's token still lists Plus.
+         */
+        fun choose(target: Tier, owned: List<OwnedPurchase>, switchingTo: Tier? = null, heldToken: String? = null): PurchasePlan {
             val current = owned.filter { it.purchased && it.tier != null }
+            // The subscription the app holds: Play's purchase for its token (as Plus, if Play lists both), else the newest.
+            val held = current.filter { it.purchaseToken == heldToken }.maxByOrNull { it.tier == Tier.PLUS }
+                ?: current.maxByOrNull { it.purchaseTime }
+            if (switchingTo != null) {
+                held ?: return NotOffered
+                return if (target == Tier.PLUS && switchingTo == Tier.STANDARD) KeepPlus(held.purchaseToken, held.productId) else NotOffered
+            }
             if (current.any { it.tier == target }) return AlreadyOwned
-            val other = current.maxByOrNull { it.purchaseTime } ?: return New
+            held ?: return New
             return when {
-                other.tier == Tier.STANDARD && target == Tier.PLUS -> Upgrade(other.purchaseToken, other.productId)
+                held.tier == Tier.STANDARD && target == Tier.PLUS -> Upgrade(held.purchaseToken, held.productId)
+                held.tier == Tier.PLUS && target == Tier.STANDARD -> Downgrade(held.purchaseToken, held.productId)
                 else -> NotOffered
             }
         }

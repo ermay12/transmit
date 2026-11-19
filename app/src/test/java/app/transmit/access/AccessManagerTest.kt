@@ -396,6 +396,48 @@ class AccessManagerTest {
     }
 
     @Test
+    fun aSwitchToTransmitAsksTheWorkerOnceItsDayHasCome() = runBlocking {
+        val m = manager()
+        val now = System.currentTimeMillis()
+        fun plus(startsAt: Long) = Grant(
+            Entitlement.Subscription(Tier.PLUS, startsAt, pendingSwitch = PlanSwitch(Tier.STANDARD, startsAt)), "sk-sub", "subhash", 9.0, 6.0, purchaseToken = "switch",
+        )
+        backend.refresh = AccessResult.Granted(
+            Grant(Entitlement.Subscription(Tier.STANDARD, now + 30 * day), null, "subhash", 4.5, 4.5, purchaseToken = "switch"),
+        )
+        // Before the day: Plus, with Plus's allowance, and no extra call.
+        m.applyGrant(plus(now + 3 * day), activate = true)
+        m.reconcile()
+        assertEquals(0, backend.refreshes)
+        assertEquals(Tier.PLUS, (m.current() as AiAccess.Subscribed).tier)
+        assertEquals(1.0 / 3, m.allowanceNow()!!.fraction, 1e-9)
+
+        // The renewal has come: the Worker reports Transmit and its allowance, and the switch is gone.
+        m.applyGrant(plus(now - 60_000), activate = true)
+        m.reconcile()
+        assertEquals(1, backend.refreshes)
+        val after = m.current() as AiAccess.Subscribed
+        assertEquals(Tier.STANDARD, after.tier)
+        assertNull(after.pendingSwitch)
+        assertEquals("sk-sub", m.managedKey())
+        assertEquals(0.0, m.allowanceNow()!!.fraction, 1e-9)
+    }
+
+    @Test
+    fun aReplacedTokenWithNothingNewerOnPlayLeavesThePlanAndKeyAsTheyAre() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(Tier.PLUS), activate = true)
+        // What PlayAccessBackend answers when the old token is replaced and Play shows nothing newer yet.
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE, detail = "Replaced, and Play has no newer purchase"))
+        assertEquals(AccessErrorCode.SERVICE, m.refresh(force = true)?.code)
+        // Still Plus, never ended: a replaced token is a plan change, not a lapse.
+        assertEquals(Tier.PLUS, (m.current() as AiAccess.Subscribed).tier)
+        assertEquals(1, backend.refreshes)
+        assertEquals("sk-sub", m.managedKey())
+        assertEquals("tok", m.purchaseToken())
+    }
+
+    @Test
     fun reconcilingNoticesAUsedUpOrRefusedTrialKey() = runBlocking {
         val m = manager()
         m.applyGrant(trialGrant(), activate = true)

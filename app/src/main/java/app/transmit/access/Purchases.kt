@@ -63,7 +63,12 @@ sealed interface PurchaseUi {
     /** Paid with a method that takes a while (cash, bank transfer); the AI starts once Play confirms it. */
     data object Pending : PurchaseUi
     data class Done(val tier: Tier) : PurchaseUi
-    data class Failed(val error: AccessError?) : PurchaseUi
+    /** A switch to Transmit is set: Plus and its allowance stay until [at] (null if unknown), then it's Transmit. */
+    data class SwitchSet(val at: Long?) : PurchaseUi
+    /** A switch to Transmit was undone: the plan stays Plus. */
+    data object KeptPlus : PurchaseUi
+    /** [planChange]: it was a switch to Transmit or Keep Plus, not a purchase. */
+    data class Failed(val error: AccessError?, val planChange: Boolean = false) : PurchaseUi
 }
 
 /**
@@ -82,6 +87,8 @@ class Purchases(
     private val _state = MutableStateFlow<PurchaseUi>(PurchaseUi.Idle)
     val state: StateFlow<PurchaseUi> = _state
     private val delivering = Mutex()
+    /** What Play's sheet was last opened for, so its outcome can say what happened. */
+    @Volatile private var launched: PurchasePlan? = null
 
     val available get() = store.available
 
@@ -94,14 +101,30 @@ class Purchases(
 
     suspend fun offers(): Map<Tier, PlanOffer>? = store.offers()
 
-    /** What buying [tier] would mean now (a new subscription, an upgrade, or one already owned). */
-    suspend fun planFor(tier: Tier): PurchasePlan = PurchasePlan.choose(tier, store.purchases().orEmpty())
+    /**
+     * What buying [tier] would mean now: a new subscription, an upgrade, a switch to Transmit, Keep Plus, or one
+     * already owned. A switch the Worker says is set comes from the app's state, since Play still lists Plus.
+     */
+    suspend fun planFor(tier: Tier): PurchasePlan {
+        val held = access.heldSubscription()
+        // For a subscriber, a plain purchase while Play can't be asked could start a second subscription.
+        val owned = store.purchases() ?: return if (held != null) PurchasePlan.NotOffered else PurchasePlan.New
+        return PurchasePlan.choose(tier, owned, held?.pendingSwitch?.tier, access.purchaseToken())
+    }
 
-    /** Opens Play's sheet for [tier], as an upgrade when the account has Standard. */
+    /**
+     * Opens Play's sheet for [tier]: an upgrade when the account has Standard, a switch to Transmit (from Plus) when
+     * [tier] is Standard, or Keep Plus while a switch is set.
+     */
     suspend fun buy(activity: Activity, tier: Tier): LaunchResult {
         _state.value = PurchaseUi.Working
-        val result = store.launch(activity, tier, planFor(tier))
-        if (result != LaunchResult.LAUNCHED) _state.value = PurchaseUi.Idle
+        val plan = planFor(tier)
+        launched = plan
+        val result = store.launch(activity, tier, plan)
+        if (result != LaunchResult.LAUNCHED) {
+            launched = null
+            _state.value = PurchaseUi.Idle
+        }
         return result
     }
 
@@ -118,23 +141,41 @@ class Purchases(
                     bought.isNotEmpty() -> {
                         _state.value = PurchaseUi.Working
                         val error = deliver()
-                        val tier = (access.current() as? AiAccess.Subscribed)?.tier
-                        _state.value = if (error == null && tier != null) PurchaseUi.Done(tier) else PurchaseUi.Failed(error)
+                        _state.value = outcome(error, takeLaunched())
                     }
                     u.purchases.isNotEmpty() -> _state.value = PurchaseUi.Pending
                     else -> _state.value = PurchaseUi.Idle
                 }
             }
-            PurchaseUpdate.Canceled -> _state.value = PurchaseUi.Idle
+            PurchaseUpdate.Canceled -> {
+                takeLaunched()
+                _state.value = PurchaseUi.Idle
+            }
             PurchaseUpdate.AlreadyOwned -> {
+                takeLaunched()
                 // Most likely bought earlier and never delivered: look for it.
                 sync()
                 _state.value = PurchaseUi.Idle
             }
             is PurchaseUpdate.Failed -> {
                 Log.w(TAG, "Purchase failed: ${u.responseCode} ${u.message}")
-                _state.value = PurchaseUi.Failed(null)
+                _state.value = PurchaseUi.Failed(null, planChange = takeLaunched().isPlanChange)
             }
+        }
+    }
+
+    private fun takeLaunched(): PurchasePlan? = launched.also { launched = null }
+
+    private val PurchasePlan?.isPlanChange get() = this is PurchasePlan.Downgrade || this is PurchasePlan.KeepPlus
+
+    /** What the plans screen says once the Worker has the new token. */
+    private suspend fun outcome(error: AccessError?, plan: PurchasePlan?): PurchaseUi {
+        val a = access.current() as? AiAccess.Subscribed
+        if (error != null || a == null) return PurchaseUi.Failed(error, plan.isPlanChange)
+        return when (plan) {
+            is PurchasePlan.Downgrade -> PurchaseUi.SwitchSet(a.pendingSwitch?.startsAt ?: a.periodEndsAt)
+            is PurchasePlan.KeepPlus -> PurchaseUi.KeptPlus
+            else -> PurchaseUi.Done(a.tier)
         }
     }
 

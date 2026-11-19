@@ -121,7 +121,7 @@ class PlayBilling(context: Context, override val available: Boolean) : Storefron
         val (product, offerToken) = details[tier] ?: run { offers(); details[tier] } ?: return LaunchResult.UNAVAILABLE
         val item = ProductDetailsParams.newBuilder().setProductDetails(product).setOfferToken(offerToken)
         val flow = BillingFlowParams.newBuilder()
-        if (plan is PurchasePlan.Upgrade) {
+        if (plan is PurchasePlan.Change) {
             item.setSubscriptionProductReplacementParams(
                 SubscriptionProductReplacementParams.newBuilder()
                     .setOldProductId(plan.oldProductId)

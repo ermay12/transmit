@@ -219,6 +219,65 @@ class PlayAccessBackendTest {
     }
 
     @Test
+    fun theReplacementModeIsFullPriceUpAndDeferredDownAndForKeepPlus() {
+        val standard = OwnedPurchase("transmit_monthly", "std-token", purchased = true, acknowledged = true)
+        val plus = OwnedPurchase("transmit_plus", "plus-token", purchased = true, acknowledged = true)
+        val mode = SubscriptionProductReplacementParams.ReplacementMode::class.java
+        assertEquals(4, mode.getField("CHARGE_FULL_PRICE").getInt(null))
+        assertEquals(5, mode.getField("DEFERRED").getInt(null))
+
+        // Up: pay the full price now, so all of Plus's AI applies at once.
+        val up = PurchasePlan.choose(Tier.PLUS, listOf(standard)) as PurchasePlan.Upgrade
+        assertEquals(SubscriptionProductReplacementParams.ReplacementMode.CHARGE_FULL_PRICE, up.replacementMode)
+
+        // Down: Plus stays, with its allowance, until the renewal; nothing is charged now.
+        val down = PurchasePlan.choose(Tier.STANDARD, listOf(plus)) as PurchasePlan.Downgrade
+        assertEquals("plus-token", down.oldPurchaseToken)
+        assertEquals("transmit_plus", down.oldProductId)
+        assertEquals(SubscriptionProductReplacementParams.ReplacementMode.DEFERRED, down.replacementMode)
+        // A Plus with renewal off can switch the same way: it renews as Transmit.
+        assertTrue(PurchasePlan.choose(Tier.STANDARD, listOf(plus.copy(autoRenewing = false))) is PurchasePlan.Downgrade)
+
+        // While a switch is set, Play still lists the switch's token as Plus (API.md step 2): Plus is Keep Plus, on
+        // that token, DEFERRED as API.md says to try first; another switch to Transmit isn't offered.
+        val switchToken = OwnedPurchase("transmit_plus", "switch-token", purchased = true, acknowledged = true, purchaseTime = 2)
+        val keep = PurchasePlan.choose(Tier.PLUS, listOf(switchToken), switchingTo = Tier.STANDARD, heldToken = "switch-token") as PurchasePlan.KeepPlus
+        assertEquals("switch-token", keep.oldPurchaseToken)
+        assertEquals("transmit_plus", keep.oldProductId)
+        assertEquals(SubscriptionProductReplacementParams.ReplacementMode.DEFERRED, keep.replacementMode)
+        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.STANDARD, listOf(switchToken), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
+        // Never an upgrade at the full price, even if Play were to list the token as Transmit already.
+        val listedAsTransmit = switchToken.copy(productId = "transmit_monthly")
+        assertTrue(PurchasePlan.choose(Tier.PLUS, listOf(listedAsTransmit), switchingTo = Tier.STANDARD, heldToken = "switch-token") is PurchasePlan.KeepPlus)
+        // The token the key belongs to wins over an older one Play still lists.
+        val older = plus.copy(purchaseToken = "older", purchaseTime = 9)
+        assertEquals("switch-token", (PurchasePlan.choose(Tier.PLUS, listOf(older, switchToken), Tier.STANDARD, "switch-token") as PurchasePlan.KeepPlus).oldPurchaseToken)
+        // Play not listing it: nothing to replace, and never a second subscription.
+        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.PLUS, emptyList(), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
+    }
+
+    @Test
+    fun aSwitchToTransmitsOldTokenAnswersReplacedAndTheNewTokenIsSentWithTheSameKey() = runBlocking {
+        // After the switch Play lists only the new token, still as Plus.
+        store.owned = listOf(OwnedPurchase("transmit_plus", "switch", purchased = true, acknowledged = true, purchaseTime = 2))
+        reply(402, """{"error":"purchase_not_active","state":"replaced","message":"superseded"}""")
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"active","keyHash":"sh","newKey":false,"allowanceUsd":9,"remainingUsd":6,"allowanceRenewed":false,"periodEndsAt":"2026-12-18T19:30:00Z","autoRenewing":true,"pendingProductId":"transmit_monthly","pendingAllowanceUsd":4.5,"pendingStartsAt":"2026-12-18T19:30:00Z"}""")
+        val g = (backend().refresh("plus-old", "sh") as AccessResult.Granted).grant
+        assertEquals("switch", g.purchaseToken)
+        // The key is kept: no new key, the same hash.
+        assertNull(g.key)
+        assertEquals("sh", g.keyHash)
+        val e = g.entitlement as Entitlement.Subscription
+        assertEquals(Tier.PLUS, e.tier)
+        assertEquals(Tier.STANDARD, e.pendingSwitch?.tier)
+        assertEquals("plus-old", sent().s("purchaseToken"))
+        val second = sent()
+        assertEquals("switch", second.s("purchaseToken"))
+        assertEquals("sh", second.s("keyHash"))
+        assertEquals("false", second.s("rotate"))
+    }
+
+    @Test
     fun anUpgradeToPlusChargesTheFullPriceNowAndOtherChoicesDont() {
         val standard = OwnedPurchase("transmit_monthly", "std-token", purchased = true, acknowledged = true)
         val plus = OwnedPurchase("transmit_plus", "plus-token", purchased = true, acknowledged = true)
@@ -233,7 +292,7 @@ class PlayAccessBackendTest {
 
         assertEquals(PurchasePlan.AlreadyOwned, PurchasePlan.choose(Tier.STANDARD, listOf(standard)))
         assertEquals(PurchasePlan.AlreadyOwned, PurchasePlan.choose(Tier.PLUS, listOf(plus)))
-        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.STANDARD, listOf(plus)))
+        assertTrue(PurchasePlan.choose(Tier.STANDARD, listOf(plus)) is PurchasePlan.Downgrade)
         // A canceled Standard that's still running upgrades the same way.
         assertTrue(PurchasePlan.choose(Tier.PLUS, listOf(standard.copy(autoRenewing = false))) is PurchasePlan.Upgrade)
         // A payment that hasn't gone through isn't something to replace.
