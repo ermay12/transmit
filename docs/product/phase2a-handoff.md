@@ -4,12 +4,26 @@ Written 2026-11-18 when phase 2a was stopped early to save usage. Branch `play-l
 
 ## What's done
 
-Nothing in code yet. The stop came while I was still reading, so this phase has no commits under `app/` or `gradle/` and the tree is the same as phase 1 left it. I read these and checked them against the scope:
+Written 2026-11-18, kept current while phase 2a is built. Commits so far: bf5b823 (Worker client, OpenRouter allowance, error mapping), abdbb6f (gaps b and c), a7b69eb (Integrity, Billing wrappers, `PlayAccessBackend`), 7da58d6 (purchase queue, WorkManager jobs, Plan notifications, wiring). Tests pass and the debug and release builds compile at each commit.
 
-- `docs/product/release-1.0.md`, `backend/API.md`, and `app/src/main/java/app/transmit/access/*`.
-- The debug fake (`app/src/debug/java/app/transmit/access/AccessBuild.kt`) and the release stub (`app/src/release/java/app/transmit/access/AccessBuild.kt`, `UnavailableBackend`).
-- The placeholder `ui/access/PlansScreen.kt`, `SettingsViewModel` (`placeholderPurchase`, `restore`) and `MainActivity` (the `pendingEnd` → PLANS navigation).
-- `play-launch-plan.md` in memory.
+- `access/WorkerApi.kt`: `/v1/trial` and `/v1/subscription` (OkHttp, kotlinx `JsonObject`, about 30 s). It branches on `error`, reads `retryAfterSeconds` or the `Retry-After` header, and an IOException becomes NETWORK. `WorkerReply.delivery` says whether to retry a purchase token, give up, or swap to the newer token.
+- `access/OpenRouterAllowance.kt`: `GET /api/v1/key`. Every 401 is `KeyRejected`, whatever the wording. Only 403 "Key limit exceeded" means `UsedUp`. Anything else is `Unavailable`, never a paywall. `at` is now − 3 min.
+- `access/PlayIntegrity.kt`: standard provider prepared lazily or by `warm()`, re-prepared once on failure; `TrialAttestation.requestHash`.
+- `access/Storefront.kt` / `PlayBilling.kt`: billing 9.1.0 (not ktx), own suspend wrappers, auto-reconnect, the base plan `monthly` price. `PurchasePlan.choose` picks the replacement: Standard → Plus is an `Upgrade` with the item-level `SubscriptionProductReplacementParams` (CHARGE_FULL_PRICE = 4) plus `setOldPurchaseToken`. The purchase-level `setSubscriptionReplacementMode` is deprecated in 9.x.
+- `access/PlayAccessBackend.kt`: refuses a trial or restore without calling the Worker when the app isn't installed from Play; retries `busy` twice after 3 s; retries `token_expired` once with a fresh token; swaps a `replaced` token for Play's newer one. A restore prefers paid-up purchases, then Plus.
+- `access/Purchases.kt`: encrypted `PurchaseQueue` (in `SecretStore`), plus delivery. A retryable failure stays queued and schedules a job; anything else is dropped. Each launch and the daily job re-queue unacknowledged PURCHASED purchases.
+- `access/AccessWork.kt`: unique delivery job (network, exponential backoff), daily `AccessRefreshWorker`, day-6 `TrialReminderWorker`.
+- Gap (a): the listener is set in `AppContainer` before transitions are watched (`autoStart = false` + `start()`), and it posts to the new "Plan" channel. Notifications deep-link to PLANS (`MainActivity.ACTION_OPEN_PLANS`). `checkAccess()` runs on every foreground.
+- Gap (b): `StoredAccess.warningDismissedFor` holds the allowance period (trial end, or tier + `periodEndsAt`). It is cleared at 100%.
+- Gap (c): the Worker rotates the key on any stale `keyHash` (checked in `backend/src/subscription.ts`), so on a 401 the app asks Play first. If Play shows the subscription paid up, the app sets `inUseElsewhere` and shows "Use it here?" (`AiBlock.InUseElsewhere`, Home banner, plan card). Otherwise it does one refresh. The daily and 90% refreshes check the key with OpenRouter first.
+- Debug: Settings' debug panel (or `--es backend WORKER`) switches between the fake and the live Worker after a restart.
+
+## Still to do (in order)
+
+- [ ] Plans screen: real prices from `Purchases.offers()`, Subscribe, Upgrade (Standard only), Restore, Manage subscription, and the in-use-elsewhere state. Put the text in `strings.xml`, remove `SettingsViewModel.placeholderPurchase`, cancel the Plan notification on open, and warm Integrity on onboarding step 3 and the plans screen.
+- [ ] Not installed from Play: hide Subscribe and Start free week everywhere (plan card, onboarding, banners, dialogs, chat strip) and offer only "Use my own AI key" (`Purchases.available`).
+- [ ] Emulator smoke test (fake backend, then the live Worker for `integrity_failed`).
+- [ ] versionName `1.0.0-beta1`, final commit, signed AAB to `~/Downloads/transmit-1.0.0-beta1-<versionCode>.aab`.
 
 ## What phase 1 already provides (reuse it)
 
