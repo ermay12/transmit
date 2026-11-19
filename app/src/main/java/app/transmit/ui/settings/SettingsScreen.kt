@@ -32,6 +32,8 @@ import app.transmit.ui.theme.LocalTransmitColors
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.nameRes
+import app.transmit.ui.access.subscriptionDetail
+import app.transmit.string
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -443,19 +445,14 @@ private fun PlanCard(
 }
 
 /**
- * A subscriber's plan, in one row: its name, when it renews (or switches to Transmit) and how much of this month's AI
+ * A subscriber's plan, in one row: its name, when it renews (or switches to Transmit, or ends) and how much of this month's AI
  * is used. Upgrading, switching, restoring and managing it in Google Play are on the Plans screen it opens.
  */
 @Composable
 private fun SubscriptionRow(vm: SettingsViewModel, access: AiAccess.Subscribed, onPlans: () -> Unit) {
-    val context = LocalContext.current
     val allowance by vm.allowance.collectAsStateWithLifecycle()
-    val detail = when {
-        access.inUseElsewhere -> stringResource(R.string.settings_subscription_in_use)
-        // Still Plus, with Plus's AI, until then.
-        access.pendingSwitch != null -> stringResource(R.string.plan_switches_on, AccessText.date(context, access.pendingSwitch.startsAt))
-        else -> access.renewsAt?.let { stringResource(R.string.plan_renews, AccessText.date(context, it)) }
-    }
+    // In use elsewhere, Switches to…, Ends… (renewal off) or Renews…
+    val detail = subscriptionDetail(access)?.string()
     Row0(Icons.Default.AutoAwesome, stringResource(access.tier.nameRes), detail, trailing = allowance?.takeUnless { access.inUseElsewhere }?.let { view ->
         {
             Row(verticalAlignment = Alignment.CenterVertically) {

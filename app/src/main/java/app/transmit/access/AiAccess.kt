@@ -42,6 +42,8 @@ sealed interface AiAccess {
      * [inUseElsewhere]: another device holds the subscription's key; "Use it here" takes it back.
      * [pendingSwitch]: Plus moves to Transmit at the renewal; until then it's Plus, with Plus's allowance.
      * [periodEndsAt] is the end of the paid period whether or not it renews: a switch set now takes effect then.
+     * [canceled]: the user turned renewal off in Google Play (the Worker's `state: "canceled"`); the AI keeps working
+     * until [endsAt], and resubscribing in Play keeps the plan.
      */
     data class Subscribed(
         val tier: Tier,
@@ -49,7 +51,11 @@ sealed interface AiAccess {
         val inUseElsewhere: Boolean = false,
         val pendingSwitch: PlanSwitch? = null,
         val periodEndsAt: Long? = renewsAt,
-    ) : AiAccess
+        val canceled: Boolean = false,
+    ) : AiAccess {
+        /** When a canceled subscription stops giving AI; null while it renews. */
+        val endsAt: Long? get() = periodEndsAt.takeIf { canceled }
+    }
 
     data class Ended(val reason: EndReason) : AiAccess
 

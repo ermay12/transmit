@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -63,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
 import app.transmit.R
+import app.transmit.string
 import app.transmit.access.AiAccess
 import app.transmit.access.PlanOffer
 import app.transmit.access.PurchaseUi
@@ -191,13 +193,11 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
     }
     var confirmSwitch by rememberSaveable { mutableStateOf(false) }
     val subscribed = access as? AiAccess.Subscribed
-    val owned = subscribed?.tier
-    // Plus → Transmit: set now, it takes effect when the paid month ends (DEFERRED). While one is set, the plan is
-    // still Plus, with Plus's AI, and nothing undoes it (Google documents no way to): Upgrade works again once it has
-    // happened. No switch while another device has the key.
-    val switch = subscribed?.pendingSwitch.takeIf { owned == Tier.PLUS }
-    val canChange = subscribed?.inUseElsewhere != true
-    val switchAt = subscribed?.periodEndsAt.takeIf { owned == Tier.PLUS && switch == null && canChange }
+    // Which plans, which action, and whether Switch to Transmit is offered (see PlansModel).
+    val model = PlansModel.of(access)
+    val owned = model.owned
+    val switch = model.switch
+    val switchAt = model.switchAt
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -249,12 +249,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             Spacer(Modifier.height(20.dp))
 
             val busy = purchase == PurchaseUi.Working
-            // Plus has nothing to move up to: a Plus subscriber sees their plan first, then Transmit to switch to.
-            val shown = when {
-                owned != Tier.PLUS -> Tier.entries
-                switch != null || switchAt != null -> listOf(Tier.PLUS, Tier.STANDARD)
-                else -> listOf(Tier.PLUS)
-            }
+            val shown = model.shown
             var choice by rememberSaveable { mutableStateOf(Tier.STANDARD.name) }
             // A Standard subscriber can only pick Plus.
             val selected = if (owned == Tier.STANDARD) Tier.PLUS else Tier.valueOf(choice)
@@ -267,15 +262,14 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                     loading = loading,
                     current = mine,
                     detail = when {
-                        mine && switch != null -> stringResource(R.string.plan_switches_on, date(switch.startsAt))
-                        mine -> subscribed?.renewsAt?.let { stringResource(R.string.plan_renews, date(it)) }
+                        mine -> model.ownDetail?.string()
                         owned == Tier.PLUS && switch != null -> stringResource(R.string.plan_switch_starts, date(switch.startsAt))
                         else -> null
                     },
                     selected = owned == null && selected == tier,
                     selectable = owned == null && !busy,
                     onSelect = { choice = tier.name },
-                    radio = owned != Tier.PLUS,
+                    radio = model.action == PlansAction.SUBSCRIBE || model.action == PlansAction.UPGRADE,
                     scheduled = !mine && switch != null,
                     action = switchAt?.takeIf { !mine }?.let {
                         stringResource(R.string.plan_switch) + " · " + stringResource(R.string.plan_switch_takes_effect, date(it))
@@ -299,23 +293,42 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 problemText != null -> Notice(problemText, info = true)
                 else -> Spacer(Modifier.height(12.dp))
             }
-            if (switch != null) {
-                Text(
-                    stringResource(R.string.plan_switch_pending_note, AccessText.date(context, switch.startsAt)),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
+            model.note?.let { note ->
+                if (model.endsAt != null) {
+                    // Renewal is off: the plan works until then, and Keep my subscription is the way on.
+                    Notice(note.string(), info = true)
+                } else {
+                    Text(
+                        note.string(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    )
+                }
             }
-            if (owned != Tier.PLUS) {
+            if (model.action == PlansAction.KEEP_SUBSCRIPTION) {
+                // Play's page for this plan, where Resubscribe turns renewal back on; coming back refreshes at once.
+                Button(onClick = { vm.manage(context, owned) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text(stringResource(R.string.plan_keep_subscription), style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.plan_keep_subscription_note), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                )
+                if (model.upgradeToo) Spacer(Modifier.height(16.dp))
+            }
+            if (model.action == PlansAction.SUBSCRIBE || model.action == PlansAction.UPGRADE || model.upgradeToo) {
                 val upgrade = owned == Tier.STANDARD
-                Button(
-                    onClick = {
-                        val activity = context.findActivity() ?: return@Button
-                        vm.buy(activity, selected)
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(stringResource(if (upgrade) R.string.plan_upgrade else R.string.plan_subscribe), style = MaterialTheme.typography.titleMedium) }
+                val buy = {
+                    context.findActivity()?.let { vm.buy(it, selected) }
+                    Unit
+                }
+                val label = @Composable { Text(stringResource(if (upgrade) R.string.plan_upgrade else R.string.plan_subscribe), style = MaterialTheme.typography.titleMedium) }
+                // Beside Keep my subscription, upgrading is the second choice.
+                if (model.upgradeToo) {
+                    OutlinedButton(onClick = buy, enabled = !busy, modifier = Modifier.fillMaxWidth().height(52.dp)) { label() }
+                } else {
+                    Button(onClick = buy, enabled = !busy, modifier = Modifier.fillMaxWidth().height(52.dp)) { label() }
+                }
                 Spacer(Modifier.height(10.dp))
                 // Subscriptions policy: that it renews, and at Play's price for the plan chosen.
                 val price = offers?.get(selected)?.price

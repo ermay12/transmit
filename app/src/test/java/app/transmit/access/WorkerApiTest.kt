@@ -80,6 +80,16 @@ class WorkerApiTest {
     }
 
     @Test
+    fun aCanceledStateMeansThePlanEndsWhateverAutoRenewingSays() {
+        val ends = Instant.parse("2026-12-18T19:30:00Z").toEpochMilli()
+        // API.md: `state` is `active`, `canceled` (renewal off; the AI works until `periodEndsAt`) or `grace`.
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"canceled","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":4,"periodEndsAt":"2026-12-18T19:30:00Z"}""")
+        assertEquals(Entitlement.Subscription(Tier.PLUS, ends, autoRenewing = false), (sub() as AccessResult.Granted).grant.entitlement)
+        reply(200, """{"kind":"subscription","productId":"transmit_plus","state":"grace","keyHash":"0b9e","newKey":false,"allowanceUsd":9,"remainingUsd":4,"periodEndsAt":"2026-12-18T19:30:00Z","autoRenewing":true}""")
+        assertEquals(Entitlement.Subscription(Tier.PLUS, ends, autoRenewing = true), (sub() as AccessResult.Granted).grant.entitlement)
+    }
+
+    @Test
     fun aSwitchToTransmitIsReadFromThePendingFieldsAndItsAbsenceMeansNone() {
         val ends = "2026-12-18T19:30:00Z"
         val endsAt = Instant.parse(ends).toEpochMilli()

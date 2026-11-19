@@ -208,6 +208,29 @@ class PlanSwitchTest {
         assertEquals(PurchasePlan.Upgrade("switch-2", "transmit_monthly"), purchases.planFor(Tier.PLUS))
     }
 
+    /**
+     * Renewal turned off in Play, then Resubscribe on Play's page: back from there, a refresh shows each without
+     * leaving the app, and no switch to Transmit is offered in between.
+     */
+    @Test
+    fun aRefreshShowsRenewalTurnedOffAndBackOn() = runBlocking {
+        play.owned = listOf(owned("plus-1", 1))
+        access.applyGrant(Grant(Entitlement.Subscription(Tier.PLUS, endsAt), "sk-or-v1-plus", "ph", 9.0, 6.0, purchaseToken = "plus-1"), activate = true)
+        val answer = """{"kind":"subscription","productId":"transmit_plus","basePlanId":"monthly","keyHash":"ph","newKey":false,"allowanceUsd":9,"remainingUsd":6,"allowanceRenewed":false,"periodEndsAt":"$ends""""
+        reply(200, """$answer,"state":"canceled","autoRenewing":false}""")
+        val refresh = PlanRefresher.forPlan(scope, purchases, access)
+        assertTrue(refresh.request(RefreshTrigger.PLANS_OPENED))
+        val ending = withTimeout(5_000) { access.access.first { (it as? AiAccess.Subscribed)?.canceled == true } } as AiAccess.Subscribed
+        assertEquals(endsAt, ending.endsAt)
+        assertEquals(PurchasePlan.NotOffered, purchases.planFor(Tier.STANDARD))
+
+        reply(200, """$answer,"state":"active","autoRenewing":true}""")
+        assertTrue(refresh.request(RefreshTrigger.PLAY_PAGE_RETURNED))
+        val renewing = withTimeout(5_000) { access.access.first { (it as? AiAccess.Subscribed)?.canceled == false } } as AiAccess.Subscribed
+        assertEquals(endsAt, renewing.renewsAt)
+        assertEquals("sk-or-v1-plus", access.managedKey())
+    }
+
     /** A subscription Play has that the Worker hasn't seen (bought outside the app) starts on the next refresh. */
     @Test
     fun aRefreshSendsAPurchaseTheWorkerHasntSeen() = runBlocking {

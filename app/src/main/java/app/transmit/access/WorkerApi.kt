@@ -152,8 +152,10 @@ class WorkerApi(private val http: OkHttpClient = defaultHttp(), baseUrl: String 
             val newKey = b["newKey"].bool() ?: (b["key"] != null)
             val key = if (newKey) b["key"].str()?.takeIf { it.isNotBlank() } ?: return null else null
             val periodEndsAt = instant(b["periodEndsAt"].str())
+            // `state: "canceled"`: renewal is off and the plan ends at `periodEndsAt`, whatever `autoRenewing` says.
+            val renewing = (b["autoRenewing"].bool() ?: true) && b["state"].str() != "canceled"
             return Grant(
-                Entitlement.Subscription(tier, periodEndsAt, autoRenewing = b["autoRenewing"].bool() ?: true, pendingSwitch = pendingSwitch(b, tier, periodEndsAt)),
+                Entitlement.Subscription(tier, periodEndsAt, autoRenewing = renewing, pendingSwitch = pendingSwitch(b, tier, periodEndsAt)),
                 key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance, purchaseToken = purchaseToken,
             )
         }

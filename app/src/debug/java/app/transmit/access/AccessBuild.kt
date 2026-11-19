@@ -42,7 +42,11 @@ import kotlinx.coroutines.launch
  *
  * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--es mode PLUS_SWITCHING`
  * is Plus with a switch to Transmit set for the renewal, and `--ez renew true` renews now (so a set switch takes
- * effect). On the Plans screen, Switch to Transmit acts as Play would. `--ei playError 5` makes Play's next sheet
+ * effect). `--es mode PLUS_CANCELED` (or `STANDARD_CANCELED`) is a plan with renewal turned off in Play; add
+ * `--ei endsInSeconds 90` to have it end that soon (to watch it lapse with the app open). `--ez canceled false` (or
+ * `true`) turns renewal on (off) on the fake Play's side only, as Resubscribe on Play's page would: the app sees it at
+ * its next refresh (opening Plans or Settings). `--ez renewOnPlay true` renews on that side only, likewise.
+ * On the Plans screen, Switch to Transmit acts as Play would. `--ei playError 5` makes Play's next sheet
  * fail with that response code (5 is DEVELOPER_ERROR, which a refused replacement mode gets). `--ez fromPlay false`
  * makes the fake act like a copy not installed from Play (no free week or subscriptions). `--es backend WORKER`
  * (or `FAKE`) picks the backend for the next start: WORKER is the live Worker with real Play Integrity and Billing,
@@ -149,8 +153,9 @@ class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
         return mapOf(Tier.STANDARD to PlanOffer(Tier.STANDARD, "$5.99"), Tier.PLUS to PlanOffer(Tier.PLUS, "$11.99"))
     }
 
-    override suspend fun purchases(): List<OwnedPurchase> =
-        listOfNotNull(fake.purchased?.let { OwnedPurchase(it.productId, "debug-token-${it.productId}", purchased = true, acknowledged = true) })
+    override suspend fun purchases(): List<OwnedPurchase> = listOfNotNull(
+        fake.purchased?.let { OwnedPurchase(it.productId, "debug-token-${it.productId}", purchased = true, acknowledged = true, autoRenewing = !fake.canceled) },
+    )
 
     override suspend fun launch(activity: android.app.Activity, tier: Tier, plan: PurchasePlan): LaunchResult {
         if (plan == PurchasePlan.AlreadyOwned) return LaunchResult.ALREADY_OWNED
@@ -164,8 +169,9 @@ class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
             return LaunchResult.LAUNCHED
         }
         Log.i("DebugAccess", "Fake purchase of $tier as $plan")
-        // A switch to Transmit is set for the renewal; any other purchase clears it.
+        // A switch to Transmit is set for the renewal; any other purchase clears it. Either way it renews.
         fake.switching = plan is PurchasePlan.Downgrade
+        fake.canceled = false
         // Like Play, a switch's new token is listed as the plan it leaves (Plus) until the renewal.
         val listed = if (plan is PurchasePlan.Downgrade) Tier.PLUS else tier
         kotlinx.coroutines.GlobalScope.launch {
@@ -182,6 +188,8 @@ enum class FakeMode(val label: String) {
     STANDARD("Transmit"),
     PLUS("Plus"),
     PLUS_SWITCHING("Plus → Transmit"),
+    STANDARD_CANCELED("Transmit, renewal off"),
+    PLUS_CANCELED("Plus, renewal off"),
     ENDED_TRIAL("Trial expired"),
     ENDED_USED_UP("Trial used up"),
     ENDED_SUB("Sub ended"),
@@ -227,6 +235,20 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         get() = prefs.getBoolean("switching", false)
         set(v) = prefs.edit().putBoolean("switching", v).apply()
 
+    /** Renewal turned off in Play: the Worker reports `state: "canceled"` and the plan ends at its period's end. */
+    var canceled: Boolean
+        get() = prefs.getBoolean("canceled", false)
+        set(v) = prefs.edit().putBoolean("canceled", v).apply()
+
+    /** When the paid period ends, fixed by `endsInSeconds`; 0 for 18 days from each answer. */
+    private var periodEnd: Long
+        get() = prefs.getLong("period_end", 0)
+        set(v) = prefs.edit().putLong("period_end", v).apply()
+
+    fun endIn(seconds: Int) {
+        periodEnd = if (seconds > 0) System.currentTimeMillis() + seconds * 1000L else 0
+    }
+
     /** The response code Play's next purchase sheet fails with, once; 0 for none. */
     var playError: Int
         get() = prefs.getInt("play_error", 0)
@@ -250,10 +272,11 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
 
     fun subscriptionGrant(tier: Tier, newKey: Boolean = true): Grant {
         val usd = if (tier == Tier.PLUS) PLUS_USD else STANDARD_USD
-        val ends = System.currentTimeMillis() + 18 * DAY
-        val switch = PlanSwitch(Tier.STANDARD, ends).takeIf { switching && tier == Tier.PLUS }
+        val ends = periodEnd.takeIf { it > 0 } ?: (System.currentTimeMillis() + 18 * DAY)
+        // Like the Worker: no `pending…` fields once renewal is off.
+        val switch = PlanSwitch(Tier.STANDARD, ends).takeIf { switching && tier == Tier.PLUS && !canceled }
         return Grant(
-            Entitlement.Subscription(tier, ends, autoRenewing = true, pendingSwitch = switch),
+            Entitlement.Subscription(tier, ends, autoRenewing = !canceled, pendingSwitch = switch),
             if (newKey) key() else null, "debug-sub", usd, remaining(usd), purchaseToken = "debug-token-${tier.productId}",
         )
     }
@@ -281,6 +304,9 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
     }
 
     override suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult {
+        delay(400)
+        // A plan with renewal off, past its end, has lapsed.
+        if (canceled && periodEnd in 1..System.currentTimeMillis()) lapse()
         val tier = purchased ?: return AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
         return AccessResult.Granted(subscriptionGrant(tier, newKey = false))
     }
@@ -296,13 +322,15 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
             FakeMode.NONE -> {
                 purchased = null
                 switching = false
+                canceled = false
                 access.debugEdit { StoredAccess(lastKind = it.lastKind) }
             }
             FakeMode.TRIAL -> access.applyGrant(trialGrant(daysLeft = 4.5), activate = true)
-            FakeMode.STANDARD, FakeMode.PLUS, FakeMode.PLUS_SWITCHING -> {
-                val tier = if (mode == FakeMode.STANDARD) Tier.STANDARD else Tier.PLUS
+            FakeMode.STANDARD, FakeMode.PLUS, FakeMode.PLUS_SWITCHING, FakeMode.STANDARD_CANCELED, FakeMode.PLUS_CANCELED -> {
+                val tier = if (mode == FakeMode.STANDARD || mode == FakeMode.STANDARD_CANCELED) Tier.STANDARD else Tier.PLUS
                 purchased = tier
                 switching = mode == FakeMode.PLUS_SWITCHING
+                canceled = mode == FakeMode.STANDARD_CANCELED || mode == FakeMode.PLUS_CANCELED
                 access.applyGrant(subscriptionGrant(tier), activate = true)
             }
             FakeMode.ENDED_TRIAL -> {
@@ -316,6 +344,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
             FakeMode.ENDED_SUB -> {
                 purchased = null
                 switching = false
+                canceled = false
                 access.applyGrant(subscriptionGrant(Tier.STANDARD), activate = true)
                 access.markEnded(EndReason.SUBSCRIPTION_ENDED)
             }
@@ -328,12 +357,38 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
      * allowance, no switch), and the allowance starts over.
      */
     suspend fun renew(access: AccessManager) {
-        val tier = (if (switching) Tier.STANDARD else purchased) ?: return
+        val tier = renewOnPlay()
+        if (tier == null) {
+            access.refresh(force = true)
+            return
+        }
+        access.applyGrant(subscriptionGrant(tier, newKey = false), activate = false)
+    }
+
+    /**
+     * The renewal on the fake Play's side only (the app hears at its next refresh): a set switch takes effect, the
+     * allowance starts over; with renewal off, the plan lapses instead. The plan it renews as, if any.
+     */
+    fun renewOnPlay(): Tier? {
+        if (canceled) {
+            Log.i("DebugAccess", "Lapse")
+            lapse()
+            return null
+        }
+        val tier = (if (switching) Tier.STANDARD else purchased) ?: return null
         Log.i("DebugAccess", "Renewal as $tier")
         purchased = tier
         switching = false
         allowancePercent = 0
-        access.applyGrant(subscriptionGrant(tier, newKey = false), activate = false)
+        periodEnd = 0
+        return tier
+    }
+
+    private fun lapse() {
+        purchased = null
+        switching = false
+        canceled = false
+        periodEnd = 0
     }
 
     /** Sets the allowance used, as if the backend had just reported it, then runs the after-call check. */
@@ -366,7 +421,11 @@ class DebugAccessReceiver : BroadcastReceiver() {
                 intent.getStringExtra("backend")?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } }?.let { fake.backendChoice = it }
                 if (intent.hasExtra("fromPlay")) fake.fromPlay = intent.getBooleanExtra("fromPlay", true)
                 intent.getStringExtra("trial")?.let { v -> FakeTrialOutcome.entries.firstOrNull { it.name == v } }?.let { fake.trialOutcome = it }
+                // A mode starts a period of 18 days unless told otherwise.
+                if (intent.hasExtra("endsInSeconds") || intent.hasExtra("mode")) fake.endIn(intent.getIntExtra("endsInSeconds", 0))
                 intent.getStringExtra("mode")?.let { v -> FakeMode.entries.firstOrNull { it.name == v } }?.let { fake.apply(container.access, it) }
+                if (intent.hasExtra("canceled")) fake.canceled = intent.getBooleanExtra("canceled", false)
+                if (intent.getBooleanExtra("renewOnPlay", false)) fake.renewOnPlay()
                 if (intent.hasExtra("allowance")) fake.setAllowance(container.access, intent.getIntExtra("allowance", 10))
                 if (intent.hasExtra("playError")) fake.playError = intent.getIntExtra("playError", 0)
                 if (intent.getBooleanExtra("renew", false)) fake.renew(container.access)

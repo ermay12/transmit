@@ -48,11 +48,18 @@ data class StoredAccess(
         return when (val e = entitlement) {
             null -> AiAccess.None
             is Entitlement.Trial -> if (now >= e.endsAt) AiAccess.Ended(EndReason.TRIAL_EXPIRED) else AiAccess.Trial(e.endsAt)
-            // A switch only happens at a renewal, so one is never shown for a plan that won't renew.
-            is Entitlement.Subscription -> AiAccess.Subscribed(
-                e.tier, e.periodEndsAt.takeIf { e.autoRenewing }, inUseElsewhere,
-                pendingSwitch = e.pendingSwitch.takeIf { e.autoRenewing }, periodEndsAt = e.periodEndsAt,
-            )
+            // Renewal turned off and the paid period over: it has ended, whether or not the Worker has said so yet
+            // (the next refresh confirms it). Resubscribing in Play before then keeps it.
+            is Entitlement.Subscription -> if (!e.autoRenewing && e.periodEndsAt != null && now >= e.periodEndsAt) {
+                AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED)
+            } else {
+                // A switch only happens at a renewal, so one is never shown for a plan that won't renew.
+                AiAccess.Subscribed(
+                    e.tier, e.periodEndsAt.takeIf { e.autoRenewing }, inUseElsewhere,
+                    pendingSwitch = e.pendingSwitch.takeIf { e.autoRenewing }, periodEndsAt = e.periodEndsAt,
+                    canceled = !e.autoRenewing,
+                )
+            }
         }
     }
 

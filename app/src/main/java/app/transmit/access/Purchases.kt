@@ -111,13 +111,13 @@ class Purchases(
     /**
      * What buying [tier] would mean now: a new subscription, an upgrade, a switch to Transmit, or one already owned.
      * A switch the Worker says is set comes from the app's state, since Play still lists Plus; nothing more is
-     * offered until it has happened.
+     * offered until it has happened. Nor is a switch offered on a Plus whose renewal is off.
      */
     suspend fun planFor(tier: Tier): PurchasePlan {
         val held = access.heldSubscription()
         // For a subscriber, a plain purchase while Play can't be asked could start a second subscription.
         val owned = store.purchases() ?: return if (held != null) PurchasePlan.NotOffered else PurchasePlan.New
-        return PurchasePlan.choose(tier, owned, held?.pendingSwitch?.tier, access.purchaseToken())
+        return PurchasePlan.choose(tier, owned, held?.pendingSwitch?.tier, access.purchaseToken(), canceled = held?.autoRenewing == false)
     }
 
     /**

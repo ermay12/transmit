@@ -53,7 +53,7 @@ class AccessModelTest {
         AccessStore.encode(states[1], p)
         AccessStore.encode(StoredAccess(), p)
         assertEquals(StoredAccess(), AccessStore.decode(p) { false })
-        // A switch that was cancelled (Keep Plus) is gone after the next answer is stored.
+        // A switch that's gone from the Worker's answer (renewal turned off, say) is gone once that answer is stored.
         AccessStore.encode(states.last(), p)
         val kept = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 9 * day), keyHash = "h2")
         AccessStore.encode(kept, p)
@@ -71,7 +71,7 @@ class AccessModelTest {
         assertEquals(AiAccess.Subscribed(Tier.STANDARD, now + day), sub.resolve(now))
         // Not renewing: no "Renews" or "Resets" date, but the period still ends.
         assertEquals(
-            AiAccess.Subscribed(Tier.STANDARD, null, periodEndsAt = now + day),
+            AiAccess.Subscribed(Tier.STANDARD, null, periodEndsAt = now + day, canceled = true),
             sub.copy(entitlement = Entitlement.Subscription(Tier.STANDARD, now + day, false)).resolve(now),
         )
 
@@ -81,6 +81,22 @@ class AccessModelTest {
         assertEquals(AiAccess.Subscribed(Tier.PLUS, now + day, pendingSwitch = switch), switching.resolve(now))
         // A switch needs a renewal, so none shows for a plan that won't renew.
         assertNull((switching.copy(entitlement = Entitlement.Subscription(Tier.PLUS, now + day, false, switch)).resolve(now) as AiAccess.Subscribed).pendingSwitch)
+    }
+
+    @Test
+    fun aPlanWithRenewalOffWorksUntilItsEndAndThenHasEnded() {
+        val canceled = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + day, autoRenewing = false))
+        val shown = canceled.resolve(now) as AiAccess.Subscribed
+        assertTrue(shown.canceled)
+        assertEquals(now + day, shown.endsAt)
+        assertNull(shown.renewsAt)
+        assertTrue(shown.canUseAi)
+        // On the day, with the app open (the minute ticks re-resolve), before the Worker has said so.
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), canceled.resolve(now + day))
+        // Renewing: no end date, and the same moment is just the renewal (the Worker reports the new period).
+        val renewing = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + day)).resolve(now + day) as AiAccess.Subscribed
+        assertFalse(renewing.canceled)
+        assertNull(renewing.endsAt)
     }
 
     @Test

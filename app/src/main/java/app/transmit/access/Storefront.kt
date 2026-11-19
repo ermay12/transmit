@@ -106,8 +106,15 @@ sealed interface PurchasePlan {
         /**
          * [switchingTo] is the plan the Worker says is set for the next renewal, and [heldToken] the purchase token
          * the app holds the key for. Play alone can't tell a switch is set: the switch's token still lists Plus.
+         * [canceled]: the Worker says renewal is off; then there's no switch to Transmit (an upgrade still works).
          */
-        fun choose(target: Tier, owned: List<OwnedPurchase>, switchingTo: Tier? = null, heldToken: String? = null): PurchasePlan {
+        fun choose(
+            target: Tier,
+            owned: List<OwnedPurchase>,
+            switchingTo: Tier? = null,
+            heldToken: String? = null,
+            canceled: Boolean = false,
+        ): PurchasePlan {
             // A switch is set: nothing more to change until it has happened (no Keep Plus, no second switch).
             if (switchingTo != null) return NotOffered
             val current = owned.filter { it.purchased && it.tier != null }
@@ -116,9 +123,11 @@ sealed interface PurchasePlan {
                 ?: current.maxByOrNull { it.purchaseTime }
             if (current.any { it.tier == target }) return AlreadyOwned
             held ?: return New
+            // Renewal off: keeping Plus is Resubscribe on Play's page, and there's no renewal for a switch to wait for.
+            val renewing = !canceled && held.autoRenewing
             return when {
                 held.tier == Tier.STANDARD && target == Tier.PLUS -> Upgrade(held.purchaseToken, held.productId)
-                held.tier == Tier.PLUS && target == Tier.STANDARD -> Downgrade(held.purchaseToken, held.productId)
+                held.tier == Tier.PLUS && target == Tier.STANDARD && renewing -> Downgrade(held.purchaseToken, held.productId)
                 else -> NotOffered
             }
         }

@@ -228,6 +228,14 @@
     <string name="plan_standard_allowance">Around 3,000 translations a month</string>
     <string name="plan_plus_allowance">Twice the AI — around 6,000 translations a month</string>
     <string name="plan_renews">Renews %1$s</string>
+    <!-- Under the plan's name, when renewal is turned off in Google Play: the date the plan stops. -->
+    <string name="plan_ends">Ends %1$s</string>
+    <!-- Plans, when renewal is turned off: the plan still works until this date. -->
+    <string name="plan_ends_note">Your plan ends on %1$s</string>
+    <!-- Plans, when renewal is turned off: opens Google Play's page for the plan, where Resubscribe keeps it. -->
+    <string name="plan_keep_subscription">Keep my subscription</string>
+    <!-- Under Keep my subscription: what to do on Google Play's page. -->
+    <string name="plan_keep_subscription_note">In Google Play, tap Resubscribe. Nothing else changes.</string>
     <string name="plan_per_month">/month</string>
     <string name="plan_price_unavailable">Prices are shown in Google Play</string>
     <string name="plan_subscribe">Subscribe</string>

@@ -257,6 +257,21 @@ class PlayAccessBackendTest {
         assertEquals(PurchasePlan.Upgrade("switch-token", "transmit_monthly"), PurchasePlan.choose(Tier.PLUS, listOf(after), heldToken = "switch-token"))
     }
 
+    /** With renewal off, keeping Plus is Resubscribe on Play's page: no switch to Transmit (an upgrade still works). */
+    @Test
+    fun noSwitchIsOfferedOnAPlusWhoseRenewalIsOff() {
+        val plus = OwnedPurchase("transmit_plus", "plus-token", purchased = true, acknowledged = true, autoRenewing = false)
+        val standard = OwnedPurchase("transmit_monthly", "std-token", purchased = true, acknowledged = true, autoRenewing = false)
+        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.STANDARD, listOf(plus), heldToken = "plus-token"))
+        assertEquals(PurchasePlan.Upgrade("std-token", "transmit_monthly"), PurchasePlan.choose(Tier.PLUS, listOf(standard), heldToken = "std-token", canceled = true))
+        assertEquals(PurchasePlan.AlreadyOwned, PurchasePlan.choose(Tier.PLUS, listOf(plus), heldToken = "plus-token"))
+        // The Worker's `state: "canceled"` counts even before Play's own flag has caught up.
+        val renewing = plus.copy(autoRenewing = true)
+        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.STANDARD, listOf(renewing), heldToken = "plus-token", canceled = true))
+        // Resubscribed: the switch is offered again.
+        assertEquals(PurchasePlan.Downgrade("plus-token", "transmit_plus"), PurchasePlan.choose(Tier.STANDARD, listOf(renewing), heldToken = "plus-token"))
+    }
+
     @Test
     fun everyPlayErrorIsAFailureAndOnlyBackingOutIsQuiet() {
         val codes = BillingClient.BillingResponseCode::class.java.fields.map { it.getInt(null) }
