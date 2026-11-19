@@ -39,6 +39,8 @@ data class StoredAccess(
     val inUseElsewhere: Boolean = false,
     /** The chats' "Translation is off" strip was dismissed; it stays hidden in every chat from then on. */
     val offStripDismissed: Boolean = false,
+    /** Home's "Translation is off" banner was dismissed; it stays hidden from then on. Settings keeps its plan card. */
+    val offBannerDismissed: Boolean = false,
 ) {
     fun resolve(now: Long): AiAccess {
         if (ownKey) return AiAccess.Byok
@@ -98,6 +100,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val warningDismissedFor = stringPreferencesKey("warning_dismissed_for")
         val inUseElsewhere = booleanPreferencesKey("in_use_elsewhere")
         val offStripDismissed = booleanPreferencesKey("off_strip_dismissed")
+        val offBannerDismissed = booleanPreferencesKey("off_banner_dismissed")
     }
 
     companion object {
@@ -127,6 +130,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 warningDismissedFor = p[K.warningDismissedFor],
                 inUseElsewhere = p[K.inUseElsewhere] ?: false,
                 offStripDismissed = p[K.offStripDismissed] ?: false,
+                offBannerDismissed = p[K.offBannerDismissed] ?: false,
             )
         }
 
@@ -164,6 +168,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
             if (s.warningDismissedFor != null) p[K.warningDismissedFor] = s.warningDismissedFor else p.remove(K.warningDismissedFor)
             if (s.inUseElsewhere) p[K.inUseElsewhere] = true else p.remove(K.inUseElsewhere)
             if (s.offStripDismissed) p[K.offStripDismissed] = true else p.remove(K.offStripDismissed)
+            if (s.offBannerDismissed) p[K.offBannerDismissed] = true else p.remove(K.offBannerDismissed)
         }
     }
 }

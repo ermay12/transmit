@@ -97,7 +97,9 @@ import app.transmit.ui.Permissions
 import app.transmit.access.AiAccess
 import app.transmit.ai.AiBlock
 import app.transmit.ui.access.AiBlockDialog
+import app.transmit.ui.access.AllowanceBannerContent
 import app.transmit.ui.access.BannerAction
+import app.transmit.ui.access.BannerDismiss
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.allowanceBanner
 import app.transmit.ui.components.Avatar
@@ -131,6 +133,7 @@ fun HomeScreen(
     val access by vm.access.collectAsStateWithLifecycle()
     val allowance by vm.allowance.collectAsStateWithLifecycle()
     val warningDismissed by vm.warningDismissed.collectAsStateWithLifecycle()
+    val offBannerDismissed by vm.offBannerDismissed.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val paired = bridge !is BridgeState.Unpaired && bridge !is BridgeState.LoggedOut
@@ -221,7 +224,14 @@ fun HomeScreen(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showArchived) {
                 item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
-                allowanceBanner(context, access, allowance, vm.canBuy)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
+                val dismissed = { b: AllowanceBannerContent ->
+                    when (b.dismiss) {
+                        BannerDismiss.TRANSLATION_OFF -> offBannerDismissed
+                        BannerDismiss.NEARLY_USED_UP -> warningDismissed
+                        null -> false
+                    }
+                }
+                allowanceBanner(context, access, allowance, vm.canBuy)?.takeUnless(dismissed)?.let { b ->
                     item("allowance-banner") {
                         val starting = b.does == BannerAction.START_TRIAL && trial == TrialUi.Starting
                         StatusBanner(
@@ -233,7 +243,7 @@ fun HomeScreen(
                                 BannerAction.START_TRIAL -> ({ vm.trial.start() })
                                 BannerAction.OWN_KEY -> onOwnKey
                             }.takeIf { b.action != null },
-                            onDismiss = if (b.dismissible) vm::dismissWarning else null,
+                            onDismiss = b.dismiss?.let { kind -> { vm.dismissBanner(kind) } },
                         )
                     }
                 }

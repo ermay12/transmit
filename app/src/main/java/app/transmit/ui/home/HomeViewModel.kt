@@ -10,6 +10,7 @@ import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.shown
 import app.transmit.messaging.Conversation
 import app.transmit.messaging.Reactions
+import app.transmit.ui.access.BannerDismiss
 import app.transmit.ui.access.TrialStarter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -64,9 +65,15 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val access = c.access.access
     val allowance = c.access.allowance
     val warningDismissed = c.access.warningDismissed
+    val offBannerDismissed = c.access.offBannerDismissed
 
-    fun dismissWarning() {
-        c.scope.launch { c.access.dismissWarning() }
+    fun dismissBanner(kind: BannerDismiss) {
+        c.scope.launch {
+            when (kind) {
+                BannerDismiss.TRANSLATION_OFF -> c.access.dismissOffBanner()
+                BannerDismiss.NEARLY_USED_UP -> c.access.dismissWarning()
+            }
+        }
     }
 
     val canBuy get() = c.purchases.available

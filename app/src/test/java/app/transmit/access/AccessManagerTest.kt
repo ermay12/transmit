@@ -256,6 +256,25 @@ class AccessManagerTest {
     }
 
     @Test
+    fun theHomeTranslationOffBannerStaysDismissedAcrossRestarts() = runBlocking {
+        val file = java.io.File(tmp.root, "banner.preferences_pb")
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val m = manager(file, first)
+        assertEquals(AiAccess.None, withTimeout(5_000) { m.access.first { it != null } })
+        assertFalse(m.offBannerDismissed.value)
+        m.dismissOffBanner()
+        withTimeout(5_000) { m.offBannerDismissed.first { it } }
+        // Its own flag: the chats' strip is still there.
+        assertTrue(withTimeout(5_000) { m.offStripShown.first { it } })
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+
+        val again = manager(file)
+        assertEquals(AiAccess.None, withTimeout(5_000) { again.access.first { it != null } })
+        assertTrue(withTimeout(5_000) { again.offBannerDismissed.first { it } })
+        assertTrue(withTimeout(5_000) { again.offStripShown.first { it } })
+    }
+
+    @Test
     fun theTranslationOffStripIsOnlyForNoAi() = runBlocking {
         val m = manager()
         assertTrue(withTimeout(5_000) { m.offStripShown.first { it } })

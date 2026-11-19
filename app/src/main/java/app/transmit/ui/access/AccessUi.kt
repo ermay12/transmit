@@ -324,42 +324,50 @@ fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit
 /** What a Home banner's button does. */
 enum class BannerAction { PLANS, USE_HERE, START_TRIAL, OWN_KEY }
 
+/** Which dismissal a Home banner's close button records; each is remembered across restarts. */
+enum class BannerDismiss {
+    /** "Translation is off": hidden for good. */
+    TRANSLATION_OFF,
+    /** The allowance is nearly used: hidden until the period resets or the allowance runs out. */
+    NEARLY_USED_UP,
+}
+
 /**
  * The Home banner: no AI set up yet, the managed AI nearly or entirely used, or the trial or subscription over.
- * [action] is the button's label, and [does] what it does.
+ * [action] is the button's label, and [does] what it does. [dismiss] is null for a banner that can't be closed.
  */
 data class AllowanceBannerContent(
     val title: String,
     val body: String?,
     val action: String?,
-    val dismissible: Boolean,
+    val dismiss: BannerDismiss?,
     val does: BannerAction = BannerAction.PLANS,
 )
 
 fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? {
     fun resets(at: Long?) = at?.let { "Resets ${AccessText.date(context, it)}." }
     val banner = when (access) {
-        // Stays until AI is set up: dismissing the chats' strip leaves this way to turn it on.
+        // Dismissible for good: someone who only wants messaging can put it away. The Settings plan card stays.
         AiAccess.None ->
-            if (canBuy) AllowanceBannerContent("Translation is off", AccessText.TRIAL_SUBTEXT, AccessText.START_TRIAL, false, BannerAction.START_TRIAL)
-            else AllowanceBannerContent("Translation is off", null, AccessText.OWN_KEY, false, BannerAction.OWN_KEY)
-        is AiAccess.Ended -> AllowanceBannerContent(AccessText.ended(access.reason), "Subscribe to keep translating.", AccessText.SUBSCRIBE, false)
+            if (canBuy) AllowanceBannerContent("Translation is off", AccessText.TRIAL_SUBTEXT, AccessText.START_TRIAL, BannerDismiss.TRANSLATION_OFF, BannerAction.START_TRIAL)
+            else AllowanceBannerContent("Translation is off", null, AccessText.OWN_KEY, BannerDismiss.TRANSLATION_OFF, BannerAction.OWN_KEY)
+        is AiAccess.Ended -> AllowanceBannerContent(AccessText.ended(access.reason), "Subscribe to keep translating.", AccessText.SUBSCRIBE, null)
         is AiAccess.Trial -> when {
             allowance == null || !allowance.nearlyUsedUp -> null
-            allowance.usedUp -> AllowanceBannerContent(AccessText.ended(EndReason.TRIAL_USED_UP), "Subscribe to keep translating.", AccessText.SUBSCRIBE, false)
-            else -> AllowanceBannerContent("You've used ${allowance.percent}% of your free week's AI", "Subscribe to keep translating after it runs out.", AccessText.SUBSCRIBE, true)
+            allowance.usedUp -> AllowanceBannerContent(AccessText.ended(EndReason.TRIAL_USED_UP), "Subscribe to keep translating.", AccessText.SUBSCRIBE, null)
+            else -> AllowanceBannerContent("You've used ${allowance.percent}% of your free week's AI", "Subscribe to keep translating after it runs out.", AccessText.SUBSCRIBE, BannerDismiss.NEARLY_USED_UP)
         }
         is AiAccess.Subscribed -> {
             val upgrade = if (access.tier == Tier.STANDARD) "Upgrade" else null
             when {
-                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, false, BannerAction.USE_HERE)
+                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, null, BannerAction.USE_HERE)
                 allowance == null || !allowance.nearlyUsedUp -> null
                 allowance.usedUp -> AllowanceBannerContent(
                     "You've used this month's AI",
                     listOfNotNull(resets(allowance.resetsAt), "Transmit Plus has twice the AI.".takeIf { upgrade != null }).joinToString(" "),
-                    upgrade, false,
+                    upgrade, null,
                 )
-                else -> AllowanceBannerContent("You've used ${allowance.percent}% of this month's AI", resets(allowance.resetsAt), upgrade, true)
+                else -> AllowanceBannerContent("You've used ${allowance.percent}% of this month's AI", resets(allowance.resetsAt), upgrade, BannerDismiss.NEARLY_USED_UP)
             }
         }
         else -> null

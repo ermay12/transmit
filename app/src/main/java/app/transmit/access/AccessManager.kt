@@ -104,6 +104,14 @@ class AccessManager(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /**
+     * Home's "Translation is off" banner was dismissed. Someone who only wants Transmit for messaging can put it
+     * away for good, across restarts; the Settings plan card always keeps a way to turn translation on.
+     */
+    val offBannerDismissed: StateFlow<Boolean> = store.state.map { it.offBannerDismissed }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     private val refreshLock = Mutex()
     private var lastRefreshAt = 0L
     /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
@@ -134,6 +142,8 @@ class AccessManager(
     suspend fun dismissWarning() = store.update { it.copy(warningDismissedFor = it.allowancePeriod) }
 
     suspend fun dismissOffStrip() = store.update { it.copy(offStripDismissed = true) }
+
+    suspend fun dismissOffBanner() = store.update { it.copy(offBannerDismissed = true) }
 
     suspend fun current(): AiAccess = store.current().resolve(clock())
 
