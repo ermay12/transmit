@@ -4,27 +4,29 @@
 
     <!-- Plans screen (the paywall). Prices come from Google Play. -->
     <string name="plans_title">Plans</string>
-    <string name="plans_headline">Keep translating</string>
-    <string name="plans_subtitle">Cancel anytime in Google Play.</string>
+    <string name="plans_headline_none">Translate every chat</string>
+    <string name="plans_headline_trial">Keep translating after your free week</string>
+    <string name="plans_headline_ended">Keep translating</string>
+    <string name="plans_headline_subscribed">Your plan</string>
+    <string name="plans_benefits">Translations as you chat, and a tutor for your replies.</string>
+    <string name="plans_cancel_anytime">Cancel anytime in Google Play</string>
     <string name="plan_standard_name">Transmit</string>
     <string name="plan_plus_name">Transmit Plus</string>
-    <string name="plan_standard_description">Translations as you chat, and a tutor for your replies.</string>
-    <string name="plan_plus_description">Twice the AI of Transmit.</string>
     <!--
-        Estimates for product to review. Gemma 4 31B costs $0.20 / $0.40 per million input / output tokens on
-        OpenRouter (2026-11-18), and a managed call (8 context messages) takes about 1,500 to 2,500 input and 100 to
-        600 output tokens: roughly $0.0003 to $0.0007, so $4.50 buys about 9,000 calls. These show a third of that.
+        Approved by product (2026-11-18). The estimate behind it: Gemma 4 31B costs $0.20 / $0.40 per million input /
+        output tokens on OpenRouter (2026-11-18), and a managed call (8 context messages) takes about 1,500 to 2,500
+        input and 100 to 600 output tokens: roughly $0.0003 to $0.0007, so $4.50 buys about 9,000 calls. These show a
+        third of that.
     -->
-    <string name="plan_standard_allowance">Around 3,000 translations or tutor replies a month</string>
-    <string name="plan_plus_allowance">Around 6,000 translations or tutor replies a month</string>
-    <string name="plan_price_month">%1$s/month</string>
-    <string name="plan_price_loading">Checking the price…</string>
-    <string name="plan_price_unavailable">Price shown in Google Play</string>
+    <string name="plan_standard_allowance">Around 3,000 translations a month</string>
+    <string name="plan_plus_allowance">Twice the AI — around 6,000 translations a month</string>
+    <string name="plan_renews">Renews %1$s</string>
+    <string name="plan_per_month">/month</string>
+    <string name="plan_price_unavailable">Prices are shown in Google Play</string>
     <string name="plan_subscribe">Subscribe</string>
     <string name="plan_upgrade">Upgrade to Plus</string>
     <string name="plan_upgrade_note">Starts today at the full price. What\'s left of this month on Transmit is added to Plus as extra days.</string>
-    <string name="plan_current">Your plan</string>
-    <string name="plan_included">Included in Plus</string>
+    <string name="plan_current">Current plan</string>
     <string name="plan_manage">Manage subscription</string>
     <string name="plan_restore">Restore purchase</string>
     <string name="plan_restoring">Restoring…</string>
