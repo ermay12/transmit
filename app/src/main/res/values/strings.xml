@@ -39,4 +39,9 @@
     <string name="purchase_retrying">Your purchase went through, but Transmit couldn\'t finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts.</string>
     <string name="purchase_play_unavailable">Google Play isn\'t available right now. Try again later.</string>
     <string name="purchase_already_owned">You already have this plan. Manage it in Google Play.</string>
+
+    <!-- Chats with translation off (no AI set up, or it ended): the plain composer and the sheet translate actions open. -->
+    <string name="compose_plain_hint">Message</string>
+    <string name="turn_on_title">Turn on translation</string>
+    <string name="action_not_now">Not now</string>
 </resources>

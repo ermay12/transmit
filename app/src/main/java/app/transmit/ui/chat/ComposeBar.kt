@@ -67,6 +67,8 @@ import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import app.transmit.R
 import app.transmit.ai.Feedback
 import app.transmit.data.Language
 import app.transmit.data.ScriptDisplay
@@ -97,6 +99,11 @@ fun ComposeBar(
     replyAuthor: String?,
     onCancelReply: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Translation is off (no AI set up, or it ended), so it mustn't look on: one plain box for the text that's sent,
+     * with no language boxes, translate button or AI marks.
+     */
+    plain: Boolean = false,
 ) {
     val targetFocus = remember { FocusRequester() }
     val nativeFocus = remember { FocusRequester() }
@@ -105,49 +112,63 @@ fun ComposeBar(
     val replyKey = state.replyTo?.key
     LaunchedEffect(replyKey) {
         if (replyKey == null) return@LaunchedEffect
-        val native = state.native.isNotBlank() && state.target.isBlank()
+        val native = plain || (state.native.isNotBlank() && state.target.isBlank())
         runCatching { (if (native) nativeFocus else targetFocus).requestFocus() }
         keyboard?.show()
     }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 4.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).animateContentSize()) {
             state.replyTo?.let { ReplyStrip(it, replyAuthor.orEmpty(), onCancelReply) }
-            AnimatedVisibility(state.feedback != null) {
+            AnimatedVisibility(state.feedback != null && !plain) {
                 state.feedback?.let { FeedbackCard(it, state.target, onApply, onDismissFeedback) }
             }
             if (state.attachments.isNotEmpty()) AttachmentStrip(state.attachments, onRemoveAttachment)
             Row(verticalAlignment = Alignment.Bottom) {
                 IconButton(onClick = onAttach, enabled = enabled) { Icon(Icons.Default.AddPhotoAlternate, "Attach") }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Someone who writes in pinyin or romaji gets a Latin keyboard: a Chinese or Japanese one would convert it.
-                    val romanizedOnly = script == ScriptDisplay.ROMANIZED && target.romanization != null
+                if (plain) {
                     LanguageField(
-                        value = state.target, onValue = onTarget, language = target,
-                        placeholder = if (romanizedOnly) "${target.nativeName} · ${target.romanization?.label}" else target.nativeName,
-                        keyboardLocale = when {
-                            !romanizedOnly -> target.keyboardLocale
-                            native.latinScript -> native.keyboardLocale
-                            else -> "en"
-                        },
-                        tint = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
-                        ai = state.targetAi, stale = state.stale, enabled = enabled,
-                        onClear = onClearTarget, onRefresh = onAi,
-                        reading = state.targetReading, readingStale = state.readingStale || state.stale,
-                        focusRequester = targetFocus,
-                    )
-                    LanguageField(
-                        value = state.native, onValue = onNative, language = native,
-                        placeholder = native.nativeName, keyboardLocale = native.keyboardLocale,
+                        value = state.native, onValue = onNative, flag = null,
+                        placeholder = stringResource(R.string.compose_plain_hint), keyboardLocale = native.keyboardLocale,
                         tint = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        ai = state.nativeAi, stale = false, enabled = enabled,
+                        ai = false, stale = false, enabled = enabled,
                         onClear = { onNative("") }, onRefresh = null,
                         focusRequester = nativeFocus,
+                        modifier = Modifier.weight(1f),
                     )
-                }
-                Spacer(Modifier.width(4.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    AiButton(state, enabled, onAi)
-                    SendButton(state, enabled, onSend)
+                    Spacer(Modifier.width(4.dp))
+                    SendButton(state, enabled, onSend, plain = true)
+                } else {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Someone who writes in pinyin or romaji gets a Latin keyboard: a Chinese or Japanese one would convert it.
+                        val romanizedOnly = script == ScriptDisplay.ROMANIZED && target.romanization != null
+                        LanguageField(
+                            value = state.target, onValue = onTarget, flag = target.flag,
+                            placeholder = if (romanizedOnly) "${target.nativeName} · ${target.romanization?.label}" else target.nativeName,
+                            keyboardLocale = when {
+                                !romanizedOnly -> target.keyboardLocale
+                                native.latinScript -> native.keyboardLocale
+                                else -> "en"
+                            },
+                            tint = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+                            ai = state.targetAi, stale = state.stale, enabled = enabled,
+                            onClear = onClearTarget, onRefresh = onAi,
+                            reading = state.targetReading, readingStale = state.readingStale || state.stale,
+                            focusRequester = targetFocus,
+                        )
+                        LanguageField(
+                            value = state.native, onValue = onNative, flag = native.flag,
+                            placeholder = native.nativeName, keyboardLocale = native.keyboardLocale,
+                            tint = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ai = state.nativeAi, stale = false, enabled = enabled,
+                            onClear = { onNative("") }, onRefresh = null,
+                            focusRequester = nativeFocus,
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        AiButton(state, enabled, onAi)
+                        SendButton(state, enabled, onSend)
+                    }
                 }
             }
         }
@@ -158,7 +179,8 @@ fun ComposeBar(
 private fun LanguageField(
     value: String,
     onValue: (String) -> Unit,
-    language: Language,
+    /** The box's language, as a flag; null for the plain box. */
+    flag: String?,
     placeholder: String,
     /** The keyboard language the box asks for. */
     keyboardLocale: String,
@@ -172,13 +194,17 @@ private fun LanguageField(
     reading: String? = null,
     readingStale: Boolean = false,
     focusRequester: FocusRequester? = null,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(tint).padding(start = 10.dp, end = 4.dp),
+        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(tint)
+            .padding(start = if (flag == null) 16.dp else 10.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(language.flag, fontSize = 18.sp)
-        Spacer(Modifier.width(8.dp))
+        if (flag != null) {
+            Text(flag, fontSize = 18.sp)
+            Spacer(Modifier.width(8.dp))
+        }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Box {
                 if (value.isEmpty()) {
@@ -246,8 +272,8 @@ private fun AiButton(state: ComposeUi, enabled: Boolean, onAi: () -> Unit) {
 }
 
 @Composable
-private fun SendButton(state: ComposeUi, enabled: Boolean, onSend: () -> Unit) {
-    val needsNative = state.native.isBlank() && state.target.isNotBlank()
+private fun SendButton(state: ComposeUi, enabled: Boolean, onSend: () -> Unit, plain: Boolean = false) {
+    val needsNative = state.needsNativeFirst(translationOff = plain)
     FilledIconButton(
         onClick = onSend,
         enabled = enabled && state.canSend,

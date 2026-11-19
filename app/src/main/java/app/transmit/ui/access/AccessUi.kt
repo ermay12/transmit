@@ -15,6 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import app.transmit.R
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -286,6 +293,65 @@ fun AiBlockDialog(
             }
         },
     )
+}
+
+/**
+ * What a chat's translate icons and actions open while translation is off: a small sheet to turn it on. With no AI
+ * set up it offers the free week; once the free week or a subscription has ended, Subscribe. A copy not installed
+ * from Play can only buy neither, so it offers the user's own key. A free week that can't start says why, in place.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TurnOnTranslationSheet(
+    access: AiAccess,
+    canBuy: Boolean,
+    trial: TrialUi,
+    onStartTrial: () -> Unit,
+    onPlans: () -> Unit,
+    onOwnKey: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val ended = access as? AiAccess.Ended
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
+            Icon(Icons.Default.Translate, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(12.dp))
+            ended?.let {
+                Text(AccessText.ended(it.reason), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(4.dp))
+            }
+            Text(stringResource(R.string.turn_on_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                when {
+                    ended == null -> stringResource(R.string.plans_benefits)
+                    canBuy -> AccessText.KEEP_GOING
+                    else -> AccessText.OWN_KEY_TO_KEEP_GOING
+                },
+                style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(20.dp))
+            val failed = trial as? TrialUi.Failed
+            when {
+                !canBuy -> Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
+                ended != null -> Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                failed != null -> TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = onStartTrial)
+                else -> {
+                    Button(onClick = onStartTrial, enabled = trial != TrialUi.Starting, modifier = Modifier.fillMaxWidth()) {
+                        if (trial == TrialUi.Starting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else Text(AccessText.START_TRIAL)
+                    }
+                    Text(
+                        AccessText.TRIAL_SUBTEXT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    )
+                }
+            }
+            TextButton(onClick = onDismiss, enabled = trial != TrialUi.Starting, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(stringResource(R.string.action_not_now))
+            }
+        }
+    }
 }
 
 /**

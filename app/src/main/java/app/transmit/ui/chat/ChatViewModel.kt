@@ -8,6 +8,7 @@ import app.transmit.ai.AiException
 import app.transmit.ai.AiBlock
 import app.transmit.ai.AiBlockedException
 import app.transmit.ai.AiMessages
+import app.transmit.access.AiAccess
 import app.transmit.access.forAccess
 import app.transmit.ui.access.TrialStarter
 import app.transmit.ui.access.TrialUi
@@ -102,6 +103,22 @@ data class ComposeUi(
             else -> AiMode.NONE
         }
     val canSend get() = busy == null && (native.isNotBlank() || target.isNotBlank() || attachments.isNotEmpty())
+
+    /**
+     * Sending first asks the AI for the text friends get, from the practice-language box: only when that's all
+     * there is, and never with translation off, where the one box is sent as typed.
+     */
+    fun needsNativeFirst(translationOff: Boolean) = !translationOff && native.isBlank() && target.isNotBlank()
+
+    /**
+     * The composer with translation off (no AI set up, or it ended) is one plain box: the text that's sent. A draft
+     * only in the practice-language box moves into it, so nothing is hidden. With both boxes filled, the text friends
+     * get stays in the box and the practice text waits, out of sight, for translation to come back.
+     */
+    fun plain(): ComposeUi {
+        val moved = if (native.isBlank() && target.isNotBlank()) copy(native = target, nativeAi = false, target = "", targetAi = false, stale = false) else this
+        return moved.copy(feedback = null, readyToSend = false)
+    }
 }
 
 data class ReactionUi(val emoji: String, val count: Int, val mine: Boolean)
@@ -248,6 +265,13 @@ class ChatViewModel(
     private val reloads = Channel<Unit>(Channel.CONFLATED)
 
     val access = c.access.access
+    private fun offNow() = c.access.access.value?.let { !it.canUseAi } == true
+    /**
+     * No AI set up, or the free week or subscription ended: translation mustn't look on. The composer is one plain
+     * box, and translate actions open the sheet that turns it on.
+     */
+    val translationOff: StateFlow<Boolean> = access.map { it != null && !it.canUseAi }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, offNow())
     /** The settings AI work runs with: in trial and subscription, the managed context and translate-on-open counts. */
     val settings = combine(c.settings.settings, c.access.access) { s, a -> s.forAccess(a) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -330,7 +354,7 @@ class ChatViewModel(
             chat.value = c.policy.effective(threadId, c.settings.current(), r)
             val draft = c.dao.draft(threadId)
             if (draft != null && compose.value.native.isEmpty()) {
-                compose.update { it.copy(native = draft.native, target = draft.target) }
+                compose.update { it.copy(native = draft.native, target = draft.target).let { d -> if (offNow()) d.plain() else d } }
             }
             reload()
         }
@@ -372,6 +396,8 @@ class ChatViewModel(
         // A switch of how the practice language shows does what opening the chat does: with characters, the user's
         // own pinyin among the newest messages is written in them.
         viewModelScope.launch { script.filterNotNull().drop(1).collect { autoTranslate() } }
+        // Translation turned off (the free week ended, say): the composer becomes one plain box.
+        viewModelScope.launch { translationOff.filter { it }.collect { compose.update { it.plain() } } }
         // AI turned on while the chat is open (the free week started from the strip, or in Settings): translate now.
         viewModelScope.launch {
             access.filterNotNull().map { it.canUseAi }.distinctUntilChanged().drop(1).filter { it }.collect { autoTranslate() }
@@ -667,6 +693,11 @@ class ChatViewModel(
     }
 
     fun explain(item: MessageUi, refresh: Boolean = false, overrideBudget: Boolean = false) {
+        // Straight to the turn-on sheet, without an explanation sheet that could only fail.
+        if (translationOff.value) {
+            offerTranslation { explain(item, refresh, overrideBudget) }
+            return
+        }
         val lang = chat.value?.target ?: return
         val m = item.message
         val rendered = item.translation?.text
@@ -734,6 +765,19 @@ class ChatViewModel(
     /** "Use it here" for a subscription another device has: takes its key back. */
     fun useSubscriptionHere() {
         c.scope.launch { c.access.useHere() }
+    }
+
+    /**
+     * With translation off, a translate action (the top bar's flag, Explain) offers to turn it on; [retry] runs once
+     * it is. Blocked AI calls lead to the same sheet through [budgetPrompt].
+     */
+    fun offerTranslation(retry: () -> Unit = { autoTranslate() }) {
+        val block = when (val a = access.value) {
+            AiAccess.None -> AiBlock.NotSetUp
+            is AiAccess.Ended -> AiBlock.Ended(a.reason)
+            else -> return
+        }
+        budgetPrompt.value = BudgetPrompt(block, retry)
     }
 
     fun dismissOffStrip() {
@@ -855,7 +899,8 @@ class ChatViewModel(
         if (!st.canSend) return
         val eff = chat.value
         val s = settings.value
-        if (st.native.isBlank() && st.target.isNotBlank() && eff != null && s != null) {
+        val off = translationOff.value
+        if (st.needsNativeFirst(off) && eff != null && s != null) {
             // Friends get the native-language text, so prepare it first and let the user confirm.
             runAi(Busy.TRANSLATE, { send(true) }) {
                 val r = c.tutor.translate(listOf("1" to st.target.trim()), s.native, contextLines(), threadId, Purpose.TRANSLATE_DRAFT, overrideBudget)
@@ -866,7 +911,8 @@ class ChatViewModel(
         compose.update { it.copy(busy = Busy.SEND) }
         viewModelScope.launch {
             try {
-                val targetText = st.target.takeIf { it.isNotBlank() && !st.stale }
+                // With translation off the box is sent as typed; there's no practice text to keep beside it.
+                val targetText = st.target.takeIf { it.isNotBlank() && !st.stale && !off }
                 val romanized = targetText?.let { st.reading?.takeIf { r -> r.first == st.target }?.second ?: romanCache[it.trim()] }
                 // Stored before the message appears, so it never shows untranslated first.
                 c.sender.sendToThread(threadId, st.native, st.attachments, replyTo = st.replyTo?.messageId) { key ->

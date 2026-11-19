@@ -74,7 +74,9 @@ import app.transmit.smart.SmartEntity
 import app.transmit.messaging.Attachment
 import app.transmit.messaging.PhoneNumbers
 import app.transmit.ui.access.AiBlockDialog
+import app.transmit.ai.AiBlock
 import app.transmit.ui.access.TranslationOffStrip
+import app.transmit.ui.access.TurnOnTranslationSheet
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
@@ -108,6 +110,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
     val access by vm.access.collectAsStateWithLifecycle()
     val trial by vm.trial.state.collectAsStateWithLifecycle()
     val offStrip by vm.offStrip.collectAsStateWithLifecycle()
+    val translationOff by vm.translationOff.collectAsStateWithLifecycle()
     // Model, cost and dollar budgets are for people paying for their own AI.
     val aiDetails = access?.showsAiDetails == true
     var viewing by remember { mutableStateOf<Attachment?>(null) }
@@ -155,11 +158,12 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 people = recipients.map { people[it] ?: ContactInfo(it, null, null, null) },
                 groupPhoto = groupPhoto,
                 customName = chat?.overrides?.name,
-                autoTranslate = chat?.autoTranslate == true,
+                // With translation off the flag is never lit, and tapping it offers to turn translation on.
+                autoTranslate = chat?.autoTranslate == true && !translationOff,
                 flag = target?.flag ?: "🌐",
                 onBack = onBack,
                 onInfo = { vm.sheet.value = Sheet.ChatInfo },
-                onToggleTranslate = vm::toggleAutoTranslate,
+                onToggleTranslate = { if (translationOff) vm.offerTranslation() else vm.toggleAutoTranslate() },
             )
         },
     ) { padding ->
@@ -257,6 +261,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                     replyAuthor = reply?.let { quoteAuthor(it, people) },
                     onCancelReply = vm::cancelReply,
                     modifier = Modifier.navigationBarsPadding(),
+                    plain = translationOff,
                 )
             }
         }
@@ -270,7 +275,10 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
             onMoreEmoji = { vm.sheet.value = Sheet.Emoji(s.item) },
             onReply = if (s.item.message.replyable) ({ vm.replyTo(s.item) }) else null,
             onExplain = { vm.sheet.value = null; vm.explain(s.item) },
-            onRetranslate = { vm.sheet.value = null; vm.translate(s.item.message, refresh = true) },
+            onRetranslate = {
+                vm.sheet.value = null
+                if (translationOff) vm.offerTranslation { vm.translate(s.item.message, refresh = true) } else vm.translate(s.item.message, refresh = true)
+            },
             onDetails = { vm.sheet.value = Sheet.Details(s.item) },
             onRetry = { vm.retry(s.item.message) },
             onDelete = { vm.delete(s.item.message) },
@@ -305,6 +313,20 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
 
     budgetPrompt?.let { prompt ->
         val close = { vm.budgetPrompt.value = null; vm.trial.reset() }
+        val a = access
+        // No AI set up, or it ended: the sheet that turns translation on, whichever translate action led here.
+        if (a != null && !a.canUseAi && (prompt.block == AiBlock.NotSetUp || prompt.block is AiBlock.Ended)) {
+            TurnOnTranslationSheet(
+                access = a,
+                canBuy = vm.canBuy,
+                trial = trial,
+                onStartTrial = { vm.trial.start { close(); prompt.retry() } },
+                onPlans = { close(); onPlans() },
+                onOwnKey = { close(); onOwnKey() },
+                onDismiss = close,
+            )
+            return@let
+        }
         AiBlockDialog(
             block = prompt.block,
             trial = trial,
