@@ -40,7 +40,9 @@ import kotlinx.coroutines.launch
  *     adb shell am broadcast -n com.ermay12.transmit/app.transmit.access.DebugAccessReceiver \
  *         --es mode TRIAL --ei allowance 85 --es trial TRIALS_FULL
  *
- * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--ez fromPlay false`
+ * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--es mode PLUS_SWITCHING`
+ * is Plus with a switch to Transmit set for the renewal, and `--ez renew true` renews now (so a set switch takes
+ * effect). On the Plans screen, Switch to Transmit and Keep Plus act as Play would. `--ez fromPlay false`
  * makes the fake act like a copy not installed from Play (no free week or subscriptions). `--es backend WORKER`
  * (or `FAKE`) picks the backend for the next start: WORKER is the live Worker with real Play Integrity and Billing,
  * without the installed-from-Play check, so the Worker's own answers show (an emulator gets `integrity_failed`).
@@ -117,6 +119,7 @@ object AccessBuild {
                 AiAccess.Byok, null -> null
             }
             if (block != null) FilterChip(selected = false, onClick = { preview = block }, label = { Text("Show blocked dialog") })
+            if (current is AiAccess.Subscribed) FilterChip(selected = false, onClick = { scope.launch { f.renew(access) } }, label = { Text("Renew now") })
             var choice by remember { mutableStateOf(f.backendChoice) }
             Text("Backend (applies after a restart)", style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -152,9 +155,13 @@ class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
         if (plan == PurchasePlan.AlreadyOwned) return LaunchResult.ALREADY_OWNED
         if (plan == PurchasePlan.NotOffered) return LaunchResult.UNAVAILABLE
         Log.i("DebugAccess", "Fake purchase of $tier as $plan")
+        // A switch to Transmit is set for the renewal; Keep Plus (or any other purchase) clears it.
+        fake.switching = plan is PurchasePlan.Downgrade
+        // Like Play, a switch's new token is listed as the plan it leaves (Plus) until the renewal.
+        val listed = if (plan is PurchasePlan.Downgrade || plan is PurchasePlan.KeepPlus) Tier.PLUS else tier
         kotlinx.coroutines.GlobalScope.launch {
             delay(800)
-            _updates.emit(PurchaseUpdate.Purchases(listOf(OwnedPurchase(tier.productId, "debug-token-${tier.productId}-${System.currentTimeMillis()}", purchased = true, acknowledged = false))))
+            _updates.emit(PurchaseUpdate.Purchases(listOf(OwnedPurchase(listed.productId, "debug-token-${listed.productId}-${System.currentTimeMillis()}", purchased = true, acknowledged = false))))
         }
         return LaunchResult.LAUNCHED
     }
@@ -165,6 +172,7 @@ enum class FakeMode(val label: String) {
     TRIAL("Trial"),
     STANDARD("Transmit"),
     PLUS("Plus"),
+    PLUS_SWITCHING("Plus → Transmit"),
     ENDED_TRIAL("Trial expired"),
     ENDED_USED_UP("Trial used up"),
     ENDED_SUB("Sub ended"),
@@ -205,6 +213,11 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         get() = prefs.getString("backend", null)?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } } ?: DebugBackend.FAKE
         set(v) = prefs.edit().putString("backend", v.name).apply()
 
+    /** Plus with a switch to Transmit set for the renewal, as the Worker reports it with `pending…` fields. */
+    var switching: Boolean
+        get() = prefs.getBoolean("switching", false)
+        set(v) = prefs.edit().putBoolean("switching", v).apply()
+
     /** The subscription "on Play", for restore and refresh. */
     var purchased: Tier?
         get() = prefs.getString("purchased", null)?.let { v -> Tier.entries.firstOrNull { it.name == v } }
@@ -221,8 +234,10 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
 
     fun subscriptionGrant(tier: Tier, newKey: Boolean = true): Grant {
         val usd = if (tier == Tier.PLUS) PLUS_USD else STANDARD_USD
+        val ends = System.currentTimeMillis() + 18 * DAY
+        val switch = PlanSwitch(Tier.STANDARD, ends).takeIf { switching && tier == Tier.PLUS }
         return Grant(
-            Entitlement.Subscription(tier, System.currentTimeMillis() + 18 * DAY, autoRenewing = true),
+            Entitlement.Subscription(tier, ends, autoRenewing = true, pendingSwitch = switch),
             if (newKey) key() else null, "debug-sub", usd, remaining(usd), purchaseToken = "debug-token-${tier.productId}",
         )
     }
@@ -264,12 +279,14 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         when (mode) {
             FakeMode.NONE -> {
                 purchased = null
+                switching = false
                 access.debugEdit { StoredAccess(lastKind = it.lastKind) }
             }
             FakeMode.TRIAL -> access.applyGrant(trialGrant(daysLeft = 4.5), activate = true)
-            FakeMode.STANDARD, FakeMode.PLUS -> {
-                val tier = if (mode == FakeMode.PLUS) Tier.PLUS else Tier.STANDARD
+            FakeMode.STANDARD, FakeMode.PLUS, FakeMode.PLUS_SWITCHING -> {
+                val tier = if (mode == FakeMode.STANDARD) Tier.STANDARD else Tier.PLUS
                 purchased = tier
+                switching = mode == FakeMode.PLUS_SWITCHING
                 access.applyGrant(subscriptionGrant(tier), activate = true)
             }
             FakeMode.ENDED_TRIAL -> {
@@ -282,11 +299,25 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
             }
             FakeMode.ENDED_SUB -> {
                 purchased = null
+                switching = false
                 access.applyGrant(subscriptionGrant(Tier.STANDARD), activate = true)
                 access.markEnded(EndReason.SUBSCRIPTION_ENDED)
             }
             FakeMode.BYOK -> access.useOwnKey()
         }
+    }
+
+    /**
+     * The subscription renews now, as the Worker would report it: a set switch takes effect (Transmit, its
+     * allowance, no switch), and the allowance starts over.
+     */
+    suspend fun renew(access: AccessManager) {
+        val tier = (if (switching) Tier.STANDARD else purchased) ?: return
+        Log.i("DebugAccess", "Renewal as $tier")
+        purchased = tier
+        switching = false
+        allowancePercent = 0
+        access.applyGrant(subscriptionGrant(tier, newKey = false), activate = false)
     }
 
     /** Sets the allowance used, as if the backend had just reported it, then runs the after-call check. */
@@ -321,6 +352,7 @@ class DebugAccessReceiver : BroadcastReceiver() {
                 intent.getStringExtra("trial")?.let { v -> FakeTrialOutcome.entries.firstOrNull { it.name == v } }?.let { fake.trialOutcome = it }
                 intent.getStringExtra("mode")?.let { v -> FakeMode.entries.firstOrNull { it.name == v } }?.let { fake.apply(container.access, it) }
                 if (intent.hasExtra("allowance")) fake.setAllowance(container.access, intent.getIntExtra("allowance", 10))
+                if (intent.getBooleanExtra("renew", false)) fake.renew(container.access)
             } finally {
                 pending.finish()
             }
