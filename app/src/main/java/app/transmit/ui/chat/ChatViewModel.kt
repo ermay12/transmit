@@ -266,6 +266,8 @@ class ChatViewModel(
     private val reloads = Channel<Unit>(Channel.CONFLATED)
 
     val access = c.access.access
+    /** A sample chat in the reviewer demo. */
+    val demo get() = c.demo
     private fun offNow() = c.access.access.value?.let { !it.canUseAi } == true
     /**
      * No AI set up, or the free week or subscription ended: translation mustn't look on. The composer is one plain

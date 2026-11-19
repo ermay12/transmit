@@ -50,7 +50,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,10 +79,11 @@ private const val STEPS = 3
 
 /**
  * Three steps: what you're practicing, connecting Google Messages, and turning on translation. The step is
- * saveable, so it survives the trip to the pairing screen and rotation.
+ * saveable, so it survives the trip to the pairing screen, the demo and rotation. Long-pressing step 2's heading
+ * opens the demo ([onDemo]), for Play reviewers, who can't pair.
  */
 @Composable
-fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> Unit, onDone: () -> Unit) {
+fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> Unit, onDemo: () -> Unit, onDone: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var step by rememberSaveable { mutableIntStateOf(0) }
     // Set when the user leaves for the pairing screen, so coming back paired moves on.
@@ -112,6 +119,7 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
                         vm, pairingStarted,
                         onPair = { pairingStarted = true; onPair() },
                         onNext = { pairingStarted = false; step = 2 },
+                        onDemo = onDemo,
                     )
                     else -> TranslationStep(vm, onPlans, onFinish = ::finish)
                 }
@@ -123,9 +131,22 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
     }
 }
 
+/** [onLongPress] is the demo's hidden way in, on step 2's heading. */
 @Composable
-private fun Title(text: String, sub: String? = null) {
-    Text(text, style = MaterialTheme.typography.headlineMedium)
+private fun Title(text: String, sub: String? = null, onLongPress: (() -> Unit)? = null) {
+    val haptics = LocalHapticFeedback.current
+    val label = stringResource(R.string.demo_open)
+    Text(
+        text, style = MaterialTheme.typography.headlineMedium,
+        modifier = if (onLongPress == null) Modifier else Modifier
+            .pointerInput(onLongPress) {
+                detectTapGestures(onLongPress = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                })
+            }
+            .semantics { onLongClick(label) { onLongPress(); true } },
+    )
     if (sub != null) {
         Spacer(Modifier.height(8.dp))
         Text(sub, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -169,7 +190,7 @@ private fun LanguageCard(label: String, flag: String, name: String, prominent: B
 }
 
 @Composable
-private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Boolean, onPair: () -> Unit, onNext: () -> Unit) {
+private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Boolean, onPair: () -> Unit, onNext: () -> Unit, onDemo: () -> Unit) {
     val context = LocalContext.current
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val paired = bridge is BridgeState.Connecting || bridge is BridgeState.Connected
@@ -182,7 +203,7 @@ private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Bool
     LaunchedEffect(paired, pairingStarted) {
         if (paired && pairingStarted) askThenNext()
     }
-    Title(stringResource(R.string.onboarding_connect_title), stringResource(R.string.onboarding_connect_body))
+    Title(stringResource(R.string.onboarding_connect_title), stringResource(R.string.onboarding_connect_body), onLongPress = onDemo)
     if (paired) {
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {

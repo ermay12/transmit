@@ -168,3 +168,15 @@ fun StatusBanner(
         }
     }
 }
+
+/** The "Demo" label on the reviewer demo's inbox and chats, so sample chats are never taken for the user's own. */
+@Composable
+fun DemoTag(modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.tertiary, modifier = modifier) {
+        Text(
+            androidx.compose.ui.res.stringResource(app.transmit.R.string.demo_label).uppercase(),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiary,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
+}

@@ -340,6 +340,8 @@ fun ChatInfoSheet(
     onRename: (String?) -> Unit,
     onScriptDisplay: (Romanization, ScriptDisplay) -> Unit,
     onDelete: () -> Unit,
+    /** A sample chat in the demo: its made-up people can't be called or added to contacts. */
+    demo: Boolean = false,
 ) {
     val context = LocalContext.current
     var pickLanguage by remember { mutableStateOf(false) }
@@ -356,12 +358,12 @@ fun ChatInfoSheet(
                         Text(p.displayName, style = MaterialTheme.typography.titleMedium)
                         if (p.isContact) Text(PhoneNumbers.format(p.address), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (!PhoneNumbers.isShortCodeOrAlpha(p.address)) {
+                    if (!demo && !PhoneNumbers.isShortCodeOrAlpha(p.address)) {
                         IconButton(onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${p.address}"))) }) { Icon(Icons.Default.Call, "Call") }
                     }
                     if (p.lookupUri != null) {
                         IconButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, p.lookupUri)) }) { Icon(Icons.Outlined.AccountCircle, "Contact") }
-                    } else if (!PhoneNumbers.isShortCodeOrAlpha(p.address)) {
+                    } else if (!demo && !PhoneNumbers.isShortCodeOrAlpha(p.address)) {
                         IconButton(onClick = {
                             context.startActivity(
                                 Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)

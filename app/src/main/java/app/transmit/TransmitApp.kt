@@ -30,6 +30,7 @@ import app.transmit.ai.ChatPolicy
 import app.transmit.ai.TranslationManager
 import app.transmit.ai.Tutor
 import app.transmit.data.ContactsRepository
+import app.transmit.demo.DemoSession
 import app.transmit.data.SecretStore
 import app.transmit.data.SettingsRepository
 import app.transmit.data.db.AppDatabase
@@ -105,6 +106,20 @@ class AppContainer(val context: Context) {
     val smart = SmartLinks()
     /** The user's own messages, as the inbox and chats work on them. */
     val live = Workspace(this, demo = false, dao, messaging, sender, bridge, contacts, policy, budget, tutor, translations)
+
+    private val demoLock = Any()
+    private var demo: DemoSession? = null
+
+    /** The reviewer demo's sample chats: the open demo's, or a fresh one. */
+    fun startDemo(): Workspace = synchronized(demoLock) { (demo ?: DemoSession(this).also { demo = it }).workspace }
+
+    /** Leaves the demo that [workspace] belongs to, discarding everything in it. */
+    fun endDemo(workspace: Workspace) = synchronized(demoLock) {
+        if (demo?.workspace === workspace) {
+            demo?.close()
+            demo = null
+        }
+    }
 
     init {
         access.listener = object : AccessListener {

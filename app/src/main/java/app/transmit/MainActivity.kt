@@ -32,6 +32,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.transmit.data.ModelSlot
+import app.transmit.demo.DemoViewModel
 import app.transmit.gm.BridgeService
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.notify.ConversationShortcuts
@@ -204,7 +205,11 @@ private object Routes {
     const val PLANS = "plans"
     const val USAGE = "usage"
     const val PAIR = "pair"
+    /** The reviewer demo's inbox and chats, entered from onboarding. Leaving the inbox ends the demo. */
+    const val DEMO = "demo"
+    const val DEMO_CHAT = "demo/chat/{threadId}"
     fun chat(id: Long) = "chat/$id"
+    fun demoChat(id: Long) = "demo/chat/$id"
     fun newChat(group: Boolean = false) = if (group) "new?group=true" else "new"
     fun models(slot: ModelSlot) = "models/${slot.name}"
     fun settings(ownKey: Boolean = false) = if (ownKey) "settings?ownKey=true" else "settings"
@@ -279,7 +284,10 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
 
     NavHost(nav, startDestination = start) {
         composable(Routes.ONBOARDING) {
-            OnboardingScreen(viewModel { SettingsViewModel(c) }, onPair = { nav.navigate(Routes.PAIR) }, onPlans = openPlans) {
+            OnboardingScreen(
+                viewModel { SettingsViewModel(c) }, onPair = { nav.navigate(Routes.PAIR) }, onPlans = openPlans,
+                onDemo = { nav.navigate(Routes.DEMO) { launchSingleTop = true } },
+            ) {
                 nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
             }
         }
@@ -293,6 +301,31 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 onPair = { nav.navigate(Routes.PAIR) },
                 onPlans = openPlans,
                 onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },
+            )
+        }
+        composable(Routes.DEMO) {
+            // Holds the demo while its inbox is on the back stack; leaving the inbox discards it.
+            val demo = viewModel { DemoViewModel(c) }
+            HomeScreen(
+                vm = viewModel { HomeViewModel(demo.workspace) },
+                onOpen = { nav.navigate(Routes.demoChat(it)) },
+                onNew = {},
+                onSettings = { nav.navigate(Routes.settings()) },
+                onUsage = {},
+                onPair = {},
+                onPlans = openPlans,
+                onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },
+                onExitDemo = { nav.popBackStack(Routes.DEMO, inclusive = true) },
+            )
+        }
+        composable(Routes.DEMO_CHAT, arguments = listOf(navArgument("threadId") { type = NavType.LongType })) { entry ->
+            val threadId = entry.arguments?.getLong("threadId") ?: return@composable
+            // The open demo's, or after the process was restarted here, a fresh one that the inbox below picks up.
+            val workspace = remember { c.startDemo() }
+            ChatScreen(
+                viewModel { ChatViewModel(workspace, threadId, null, emptyList()) },
+                onBack = { if (!nav.popBackStack()) onExit() }, onPair = {},
+                onPlans = openPlans, onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },
             )
         }
         composable(Routes.PAIR) {

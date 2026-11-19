@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sms
@@ -107,6 +109,7 @@ import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.allowanceBanner
 import app.transmit.ui.access.openPlayListing
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.DemoTag
 import app.transmit.ui.components.StatusBanner
 import app.transmit.ui.components.awaitSideways
 import app.transmit.ui.components.ReceiptIcon
@@ -131,7 +134,10 @@ fun HomeScreen(
     onPair: () -> Unit,
     onPlans: () -> Unit,
     onOwnKey: () -> Unit,
+    /** Set in the reviewer demo: the inbox is labelled Demo, and this leaves it. */
+    onExitDemo: (() -> Unit)? = null,
 ) {
+    val demo = onExitDemo != null
     val items by vm.filtered.collectAsStateWithLifecycle()
     val trial by vm.trial.state.collectAsStateWithLifecycle()
     val access by vm.access.collectAsStateWithLifecycle()
@@ -202,6 +208,8 @@ fun HomeScreen(
                 )
             } else if (showArchived) {
                 ArchivedBar(onBack = { vm.showArchived.value = false })
+            } else if (onExitDemo != null) {
+                DemoBar(onExit = onExitDemo, onSettings = onSettings)
             } else {
                 SearchBar(
                     query = query,
@@ -215,7 +223,8 @@ fun HomeScreen(
             }
         },
         floatingActionButton = {
-            if (paired && !showArchived) {
+            // The demo's chats are all there is: no new ones.
+            if (paired && !showArchived && !demo) {
                 ExtendedFloatingActionButton(
                     onClick = onNew,
                     expanded = expandedFab,
@@ -227,7 +236,13 @@ fun HomeScreen(
     ) { padding ->
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showArchived) {
-                item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
+                if (demo) {
+                    item("demo-banner") {
+                        StatusBanner(Icons.Default.Science, stringResource(R.string.demo_banner_title), stringResource(R.string.demo_banner_body))
+                    }
+                } else {
+                    item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
+                }
                 val dismissed = { b: AllowanceBannerContent ->
                     when (b.dismiss) {
                         BannerDismiss.TRANSLATION_OFF -> offBannerDismissed
@@ -255,7 +270,7 @@ fun HomeScreen(
                     }
                 }
                 // Until paired there's nothing to be alerted to; pairing comes first.
-                if (paired && !alertsOn) {
+                if (paired && !alertsOn && !demo) {
                     item("alerts-banner") {
                         StatusBanner(Icons.Default.NotificationsOff, "Notifications are off", "You won't be alerted to new messages", "Turn on", turnOnAlerts)
                     }
@@ -315,6 +330,25 @@ fun HomeScreen(
             confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deleteSelected() }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** The demo inbox's top bar: labelled Demo, with Settings and a plain way out. */
+@Composable
+private fun DemoBar(onExit: () -> Unit, onSettings: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp).height(48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DemoTag()
+        Spacer(Modifier.width(10.dp))
+        Text(stringResource(R.string.demo_title), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") }
+        FilledTonalButton(onClick = onExit) {
+            Icon(Icons.AutoMirrored.Filled.Logout, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.demo_exit))
+        }
     }
 }
 

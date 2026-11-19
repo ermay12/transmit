@@ -41,7 +41,11 @@ data class PhoneContact(
     val photoUri: Uri?,
 )
 
-class ContactsRepository(private val context: Context) {
+/**
+ * Names and photos for numbers, from the address book and from Google Messages. With [fixedNames] (the reviewer demo's
+ * people, by number), it names only those and never reads the address book.
+ */
+class ContactsRepository(private val context: Context, private val fixedNames: Map<String, String>? = null) {
     private val cache = ConcurrentHashMap<String, ContactInfo>()
     private val _version = MutableStateFlow(0)
     /** Bumps whenever the address book changes so UIs can re-resolve names. */
@@ -99,6 +103,7 @@ class ContactsRepository(private val context: Context) {
     /** Blocking lookup; call from a background thread. */
     fun lookup(address: String): ContactInfo {
         val key = PhoneNumbers.matchKey(address)
+        fixedNames?.let { names -> return ContactInfo(address, names.entries.firstOrNull { PhoneNumbers.matchKey(it.key) == key }?.value, null, null) }
         cache[key]?.let { return it }
         observeIfNeeded()
         val found = if (!canRead() || address.isBlank()) {
@@ -132,7 +137,7 @@ class ContactsRepository(private val context: Context) {
      * PhoneLookup: same last seven digits, then a loose caller-ID comparison. Blocking.
      */
     fun prefetch(addresses: Collection<String>) {
-        if (!canRead()) return
+        if (fixedNames != null || !canRead()) return
         observeIfNeeded()
         val todo = addresses.filter { a ->
             a.isNotBlank() && a.none { it.isLetter() } && '@' !in a && !cache.containsKey(PhoneNumbers.matchKey(a))
@@ -167,7 +172,7 @@ class ContactsRepository(private val context: Context) {
     }
 
     suspend fun phoneContacts(): List<PhoneContact> = withContext(Dispatchers.IO) {
-        if (!canRead()) return@withContext emptyList()
+        if (fixedNames != null || !canRead()) return@withContext emptyList()
         val out = mutableListOf<PhoneContact>()
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.CONTACT_ID,

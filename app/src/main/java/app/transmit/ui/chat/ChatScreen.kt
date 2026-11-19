@@ -80,6 +80,7 @@ import app.transmit.ui.access.TranslationOffStrip
 import app.transmit.ui.access.TurnOnTranslationSheet
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.Avatar
+import app.transmit.ui.components.DemoTag
 import app.transmit.ui.components.Times
 import app.transmit.ui.media.ImageViewer
 import app.transmit.ui.media.MediaActions
@@ -165,6 +166,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 onBack = onBack,
                 onInfo = { vm.sheet.value = Sheet.ChatInfo },
                 onToggleTranslate = { if (translationOff) vm.offerTranslation() else vm.toggleAutoTranslate() },
+                demo = vm.demo,
             )
         },
     ) { padding ->
@@ -306,6 +308,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                     onRename = vm::setChatName,
                     onScriptDisplay = vm::setScriptDisplay,
                     onDelete = { confirmDelete = true },
+                    demo = vm.demo,
                 )
             }
         }
@@ -409,6 +412,8 @@ private fun ChatTopBar(
     onBack: () -> Unit,
     onInfo: () -> Unit,
     onToggleTranslate: () -> Unit,
+    /** A sample chat: labelled Demo, and its made-up people can't be called. */
+    demo: Boolean = false,
 ) {
     val context = LocalContext.current
     val title = chatTitle(people, customName)
@@ -435,7 +440,9 @@ private fun ChatTopBar(
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                    if (subtitle != null) {
+                    if (demo) {
+                        DemoTag(Modifier.padding(top = 2.dp))
+                    } else if (subtitle != null) {
                         Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -452,7 +459,7 @@ private fun ChatTopBar(
                     Text(flag, fontSize = 18.sp, modifier = Modifier.alpha(if (autoTranslate) 1f else 0.4f))
                 }
             }
-            if (people.size == 1 && !PhoneNumbers.isShortCodeOrAlpha(people[0].address)) {
+            if (!demo && people.size == 1 && !PhoneNumbers.isShortCodeOrAlpha(people[0].address)) {
                 IconButton(onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${people[0].address}"))) }) {
                     Icon(Icons.Default.Call, "Call")
                 }

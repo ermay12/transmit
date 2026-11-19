@@ -50,6 +50,17 @@
     <string name="onboarding_benefit_tutor">A tutor that checks your replies</string>
     <string name="onboarding_benefit_explain">Words and grammar explained</string>
 
+    <!--
+        The demo: long-pressing "Connect your messages" opens sample chats, so Play reviewers can try translation and
+        the tutor without pairing. Labelled Demo throughout; leaving it returns to onboarding.
+    -->
+    <string name="demo_open">Open the demo</string>
+    <string name="demo_label">Demo</string>
+    <string name="demo_title">Sample chats</string>
+    <string name="demo_banner_title">You\'re in the demo</string>
+    <string name="demo_banner_body">These chats are samples, so nothing you send here reaches anyone. Translation and the tutor work as they do in your own chats.</string>
+    <string name="demo_exit">Exit demo</string>
+
     <!-- Pairing with Google Messages (where Connect in onboarding leads), and the banner when messages stop flowing. -->
     <string name="pair_title">Pair with Google Messages</string>
     <string name="pair_intro">Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does. Nothing changes for the people you text.</string>

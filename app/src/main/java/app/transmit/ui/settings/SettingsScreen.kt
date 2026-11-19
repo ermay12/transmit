@@ -539,7 +539,7 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
                     }
                 }
                 // What happens to messages on this provider, before the key is saved.
-                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 4.dp), textAlign = TextAlign.Start)
+                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 8.dp), textAlign = TextAlign.Start)
             }
         },
         confirmButton = {
@@ -731,7 +731,7 @@ fun KeyDialog(vm: SettingsViewModel, provider: ProviderType, onDismiss: () -> Un
                     }
                 }
                 // What happens to messages on this provider, before the key is saved.
-                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 4.dp), textAlign = TextAlign.Start)
+                PrivacyNote(ownKeyAiDisclosure(provider), Modifier.padding(top = 8.dp), textAlign = TextAlign.Start)
             }
         },
         confirmButton = {
