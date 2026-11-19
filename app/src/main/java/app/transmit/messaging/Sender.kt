@@ -45,7 +45,7 @@ class Sender(
     private val bridge: GmBridge,
     private val scope: CoroutineScope,
     private val onFailed: suspend (threadId: Long) -> Unit,
-) {
+) : Outbox {
     data class Result(val threadId: Long, val key: String)
 
     /** [replyTo] is the phone's id for the message this one replies to. */
@@ -68,12 +68,12 @@ class Sender(
      * e.g. to store its translation so it never shows untranslated. With [replyTo] (the phone's id for
      * a message), the first message sent is a reply to it.
      */
-    suspend fun sendToThread(
+    override suspend fun sendToThread(
         threadId: Long,
         text: String,
-        attachments: List<OutgoingAttachment> = emptyList(),
-        replyTo: String? = null,
-        prepare: suspend (key: String) -> Unit = {},
+        attachments: List<OutgoingAttachment>,
+        replyTo: String?,
+        prepare: suspend (key: String) -> Unit,
     ): Result =
         withContext(Dispatchers.IO) {
             bridge.requireClient()
@@ -177,7 +177,7 @@ class Sender(
     }
 
     /** Sends a failed message again, as a new message. */
-    suspend fun retry(message: Message): Result? = withContext(Dispatchers.IO) {
+    override suspend fun retry(message: Message): Result? = withContext(Dispatchers.IO) {
         val id = message.messageId
         val pending = outgoing.remove(id)
         // The new copy keeps the translation shown for the failed one.
@@ -196,7 +196,7 @@ class Sender(
     }
 
     /** Adds, switches or removes this user's reaction, as Google Messages does natively. */
-    suspend fun react(message: Message, emoji: String) = withContext(Dispatchers.IO) {
+    override suspend fun react(message: Message, emoji: String): Unit = withContext(Dispatchers.IO) {
         val mine = message.reactions.firstOrNull { it.mine }
         val action = when {
             mine == null -> SendReactionRequest.Action.ADD

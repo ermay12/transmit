@@ -26,14 +26,14 @@ import app.transmit.gm.proto.Message as GmMessage
  * Conversations and messages from Google Messages on the phone, read from Transmit's local cache.
  * Reads never wait on the phone: they return what's cached and ask the bridge to fetch more.
  */
-class MessagingRepository(private val context: Context, private val db: AppDatabase, private val bridge: GmBridge) {
+class MessagingRepository(private val context: Context, private val db: AppDatabase, private val bridge: GmBridge) : Inbox {
     private val gmDao = db.gmDao()
 
     /** True once paired; until then there is nothing to read. */
-    fun canRead(): Boolean = bridge.isPaired || bridge.state.value is BridgeState.Connected
+    override fun canRead(): Boolean = bridge.isPaired || bridge.state.value is BridgeState.Connected
 
     /** Emits whenever the cached conversations or messages change. */
-    val changes: Flow<Unit> = callbackFlow {
+    override val changes: Flow<Unit> = callbackFlow {
         val observer = object : InvalidationTracker.Observer(arrayOf("gm_conversations", "gm_messages")) {
             override fun onInvalidated(tables: Set<String>) {
                 trySend(Unit)
@@ -46,7 +46,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
     // ---- conversations -------------------------------------------------------------------------
 
     /** Conversations, newest first. */
-    suspend fun conversations(limit: Int = Int.MAX_VALUE): List<Conversation> = withContext(Dispatchers.IO) {
+    override suspend fun conversations(limit: Int): List<Conversation> = withContext(Dispatchers.IO) {
         val rows = gmDao.conversations().take(limit)
         val latest = gmDao.latestMessages().associateBy { it.threadId }
         rows.mapNotNull { row ->
@@ -108,11 +108,11 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
     private fun groupPhoto(conv: GmConversation, recipients: List<String>): Uri? =
         conv.groupAvatarURL.takeIf { recipients.size > 1 && it.startsWith("https://") }?.let(Uri::parse)
 
-    suspend fun groupPhotoForThread(threadId: Long): Uri? = withContext(Dispatchers.IO) {
+    override suspend fun groupPhotoForThread(threadId: Long): Uri? = withContext(Dispatchers.IO) {
         bridge.conversation(threadId)?.let { groupPhoto(it, GmMapping.recipients(it)) }
     }
 
-    suspend fun recipientsForThread(threadId: Long): List<String> = withContext(Dispatchers.IO) {
+    override suspend fun recipientsForThread(threadId: Long): List<String> = withContext(Dispatchers.IO) {
         bridge.conversation(threadId)?.let(GmMapping::recipients).orEmpty()
     }
 
@@ -125,7 +125,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
      * The newest [limit] cached messages (before [beforeMs]), newest first. Opening a conversation
      * fetches its latest messages; asking for more than are cached fetches older ones.
      */
-    suspend fun messages(threadId: Long, limit: Int, beforeMs: Long? = null): List<Message> = withContext(Dispatchers.IO) {
+    override suspend fun messages(threadId: Long, limit: Int, beforeMs: Long?): List<Message> = withContext(Dispatchers.IO) {
         bridge.refreshThread(threadId)
         val rows = gmDao.messages(threadId, limit, beforeMs ?: Long.MAX_VALUE)
         if (rows.size < limit && beforeMs == null) bridge.requestOlder(threadId)
@@ -133,7 +133,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
         rows.mapNotNull { toMessage(it, conv) }
     }
 
-    suspend fun message(key: String): Message? = withContext(Dispatchers.IO) {
+    override suspend fun message(key: String): Message? = withContext(Dispatchers.IO) {
         if (!key.startsWith("g")) return@withContext null
         val row = gmDao.message(key.drop(1)) ?: return@withContext null
         toMessage(row, bridge.conversation(row.threadId))
@@ -143,7 +143,7 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
      * The message that tapback text [r], received or sent at [reactionDate] in [threadId], refers to:
      * the newest earlier message it quotes. Null when that isn't among the last [REACTION_WINDOW].
      */
-    suspend fun reactionTarget(threadId: Long, reactionDate: Long, r: Reactions.Parsed): Message? = withContext(Dispatchers.IO) {
+    override suspend fun reactionTarget(threadId: Long, reactionDate: Long, r: Reactions.Parsed): Message? = withContext(Dispatchers.IO) {
         val conv = bridge.conversation(threadId)
         Reactions.target(r, gmDao.messages(threadId, REACTION_WINDOW, reactionDate).mapNotNull { toMessage(it, conv) })
     }
@@ -158,15 +158,15 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
     }
 
     /** Marks the conversation read here and on the phone. */
-    suspend fun markThreadRead(threadId: Long) = withContext(Dispatchers.IO) {
+    override suspend fun markThreadRead(threadId: Long): Unit = withContext(Dispatchers.IO) {
         bridge.markRead(threadId)
     }
 
-    suspend fun deleteMessage(m: Message) = withContext(Dispatchers.IO) {
+    override suspend fun deleteMessage(m: Message): Unit = withContext(Dispatchers.IO) {
         bridge.deleteMessage(m.messageId)
     }
 
-    suspend fun deleteThread(threadId: Long) = withContext(Dispatchers.IO) {
+    override suspend fun deleteThread(threadId: Long): Unit = withContext(Dispatchers.IO) {
         bridge.deleteConversation(threadId)
         ConversationShortcuts.remove(context, threadId)
     }

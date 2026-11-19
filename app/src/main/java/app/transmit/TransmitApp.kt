@@ -103,6 +103,8 @@ class AppContainer(val context: Context) {
     val shortcuts = ConversationShortcuts(context, messaging, contacts, dao)
     val notifier: Notifier = Notifier(context, messaging, contacts, dao, settings, policy, translations, shortcuts)
     val smart = SmartLinks()
+    /** The user's own messages, as the inbox and chats work on them. */
+    val live = Workspace(this, demo = false, dao, messaging, sender, bridge, contacts, policy, budget, tutor, translations)
 
     init {
         access.listener = object : AccessListener {

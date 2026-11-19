@@ -12,7 +12,7 @@ import app.transmit.data.db.TranslationOrigin
 import app.transmit.data.db.TransmitDao
 import app.transmit.smart.Otp
 import app.transmit.messaging.Message
-import app.transmit.messaging.MessagingRepository
+import app.transmit.messaging.Inbox
 import app.transmit.messaging.Reactions
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +26,7 @@ class TranslationManager(
     private val dao: TransmitDao,
     private val tutor: Tutor,
     private val policy: ChatPolicy,
-    private val repo: MessagingRepository,
+    private val repo: Inbox,
     private val settings: SettingsRepository,
     private val access: AccessManager,
 ) {

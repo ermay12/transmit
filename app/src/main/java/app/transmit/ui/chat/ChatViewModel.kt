@@ -3,7 +3,7 @@ package app.transmit.ui.chat
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.transmit.AppContainer
+import app.transmit.Workspace
 import app.transmit.ai.AiException
 import app.transmit.ai.AiBlock
 import app.transmit.ai.AiBlockedException
@@ -250,7 +250,7 @@ data class BudgetPrompt(val block: AiBlock, val retry: () -> Unit)
 
 @OptIn(FlowPreview::class)
 class ChatViewModel(
-    private val c: AppContainer,
+    private val c: Workspace,
     val threadId: Long,
     initialText: String?,
     initialAttachments: List<OutgoingAttachment>,

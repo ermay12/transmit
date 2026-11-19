@@ -2,7 +2,7 @@ package app.transmit.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.transmit.AppContainer
+import app.transmit.Workspace
 import app.transmit.data.ContactInfo
 import app.transmit.data.Languages
 import app.transmit.data.chatTitle
@@ -46,7 +46,7 @@ data class ConversationUi(
 }
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-class HomeViewModel(private val c: AppContainer) : ViewModel() {
+class HomeViewModel(private val c: Workspace) : ViewModel() {
     val query = MutableStateFlow("")
     private val conversations = MutableStateFlow<List<Conversation>?>(null)
     val bridge = c.bridge.state

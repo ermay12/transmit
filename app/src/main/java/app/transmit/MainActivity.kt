@@ -285,7 +285,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
         }
         composable(Routes.HOME) {
             HomeScreen(
-                vm = viewModel { HomeViewModel(c) },
+                vm = viewModel { HomeViewModel(c.live) },
                 onOpen = { nav.navigate(Routes.chat(it)) },
                 onNew = { nav.navigate(Routes.newChat()) },
                 onSettings = { nav.navigate(Routes.settings()) },
@@ -310,7 +310,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
             val threadId = entry.arguments?.getLong("threadId") ?: return@composable
             // Only a share meant for this conversation, so one still being placed can't leak into it.
             val share = remember { pendingShare?.takeIf { it.threadId == threadId }?.share?.also { pendingShare = null } }
-            val vm = viewModel { ChatViewModel(c, threadId, share?.text, share?.attachments.orEmpty()) }
+            val vm = viewModel { ChatViewModel(c.live, threadId, share?.text, share?.attachments.orEmpty()) }
             ChatScreen(
                 vm, onBack = { if (!nav.popBackStack()) onExit() }, onPair = { nav.navigate(Routes.PAIR) },
                 onPlans = openPlans, onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },

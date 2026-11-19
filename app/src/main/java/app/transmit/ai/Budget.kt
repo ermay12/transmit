@@ -6,7 +6,7 @@ import app.transmit.data.Language
 import app.transmit.data.Languages
 import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.TransmitDao
-import app.transmit.messaging.MessagingRepository
+import app.transmit.messaging.Inbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -24,7 +24,7 @@ data class EffectiveChat(
 
 class ChatPolicy(
     private val dao: TransmitDao,
-    private val repo: MessagingRepository,
+    private val repo: Inbox,
     private val contacts: ContactsRepository,
 ) {
     suspend fun effective(threadId: Long, s: AppSettings, recipients: List<String>? = null): EffectiveChat = withContext(Dispatchers.IO) {

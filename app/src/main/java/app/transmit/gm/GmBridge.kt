@@ -78,9 +78,9 @@ class GmBridge(
     private val onReadElsewhere: suspend (threadId: Long) -> Unit,
     private val isOnScreen: (threadId: Long) -> Boolean,
     private val onLoggedOut: (reason: String) -> Unit,
-) {
+) : Link {
     private val _state = MutableStateFlow<BridgeState>(if (secrets.has(AUTH_KEY)) BridgeState.Connecting else BridgeState.Unpaired)
-    val state: StateFlow<BridgeState> = _state
+    override val state: StateFlow<BridgeState> = _state
 
     @Volatile private var client: GmClient? = null
     private val events = Channel<GmEvent>(Channel.UNLIMITED)
@@ -99,7 +99,7 @@ class GmBridge(
      * cache means "still loading", not "no conversations": right after pairing that can take a while.
      */
     private val _synced = MutableStateFlow(false)
-    val synced: StateFlow<Boolean> = _synced
+    override val synced: StateFlow<Boolean> = _synced
 
     init {
         scope.launch {
@@ -270,7 +270,7 @@ class GmBridge(
     }
 
     /** Makes this the active Messages for Web session again after another took over. */
-    fun useHere() {
+    override fun useHere() {
         val c = client ?: return
         scope.launch {
             runCatching { c.claimActiveSession() }
