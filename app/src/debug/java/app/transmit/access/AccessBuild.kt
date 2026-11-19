@@ -40,7 +40,8 @@ import kotlinx.coroutines.launch
  *     adb shell am broadcast -n com.ermay12.transmit/app.transmit.access.DebugAccessReceiver \
  *         --es mode TRIAL --ei allowance 85 --es trial TRIALS_FULL
  *
- * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--es backend WORKER`
+ * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--ez fromPlay false`
+ * makes the fake act like a copy not installed from Play (no free week or subscriptions). `--es backend WORKER`
  * (or `FAKE`) picks the backend for the next start: WORKER is the live Worker with real Play Integrity and Billing,
  * without the installed-from-Play check, so the Worker's own answers show (an emulator gets `integrity_failed`).
  */
@@ -94,6 +95,13 @@ object AccessBuild {
                     }, label = { Text("$p%") })
                 }
             }
+            var fromPlay by remember { mutableStateOf(f.fromPlay) }
+            Text("Installed from Play", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(true to "Yes", false to "No (GitHub APK)").forEach { (v, label) ->
+                    FilterChip(selected = fromPlay == v, onClick = { fromPlay = v; f.fromPlay = v }, label = { Text(label) })
+                }
+            }
             Text("Next free-week start", style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FakeTrialOutcome.entries.forEach { o ->
@@ -128,7 +136,7 @@ enum class DebugBackend(val label: String) {
 /** Play for the fake backend: fixed prices, and a purchase sheet that buys at once. */
 @OptIn(DelicateCoroutinesApi::class)
 class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
-    override val available = true
+    override val available get() = fake.fromPlay
     private val _updates = kotlinx.coroutines.flow.MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = 4)
     override val updates: kotlinx.coroutines.flow.Flow<PurchaseUpdate> = _updates
 
@@ -188,6 +196,11 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         get() = prefs.getInt("allowance", 10)
         set(v) = prefs.edit().putInt("allowance", v).apply()
 
+    /** False to act like a copy not installed from Play: no free week, subscriptions or restore. */
+    var fromPlay: Boolean
+        get() = prefs.getBoolean("from_play", true)
+        set(v) = prefs.edit().putBoolean("from_play", v).apply()
+
     var backendChoice: DebugBackend
         get() = prefs.getString("backend", null)?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } } ?: DebugBackend.FAKE
         set(v) = prefs.edit().putString("backend", v.name).apply()
@@ -216,6 +229,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
 
     override suspend fun startTrial(): AccessResult {
         delay(700)
+        if (!fromPlay) return AccessResult.Failed(AccessError(AccessErrorCode.NOT_FROM_PLAY))
         val outcome = trialOutcome
         outcome.code?.let { return AccessResult.Failed(AccessError(it, retryAfterMs = if (it == AccessErrorCode.TRIALS_FULL) 6 * HOUR else null)) }
         return AccessResult.Granted(trialGrant())
@@ -230,6 +244,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
 
     override suspend fun restore(currentKeyHash: String?): AccessResult {
         delay(500)
+        if (!fromPlay) return AccessResult.Failed(AccessError(AccessErrorCode.NOT_FROM_PLAY))
         val tier = purchased ?: return AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
         return AccessResult.Granted(subscriptionGrant(tier))
     }
@@ -302,6 +317,7 @@ class DebugAccessReceiver : BroadcastReceiver() {
         container.scope.launch {
             try {
                 intent.getStringExtra("backend")?.let { v -> DebugBackend.entries.firstOrNull { it.name == v } }?.let { fake.backendChoice = it }
+                if (intent.hasExtra("fromPlay")) fake.fromPlay = intent.getBooleanExtra("fromPlay", true)
                 intent.getStringExtra("trial")?.let { v -> FakeTrialOutcome.entries.firstOrNull { it.name == v } }?.let { fake.trialOutcome = it }
                 intent.getStringExtra("mode")?.let { v -> FakeMode.entries.firstOrNull { it.name == v } }?.let { fake.apply(container.access, it) }
                 if (intent.hasExtra("allowance")) fake.setAllowance(container.access, intent.getIntExtra("allowance", 10))

@@ -37,6 +37,8 @@ data class StoredAccess(
     val warningDismissedFor: String? = null,
     /** OpenRouter refused the subscription key while Play still lists the subscription: another device took it. */
     val inUseElsewhere: Boolean = false,
+    /** The chats' "Translation is off" strip was dismissed; it stays hidden in every chat from then on. */
+    val offStripDismissed: Boolean = false,
 ) {
     fun resolve(now: Long): AiAccess {
         if (ownKey) return AiAccess.Byok
@@ -95,6 +97,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val lastKind = stringPreferencesKey("last_kind")
         val warningDismissedFor = stringPreferencesKey("warning_dismissed_for")
         val inUseElsewhere = booleanPreferencesKey("in_use_elsewhere")
+        val offStripDismissed = booleanPreferencesKey("off_strip_dismissed")
     }
 
     companion object {
@@ -123,6 +126,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 lastKind = p[K.lastKind],
                 warningDismissedFor = p[K.warningDismissedFor],
                 inUseElsewhere = p[K.inUseElsewhere] ?: false,
+                offStripDismissed = p[K.offStripDismissed] ?: false,
             )
         }
 
@@ -159,6 +163,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
             if (s.lastKind != null) p[K.lastKind] = s.lastKind else p.remove(K.lastKind)
             if (s.warningDismissedFor != null) p[K.warningDismissedFor] = s.warningDismissedFor else p.remove(K.warningDismissedFor)
             if (s.inUseElsewhere) p[K.inUseElsewhere] = true else p.remove(K.inUseElsewhere)
+            if (s.offStripDismissed) p[K.offStripDismissed] = true else p.remove(K.offStripDismissed)
         }
     }
 }

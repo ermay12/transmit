@@ -94,6 +94,11 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.Permissions
+import app.transmit.access.AiAccess
+import app.transmit.ai.AiBlock
+import app.transmit.ui.access.AiBlockDialog
+import app.transmit.ui.access.BannerAction
+import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.allowanceBanner
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.StatusBanner
@@ -119,8 +124,10 @@ fun HomeScreen(
     onUsage: () -> Unit,
     onPair: () -> Unit,
     onPlans: () -> Unit,
+    onOwnKey: () -> Unit,
 ) {
     val items by vm.filtered.collectAsStateWithLifecycle()
+    val trial by vm.trial.state.collectAsStateWithLifecycle()
     val access by vm.access.collectAsStateWithLifecycle()
     val allowance by vm.allowance.collectAsStateWithLifecycle()
     val warningDismissed by vm.warningDismissed.collectAsStateWithLifecycle()
@@ -216,9 +223,16 @@ fun HomeScreen(
                 item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
                 allowanceBanner(context, access, allowance, vm.canBuy)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
                     item("allowance-banner") {
+                        val starting = b.does == BannerAction.START_TRIAL && trial == TrialUi.Starting
                         StatusBanner(
-                            Icons.Default.AutoAwesome, b.title, b.body, b.action,
-                            (if (b.useHere) vm::useSubscriptionHere else onPlans).takeIf { b.action != null },
+                            if (access == AiAccess.None) Icons.Default.Translate else Icons.Default.AutoAwesome,
+                            b.title, b.body, if (starting) "Starting…" else b.action,
+                            when (b.does) {
+                                BannerAction.PLANS -> onPlans
+                                BannerAction.USE_HERE -> vm::useSubscriptionHere
+                                BannerAction.START_TRIAL -> ({ vm.trial.start() })
+                                BannerAction.OWN_KEY -> onOwnKey
+                            }.takeIf { b.action != null },
                             onDismiss = if (b.dismissible) vm::dismissWarning else null,
                         )
                     }
@@ -260,6 +274,20 @@ fun HomeScreen(
             }
             item("bottom-space") { Spacer(Modifier.height(88.dp)) }
         }
+    }
+
+    // The free week couldn't start from the banner: why, and the other ways to turn translation on.
+    (trial as? TrialUi.Failed)?.let { failed ->
+        AiBlockDialog(
+            AiBlock.NotSetUp, failed,
+            onStartTrial = { vm.trial.start() },
+            onPlans = { vm.trial.reset(); onPlans() },
+            onOwnKey = { vm.trial.reset(); onOwnKey() },
+            onAllowOnce = {},
+            onUseHere = {},
+            onDismiss = vm.trial::reset,
+            canBuy = vm.canBuy,
+        )
     }
 
     if (confirmDelete) {

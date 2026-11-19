@@ -239,6 +239,39 @@ class AccessManagerTest {
     }
 
     @Test
+    fun theTranslationOffStripStaysDismissedAcrossRestarts() = runBlocking {
+        val file = java.io.File(tmp.root, "strip.preferences_pb")
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val m = manager(file, first)
+        assertTrue(withTimeout(5_000) { m.offStripShown.first { it } })
+        m.dismissOffStrip()
+        withTimeout(5_000) { m.offStripShown.first { !it } }
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+
+        // One flag for every chat: after a restart it's still hidden, with no AI set up.
+        val again = manager(file)
+        assertEquals(AiAccess.None, withTimeout(5_000) { again.access.first { it != null } })
+        delay(200)
+        assertFalse(again.offStripShown.value)
+    }
+
+    @Test
+    fun theTranslationOffStripIsOnlyForNoAi() = runBlocking {
+        val m = manager()
+        assertTrue(withTimeout(5_000) { m.offStripShown.first { it } })
+        backend.trial = AccessResult.Granted(trialGrant())
+        assertNull(m.startTrial())
+        withTimeout(5_000) { m.offStripShown.first { !it } }
+        // Ended and BYOK users don't get it either: they've set AI up, and their chats say what to do instead.
+        m.markEnded(EndReason.TRIAL_USED_UP)
+        delay(200)
+        assertFalse(m.offStripShown.value)
+        m.useOwnKey()
+        delay(200)
+        assertFalse(m.offStripShown.value)
+    }
+
+    @Test
     fun aDismissalLastsOnlyUntilTheAllowanceRunsOut() = runBlocking {
         val m = manager()
         m.applyGrant(trialGrant(), activate = true)

@@ -10,6 +10,7 @@ import app.transmit.data.db.ChatSettingsEntity
 import app.transmit.data.db.shown
 import app.transmit.messaging.Conversation
 import app.transmit.messaging.Reactions
+import app.transmit.ui.access.TrialStarter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -69,6 +70,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     val canBuy get() = c.purchases.available
+
+    /** "Start your free week" on the translation-is-off banner. */
+    val trial = TrialStarter(viewModelScope, c.access)
 
     /** Takes the subscription back from the other device that has it. */
     fun useSubscriptionHere() {

@@ -40,6 +40,7 @@ class AccessModelTest {
             StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 30 * day, autoRenewing = false), lastKind = "SUBSCRIBED"),
             StoredAccess(entitlement = Entitlement.Subscription(Tier.STANDARD, null), ended = EndReason.SUBSCRIPTION_ENDED),
             StoredAccess(ownKey = true, entitlement = Entitlement.Trial(now + day)),
+            StoredAccess(offStripDismissed = true, warningDismissedFor = "trial:1", inUseElsewhere = true),
         )
         for (s in states) {
             val p = mutablePreferencesOf()

@@ -292,6 +292,7 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
                 onUsage = { nav.navigate(Routes.USAGE) },
                 onPair = { nav.navigate(Routes.PAIR) },
                 onPlans = openPlans,
+                onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) },
             )
         }
         composable(Routes.PAIR) {

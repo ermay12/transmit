@@ -74,6 +74,8 @@ import app.transmit.smart.SmartEntity
 import app.transmit.messaging.Attachment
 import app.transmit.messaging.PhoneNumbers
 import app.transmit.ui.access.AiBlockDialog
+import app.transmit.ui.access.TranslationOffStrip
+import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.Times
 import app.transmit.ui.media.ImageViewer
@@ -105,6 +107,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
     val script by vm.script.collectAsStateWithLifecycle()
     val access by vm.access.collectAsStateWithLifecycle()
     val trial by vm.trial.state.collectAsStateWithLifecycle()
+    val offStrip by vm.offStrip.collectAsStateWithLifecycle()
     // Model, cost and dollar budgets are for people paying for their own AI.
     val aiDetails = access?.showsAiDetails == true
     var viewing by remember { mutableStateOf<Attachment?>(null) }
@@ -161,6 +164,14 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            if (offStrip) {
+                TranslationOffStrip(
+                    canBuy = vm.canBuy,
+                    starting = trial == TrialUi.Starting,
+                    onAction = { if (vm.canBuy) vm.startTrialFromStrip() else onOwnKey() },
+                    onDismiss = vm::dismissOffStrip,
+                )
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (!loaded) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -212,12 +223,12 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                     }
                 }
             }
-            banner?.let { text ->
+            banner?.let { b ->
                 Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Savings, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Icon(if (b.budget) Icons.Outlined.Savings else Icons.Outlined.Info, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                         Spacer(Modifier.width(10.dp))
-                        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(b.text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSecondaryContainer)
                         IconButton(onClick = { vm.banner.value = null }) { Icon(Icons.Default.Close, "Dismiss", Modifier.size(18.dp)) }
                     }
                 }

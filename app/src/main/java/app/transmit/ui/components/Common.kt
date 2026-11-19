@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -135,15 +136,22 @@ fun StatusBanner(
         shape = RoundedCornerShape(16.dp),
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        // A long label, or a button beside a close icon, would squeeze the text into a narrow column: it goes under it.
+        val hasAction = action != null && onAction != null
+        val stacked = hasAction && (onDismiss != null || action!!.length > 12)
+        Row(Modifier.padding(14.dp), verticalAlignment = if (stacked) Alignment.Top else Alignment.CenterVertically) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 body?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                if (stacked) {
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = onAction!!) { Text(action!!) }
+                }
             }
-            if (action != null && onAction != null) {
-                FilledTonalButton(onClick = onAction) { Text(action) }
+            if (hasAction && !stacked) {
+                FilledTonalButton(onClick = onAction!!) { Text(action!!) }
             }
             if (onDismiss != null) {
                 androidx.compose.material3.IconButton(onClick = onDismiss) {

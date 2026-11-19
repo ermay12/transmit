@@ -96,6 +96,14 @@ class AccessManager(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /**
+     * Whether chats show the slim "Translation is off" strip: only with no AI set up, and only until it's dismissed.
+     * A dismissal hides it in every chat, across restarts; Home and Settings keep their own way to turn AI on.
+     */
+    val offStripShown: StateFlow<Boolean> = combine(store.state, access.filterNotNull()) { s, a -> a == AiAccess.None && !s.offStripDismissed }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     private val refreshLock = Mutex()
     private var lastRefreshAt = 0L
     /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
@@ -124,6 +132,8 @@ class AccessManager(
     }
 
     suspend fun dismissWarning() = store.update { it.copy(warningDismissedFor = it.allowancePeriod) }
+
+    suspend fun dismissOffStrip() = store.update { it.copy(offStripDismissed = true) }
 
     suspend fun current(): AiAccess = store.current().resolve(clock())
 

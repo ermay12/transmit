@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.text.format.DateUtils
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,18 +13,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,6 +38,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.transmit.access.AccessError
 import app.transmit.access.AccessErrorCode
@@ -275,19 +284,61 @@ fun AiBlockDialog(
     )
 }
 
-/** The Home banner when the managed AI is nearly or entirely used, or the trial or subscription is over. */
+/**
+ * The slim strip chats show with no AI set up: "Translation is off · Start your free week", or "Use my own AI key" for
+ * a copy not installed from Play. Tapping the text does it; the cross hides the strip in every chat.
+ */
+@Composable
+fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val onColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val action = when {
+        !canBuy -> AccessText.OWN_KEY
+        starting -> "Starting your free week…"
+        else -> AccessText.START_TRIAL
+    }
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier.fillMaxWidth()) {
+        Row(Modifier.heightIn(min = 40.dp).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Translate, null, Modifier.size(16.dp), tint = onColor)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                buildAnnotatedString {
+                    append("Translation is off · ")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)) { append(action) }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = onColor,
+                modifier = Modifier.weight(1f).clickable(enabled = !starting, onClick = onAction).padding(vertical = 10.dp),
+            )
+            if (starting) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.Close, "Dismiss", Modifier.size(18.dp), tint = onColor)
+            }
+        }
+    }
+}
+
+/** What a Home banner's button does. */
+enum class BannerAction { PLANS, USE_HERE, START_TRIAL, OWN_KEY }
+
+/**
+ * The Home banner: no AI set up yet, the managed AI nearly or entirely used, or the trial or subscription over.
+ * [action] is the button's label, and [does] what it does.
+ */
 data class AllowanceBannerContent(
     val title: String,
     val body: String?,
     val action: String?,
     val dismissible: Boolean,
-    /** The action is "Use it here" rather than opening the plans. */
-    val useHere: Boolean = false,
+    val does: BannerAction = BannerAction.PLANS,
 )
 
 fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? {
     fun resets(at: Long?) = at?.let { "Resets ${AccessText.date(context, it)}." }
     val banner = when (access) {
+        // Stays until AI is set up: dismissing the chats' strip leaves this way to turn it on.
+        AiAccess.None ->
+            if (canBuy) AllowanceBannerContent("Translation is off", AccessText.TRIAL_SUBTEXT, AccessText.START_TRIAL, false, BannerAction.START_TRIAL)
+            else AllowanceBannerContent("Translation is off", null, AccessText.OWN_KEY, false, BannerAction.OWN_KEY)
         is AiAccess.Ended -> AllowanceBannerContent(AccessText.ended(access.reason), "Subscribe to keep translating.", AccessText.SUBSCRIBE, false)
         is AiAccess.Trial -> when {
             allowance == null || !allowance.nearlyUsedUp -> null
@@ -297,7 +348,7 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         is AiAccess.Subscribed -> {
             val upgrade = if (access.tier == Tier.STANDARD) "Upgrade" else null
             when {
-                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, false, useHere = true)
+                access.inUseElsewhere -> AllowanceBannerContent(AccessText.IN_USE_ELSEWHERE, AccessText.USE_HERE_EXPLAINED, AccessText.USE_HERE, false, BannerAction.USE_HERE)
                 allowance == null || !allowance.nearlyUsedUp -> null
                 allowance.usedUp -> AllowanceBannerContent(
                     "You've used this month's AI",
@@ -310,5 +361,6 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         else -> null
     }
     // Not installed from Play: nothing to buy, so no Subscribe or Upgrade.
-    return if (canBuy || banner == null || banner.useHere) banner else banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
+    return if (canBuy || banner == null || banner.does != BannerAction.PLANS) banner
+    else banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
 }

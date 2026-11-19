@@ -10,6 +10,7 @@ import app.transmit.ai.AiBlockedException
 import app.transmit.ai.AiMessages
 import app.transmit.access.forAccess
 import app.transmit.ui.access.TrialStarter
+import app.transmit.ui.access.TrialUi
 import app.transmit.ai.CallCost
 import app.transmit.ai.ContextLine
 import app.transmit.ai.EffectiveChat
@@ -223,6 +224,9 @@ sealed interface Sheet {
     data object ChatInfo : Sheet
 }
 
+/** [budget]: a BYOK dollar budget is spent, so the banner shows a money icon; otherwise it's a plain notice. */
+data class ChatBanner(val text: String, val budget: Boolean = false)
+
 /** An AI call that was blocked; [retry] runs it again past a BYOK budget ("Allow once"). */
 data class BudgetPrompt(val block: AiBlock, val retry: () -> Unit)
 
@@ -249,6 +253,8 @@ class ChatViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     /** "Start your free week" from the translation-is-off prompt. */
     val trial = TrialStarter(viewModelScope, c.access)
+    /** The slim "Translation is off" strip, with no AI set up, until it's dismissed in any chat. */
+    val offStrip = c.access.offStripShown
     /** Finds addresses, dates and codes in bubbles as they're drawn. */
     val smart: SmartLinks get() = c.smart
     val chat = MutableStateFlow<EffectiveChat?>(null)
@@ -266,7 +272,8 @@ class ChatViewModel(
     val compose = MutableStateFlow(ComposeUi(native = initialText.orEmpty(), attachments = initialAttachments))
     val sheet = MutableStateFlow<Sheet?>(null)
     val budgetPrompt = MutableStateFlow<BudgetPrompt?>(null)
-    val banner = MutableStateFlow<String?>(null)
+    /** A translation problem to show above the compose bar. */
+    val banner = MutableStateFlow<ChatBanner?>(null)
     val downloading = MutableStateFlow<Set<String>>(emptySet())
     private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val toasts: SharedFlow<String> = _toasts
@@ -341,8 +348,8 @@ class ChatViewModel(
         viewModelScope.launch {
             c.translations.events.filter { it.threadId == threadId }.collect { e ->
                 banner.value = when (e) {
-                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> e.block.message
-                    is app.transmit.ai.TranslationManager.Event.Failed -> describe(e.error)
+                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> ChatBanner(e.block.message, budget = e.block is AiBlock.Budget)
+                    is app.transmit.ai.TranslationManager.Event.Failed -> ChatBanner(describe(e.error))
                 }
             }
         }
@@ -365,6 +372,10 @@ class ChatViewModel(
         // A switch of how the practice language shows does what opening the chat does: with characters, the user's
         // own pinyin among the newest messages is written in them.
         viewModelScope.launch { script.filterNotNull().drop(1).collect { autoTranslate() } }
+        // AI turned on while the chat is open (the free week started from the strip, or in Settings): translate now.
+        viewModelScope.launch {
+            access.filterNotNull().map { it.canUseAi }.distinctUntilChanged().drop(1).filter { it }.collect { autoTranslate() }
+        }
         // The practice-language box always shows its romanization.
         viewModelScope.launch {
             combine(compose.map { it.target }.distinctUntilChanged(), chat.map { it?.target }.distinctUntilChanged(), ::Pair)
@@ -723,6 +734,19 @@ class ChatViewModel(
     /** "Use it here" for a subscription another device has: takes its key back. */
     fun useSubscriptionHere() {
         c.scope.launch { c.access.useHere() }
+    }
+
+    fun dismissOffStrip() {
+        c.scope.launch { c.access.dismissOffStrip() }
+    }
+
+    /** "Start your free week" on the strip. If it can't start, the translation-is-off dialog says why and what else to do. */
+    fun startTrialFromStrip() {
+        trial.start()
+        viewModelScope.launch {
+            if (trial.state.first { it !is TrialUi.Starting } !is TrialUi.Failed) return@launch
+            if (budgetPrompt.value == null) budgetPrompt.value = BudgetPrompt(AiBlock.NotSetUp) { autoTranslate() }
+        }
     }
 
     // ---- compose -------------------------------------------------------------------------------
