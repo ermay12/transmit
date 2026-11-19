@@ -1,4 +1,6 @@
-Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f).
+Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4).
+
+The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.workers.dev/privacy. Where it follows a disclosure, the two read as one paragraph, the link last. The demo's sample messages are in `app/src/main/java/app/transmit/demo/DemoChats.kt`, not in strings.xml, since they're content rather than copy.
 
 | Screen | String resource | English text |
 | --- | --- | --- |
@@ -17,6 +19,13 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Onboarding: connect | `onboarding_connected` | Connected to Google Messages |
 | Onboarding: connect | `onboarding_permissions` | Next, allow contacts and notifications so your chats show names and you hear about new messages. |
 | Onboarding: connect | `onboarding_continue` | Continue |
+| Onboarding: connect (accessibility action on the heading, which opens the demo when long-pressed) | `demo_open` | Open the demo |
+| Demo inbox | `demo_label` | Demo (shown as DEMO) |
+| Demo inbox | `demo_title` | Sample chats |
+| Demo inbox | `demo_exit` | Exit demo |
+| Demo inbox | `demo_banner_title` | You're in the demo |
+| Demo inbox | `demo_banner_body` | These chats are samples, so nothing you send here reaches anyone. Translation and the tutor work as they do in your own chats. |
+| Demo chat (top bar, under the name) | `demo_label` | Demo (shown as DEMO) |
 | Onboarding: turn on translation | `turn_on_title` | Turn on translation |
 | Onboarding: turn on translation | `onboarding_translation_body` | Read every message in the language you're practicing, and reply with confidence. |
 | Onboarding: turn on translation | `onboarding_benefit_translate` | Translations as you chat |
@@ -24,12 +33,15 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Onboarding: turn on translation | `onboarding_benefit_explain` | Words and grammar explained |
 | Onboarding: turn on translation | `access_start_trial` | Start your free week |
 | Onboarding: turn on translation | `access_trial_subtext` | 7 days free. No card needed. |
+| Onboarding: turn on translation | `ai_disclosure_managed` | Messages you translate or ask the tutor about are sent to our AI provider to process them. They aren't stored or used for training. |
+| Onboarding: turn on translation | `privacy_policy` | Privacy policy |
 | Onboarding: turn on translation | `access_own_key` | Use my own AI key |
 | Onboarding: turn on translation | `action_not_now` | Not now |
 | Onboarding: turn on translation, not from Play | `play_get` | Get Transmit on Google Play |
 | Onboarding: turn on translation, not from Play | `play_needed_free_week` | The free week needs Transmit installed from Google Play. |
 | Onboarding: turn on translation, not from Play | `access_own_key` | Use my own AI key |
 | Onboarding: turn on translation, not from Play | `action_not_now` | Not now |
+| Onboarding: turn on translation, not from Play | `privacy_policy` | Privacy policy |
 | Pairing | `pair_title` | Pair with Google Messages |
 | Pairing | `pair_intro` | Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does. Nothing changes for the people you text. |
 | Pairing | `pair_step_sign_in` | Sign in with the Google account Google Messages uses |
@@ -142,6 +154,7 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Settings: Advanced, own key | `settings_usage_summary` | What your key spent this month, by feature and chat |
 | Settings: Advanced, own key | `settings_switch_to_managed` | Switch to a Transmit subscription |
 | Settings: Advanced, own key | `settings_switch_to_managed_summary` | No key or AI settings to look after |
+| Settings: footer (next to Source code) | `privacy_policy` | Privacy policy |
 | Own-key dialog (onboarding, plan card, Advanced) | `access_own_key` | Use my own AI key |
 | Own-key dialog (onboarding, plan card, Advanced) | `own_key_body` | Pay your AI provider directly. Pick one and paste a key from it. |
 | Own-key dialog (onboarding, plan card, Advanced) | `settings_base_url` | Base URL |
@@ -151,6 +164,9 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Own-key dialog (onboarding, plan card, Advanced) | `own_key_stored` | Stored encrypted on this device only. |
 | Own-key dialog (onboarding, plan card, Advanced) | `own_key_get` | Get a key |
 | Own-key dialog (onboarding, plan card, Advanced) | `own_key_use_saved` | Use saved key |
+| Own-key dialog (onboarding, plan card, Advanced), %1$s is the provider's name | `ai_disclosure_own_key` | Messages you translate or ask the tutor about are sent to %1$s to process them. Its terms say whether they're stored or used for training. |
+| Own-key dialog (onboarding, plan card, Advanced), OpenAI-compatible provider | `ai_disclosure_own_key_custom` | Messages you translate or ask the tutor about are sent to the provider you choose to process them. Its terms say whether they're stored or used for training. |
+| Own-key dialog (onboarding, plan card, Advanced) | `privacy_policy` | Privacy policy |
 | Own-key dialog (onboarding, plan card, Advanced) | `action_save` | Save |
 | Own-key dialog (onboarding, plan card, Advanced) | `action_cancel` | Cancel |
 | Own-key dialog (onboarding, plan card, Advanced) | `own_key_done` | Using your own AI key |
@@ -159,6 +175,9 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | API key dialog (Advanced, own key) | `own_key_models` | ✓ %1$d models available |
 | API key dialog (Advanced, own key) | `own_key_stored` | Stored encrypted on this device only. |
 | API key dialog (Advanced, own key) | `own_key_get` | Get a key |
+| API key dialog (Advanced, own key), %1$s is the provider's name | `ai_disclosure_own_key` | Messages you translate or ask the tutor about are sent to %1$s to process them. Its terms say whether they're stored or used for training. |
+| API key dialog (Advanced, own key), OpenAI-compatible provider | `ai_disclosure_own_key_custom` | Messages you translate or ask the tutor about are sent to the provider you choose to process them. Its terms say whether they're stored or used for training. |
+| API key dialog (Advanced, own key) | `privacy_policy` | Privacy policy |
 | API key dialog (Advanced, own key) | `action_save` | Save |
 | API key dialog (Advanced, own key) | `action_remove` | Remove |
 | API key dialog (Advanced, own key) | `action_cancel` | Cancel |
@@ -179,12 +198,15 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Plans | `plan_per_month` | /month |
 | Plans | `plan_price_unavailable` | Prices are shown in Google Play |
 | Plans | `plan_subscribe` | Subscribe |
-| Plans | `plans_cancel_anytime` | Cancel anytime in Google Play |
+| Plans (under Subscribe or Upgrade, %1$s is the selected plan's price from Google Play) | `plan_auto_renew` | Renews automatically each month at %1$s until you cancel in Google Play. |
+| Plans (the same, when Google Play gave no price) | `plan_auto_renew_no_price` | Renews automatically each month until you cancel in Google Play. |
 | Plans | `plan_upgrade` | Upgrade to Plus |
 | Plans | `plan_upgrade_note` | Starts today at the full price. What's left of this month on Transmit is added to Plus as extra days. |
 | Plans | `plan_restore` | Restore purchase |
 | Plans | `plan_restoring` | Restoring… |
 | Plans | `plan_manage` | Manage subscription |
+| Plans (bottom) | `ai_disclosure_managed` | Messages you translate or ask the tutor about are sent to our AI provider to process them. They aren't stored or used for training. |
+| Plans (bottom) | `privacy_policy` | Privacy policy |
 | Plans: Plus | `plan_plus_name` | Transmit Plus |
 | Plans: Plus | `plan_current` | Current plan |
 | Plans: Plus | `plan_renews` | Renews %1$s |
@@ -220,6 +242,7 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Plans: not from Play | `play_needed_subscribe` | Subscriptions need Transmit installed from Google Play. |
 | Plans: not from Play | `play_get` | Get Transmit on Google Play |
 | Plans: not from Play | `access_own_key` | Use my own AI key |
+| Plans: not from Play | `privacy_policy` | Privacy policy |
 | Restore purchase result (plan card, Plans) | `restore_done` | %1$s is restored. |
 | Restore purchase result (plan card, Plans) | `ai_subscription_ended` | Your subscription has ended. |
 | Restore purchase result (plan card, Plans) | `restore_none` | No subscription found on this Google account. |
@@ -273,6 +296,8 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Chat: turn-on sheet | `access_start_trial` | Start your free week |
 | Chat: turn-on sheet | `access_trial_subtext` | 7 days free. No card needed. |
 | Chat: turn-on sheet | `plan_subscribe` | Subscribe |
+| Chat: turn-on sheet | `ai_disclosure_managed` | Messages you translate or ask the tutor about are sent to our AI provider to process them. They aren't stored or used for training. |
+| Chat: turn-on sheet | `privacy_policy` | Privacy policy |
 | Chat: turn-on sheet | `action_not_now` | Not now |
 | Chat: turn-on sheet, not from Play | `ended_free_week` | Your free week has ended |
 | Chat: turn-on sheet, not from Play | `ended_subscription` | Your subscription has ended |
@@ -283,6 +308,7 @@ Reflects commit 246e412, plus the strings for switching Plus to Transmit (added 
 | Chat: turn-on sheet, not from Play | `play_needed_free_week` | The free week needs Transmit installed from Google Play. |
 | Chat: turn-on sheet, not from Play | `play_needed_subscribe` | Subscriptions need Transmit installed from Google Play. |
 | Chat: turn-on sheet, not from Play | `access_own_key` | Use my own AI key |
+| Chat: turn-on sheet, not from Play | `privacy_policy` | Privacy policy |
 | Chat: turn-on sheet, not from Play | `action_not_now` | Not now |
 | Blocked-AI dialog: no AI | `translation_off` | Translation is off |
 | Blocked-AI dialog: no AI | `block_off_body` | Start your free week to translate messages and get help with your replies. 7 days free. No card needed. |
