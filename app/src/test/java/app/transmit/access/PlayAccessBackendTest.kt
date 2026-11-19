@@ -1,6 +1,7 @@
 package app.transmit.access
 
 import android.app.Activity
+import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -219,7 +220,7 @@ class PlayAccessBackendTest {
     }
 
     @Test
-    fun theReplacementModeIsFullPriceUpAndDeferredDownAndForKeepPlus() {
+    fun theReplacementModeIsFullPriceUpAndDeferredDown() {
         val standard = OwnedPurchase("transmit_monthly", "std-token", purchased = true, acknowledged = true)
         val plus = OwnedPurchase("transmit_plus", "plus-token", purchased = true, acknowledged = true)
         val mode = SubscriptionProductReplacementParams.ReplacementMode::class.java
@@ -235,25 +236,42 @@ class PlayAccessBackendTest {
         assertEquals("plus-token", down.oldPurchaseToken)
         assertEquals("transmit_plus", down.oldProductId)
         assertEquals(SubscriptionProductReplacementParams.ReplacementMode.DEFERRED, down.replacementMode)
-        // A Plus with renewal off can switch the same way: it renews as Transmit.
-        assertTrue(PurchasePlan.choose(Tier.STANDARD, listOf(plus.copy(autoRenewing = false))) is PurchasePlan.Downgrade)
+    }
 
-        // While a switch is set, Play still lists the switch's token as Plus (API.md step 2): Plus is Keep Plus, on
-        // that token, DEFERRED as API.md says to try first; another switch to Transmit isn't offered.
+    /**
+     * While a switch to Transmit is set there is no Keep Plus: Google documents no replacement mode for undoing one,
+     * and DEFERRED back to Plus was refused on a device. Nothing is offered until the switch has happened.
+     */
+    @Test
+    fun nothingIsOfferedWhileASwitchIsSet() {
+        // Play still lists the switch's token as Plus (API.md step 2).
         val switchToken = OwnedPurchase("transmit_plus", "switch-token", purchased = true, acknowledged = true, purchaseTime = 2)
-        val keep = PurchasePlan.choose(Tier.PLUS, listOf(switchToken), switchingTo = Tier.STANDARD, heldToken = "switch-token") as PurchasePlan.KeepPlus
-        assertEquals("switch-token", keep.oldPurchaseToken)
-        assertEquals("transmit_plus", keep.oldProductId)
-        assertEquals(SubscriptionProductReplacementParams.ReplacementMode.DEFERRED, keep.replacementMode)
-        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.STANDARD, listOf(switchToken), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
-        // Never an upgrade at the full price, even if Play were to list the token as Transmit already.
-        val listedAsTransmit = switchToken.copy(productId = "transmit_monthly")
-        assertTrue(PurchasePlan.choose(Tier.PLUS, listOf(listedAsTransmit), switchingTo = Tier.STANDARD, heldToken = "switch-token") is PurchasePlan.KeepPlus)
-        // The token the key belongs to wins over an older one Play still lists.
-        val older = plus.copy(purchaseToken = "older", purchaseTime = 9)
-        assertEquals("switch-token", (PurchasePlan.choose(Tier.PLUS, listOf(older, switchToken), Tier.STANDARD, "switch-token") as PurchasePlan.KeepPlus).oldPurchaseToken)
-        // Play not listing it: nothing to replace, and never a second subscription.
-        assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(Tier.PLUS, emptyList(), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
+        for (target in Tier.entries) {
+            assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(target, listOf(switchToken), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
+            // Not even if Play were to list the token as Transmit already, and never a second subscription.
+            assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(target, listOf(switchToken.copy(productId = "transmit_monthly")), Tier.STANDARD, "switch-token"))
+            assertEquals(PurchasePlan.NotOffered, PurchasePlan.choose(target, emptyList(), switchingTo = Tier.STANDARD, heldToken = "switch-token"))
+        }
+        // Once it has happened the account has Transmit, and Plus is a plain upgrade again.
+        val after = switchToken.copy(productId = "transmit_monthly")
+        assertEquals(PurchasePlan.Upgrade("switch-token", "transmit_monthly"), PurchasePlan.choose(Tier.PLUS, listOf(after), heldToken = "switch-token"))
+    }
+
+    @Test
+    fun everyPlayErrorIsAFailureAndOnlyBackingOutIsQuiet() {
+        val codes = BillingClient.BillingResponseCode::class.java.fields.map { it.getInt(null) }
+        assertTrue(codes.size > 8)
+        for (code in codes) {
+            val u = PlayBilling.updateFor(code, "debug") { emptyList() }
+            when (code) {
+                BillingClient.BillingResponseCode.OK -> assertEquals(PurchaseUpdate.Purchases(emptyList()), u)
+                BillingClient.BillingResponseCode.USER_CANCELED -> assertEquals(PurchaseUpdate.Canceled, u)
+                BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> assertEquals(PurchaseUpdate.AlreadyOwned, u)
+                else -> assertEquals(PurchaseUpdate.Failed(code, "debug"), u)
+            }
+        }
+        // The device test's refusal of Keep Plus.
+        assertEquals(PurchaseUpdate.Failed(5, "Requested replacement mode is not supported for this request"), PlayBilling.updateFor(5, "Requested replacement mode is not supported for this request") { error("not read") })
     }
 
     @Test

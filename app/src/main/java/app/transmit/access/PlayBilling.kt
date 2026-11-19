@@ -144,13 +144,7 @@ class PlayBilling(context: Context, override val available: Boolean) : Storefron
     }
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
-        val update = when (result.responseCode) {
-            BillingResponseCode.OK -> PurchaseUpdate.Purchases(purchases.orEmpty().flatMap { it.owned() })
-            BillingResponseCode.USER_CANCELED -> PurchaseUpdate.Canceled
-            BillingResponseCode.ITEM_ALREADY_OWNED -> PurchaseUpdate.AlreadyOwned
-            else -> PurchaseUpdate.Failed(result.responseCode, result.debugMessage)
-        }
-        _updates.tryEmit(update)
+        _updates.tryEmit(updateFor(result.responseCode, result.debugMessage) { purchases.orEmpty().flatMap { it.owned() } })
     }
 
     private fun Purchase.owned(): List<OwnedPurchase> = products.filter { Tier.fromProductId(it) != null }.map { id ->
@@ -169,5 +163,17 @@ class PlayBilling(context: Context, override val available: Boolean) : Storefron
         private const val TAG = "Billing"
         /** Both subscriptions have one auto-renewing monthly base plan with this id. */
         const val BASE_PLAN = "monthly"
+
+        /**
+         * What a purchase sheet's `onPurchasesUpdated` result means. Only OK, the user backing out and "already
+         * owned" are outcomes; every other code (DEVELOPER_ERROR for a replacement mode Play refuses, ERROR,
+         * SERVICE_UNAVAILABLE, NETWORK_ERROR, …) is [PurchaseUpdate.Failed], which the plans screen always explains.
+         */
+        fun updateFor(responseCode: Int, debugMessage: String?, purchases: () -> List<OwnedPurchase>): PurchaseUpdate = when (responseCode) {
+            BillingResponseCode.OK -> PurchaseUpdate.Purchases(purchases())
+            BillingResponseCode.USER_CANCELED -> PurchaseUpdate.Canceled
+            BillingResponseCode.ITEM_ALREADY_OWNED -> PurchaseUpdate.AlreadyOwned
+            else -> PurchaseUpdate.Failed(responseCode, debugMessage)
+        }
     }
 }

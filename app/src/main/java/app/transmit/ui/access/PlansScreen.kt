@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -62,7 +63,6 @@ import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
 import app.transmit.R
 import app.transmit.access.AiAccess
-import app.transmit.access.LaunchResult
 import app.transmit.access.PlanOffer
 import app.transmit.access.PurchaseUi
 import app.transmit.access.Tier
@@ -70,8 +70,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * The paywall: the two plans at Play's prices, buying, upgrading, switching Plus to Transmit (and keeping Plus after
- * all), restoring and managing.
+ * The paywall: the two plans at Play's prices, buying, upgrading, switching Plus to Transmit, restoring and managing.
  */
 class PlansViewModel(private val c: AppContainer) : ViewModel() {
     val access = c.access.access
@@ -82,6 +81,12 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
     val offers = MutableStateFlow<Map<Tier, PlanOffer>?>(null)
     val loading = MutableStateFlow(true)
     val restoring = MutableStateFlow(false)
+    /**
+     * Why the last purchase or plan change didn't work, as a string resource. It stays on screen until the next
+     * attempt, so a refusal from Google Play is never silent (a snackbar can come and go while Play's own sheet is
+     * still closing).
+     */
+    val problem = MutableStateFlow<Int?>(null)
 
     init {
         // The screen is showing; a notification that led here has done its job.
@@ -96,19 +101,19 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /**
-     * Opens Play's sheet for [tier]: a purchase, an upgrade, a switch from Plus to Transmit, or Keep Plus while a
-     * switch is set (see `PurchasePlan.choose`). [onProblem] gets a string resource when the sheet couldn't open;
-     * [planChange] says it was a switch or Keep Plus rather than a purchase.
+     * Opens Play's sheet for [tier]: a purchase, an upgrade, or a switch from Plus to Transmit (see
+     * `PurchasePlan.choose`). When the sheet can't open, [problem] says why.
      */
-    fun buy(activity: Activity, tier: Tier, planChange: Boolean = false, onProblem: (Int) -> Unit) {
+    fun buy(activity: Activity, tier: Tier) {
+        problem.value = null
         viewModelScope.launch {
-            when (c.purchases.buy(activity, tier)) {
-                LaunchResult.LAUNCHED -> Unit
-                LaunchResult.ALREADY_OWNED -> onProblem(R.string.purchase_already_owned)
-                LaunchResult.UNAVAILABLE -> onProblem(R.string.purchase_play_unavailable)
-                LaunchResult.FAILED -> onProblem(if (planChange) R.string.plan_change_failed else R.string.purchase_failed)
-            }
+            problem.value = AccessText.launchProblem(c.purchases.buy(activity, tier))
         }
+    }
+
+    /** Buying or changing the plan didn't work: say so where the plans are. */
+    fun failed(p: PurchaseUi.Failed) {
+        problem.value = AccessText.purchaseProblem(p)
     }
 
     /** "Restore purchase", and "Use it here" for a subscription another device has. */
@@ -134,6 +139,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
     val offers by vm.offers.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val restoring by vm.restoring.collectAsStateWithLifecycle()
+    val problem by vm.problem.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     fun show(message: String) {
@@ -147,26 +153,14 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 vm.purchaseSeen()
                 onBack()
             }
-            // A switch or Keep Plus stays here, where the plan now shows what's set.
+            // A switch stays here, where the plan now shows what's set.
             is PurchaseUi.SwitchSet -> {
                 vm.purchaseSeen()
                 p.at?.let { show(context.getString(R.string.plan_switch_done, AccessText.date(context, it))) }
             }
-            PurchaseUi.KeptPlus -> {
-                vm.purchaseSeen()
-                show(context.getString(R.string.plan_keep_plus_done))
-            }
             is PurchaseUi.Failed -> {
+                vm.failed(p)
                 vm.purchaseSeen()
-                show(
-                    context.getString(
-                        when {
-                            p.error?.retryable == true -> R.string.purchase_retrying
-                            p.planChange -> R.string.plan_change_failed
-                            else -> R.string.purchase_failed
-                        },
-                    ),
-                )
             }
             else -> Unit
         }
@@ -175,7 +169,8 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
     val subscribed = access as? AiAccess.Subscribed
     val owned = subscribed?.tier
     // Plus → Transmit: set now, it takes effect when the paid month ends (DEFERRED). While one is set, the plan is
-    // still Plus, with Plus's AI, and Keep Plus undoes it. Neither while another device has the key.
+    // still Plus, with Plus's AI, and nothing undoes it (Google documents no way to): Upgrade works again once it has
+    // happened. No switch while another device has the key.
     val switch = subscribed?.pendingSwitch.takeIf { owned == Tier.PLUS }
     val canChange = subscribed?.inUseElsewhere != true
     val switchAt = subscribed?.periodEndsAt.takeIf { owned == Tier.PLUS && switch == null && canChange }
@@ -273,24 +268,18 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 )
             }
 
-            when (purchase) {
-                PurchaseUi.Working -> Notice(stringResource(R.string.purchase_working), busy = true)
-                PurchaseUi.Pending -> Notice(stringResource(R.string.purchase_pending))
+            val problemText = problem?.let { stringResource(it) }
+            when {
+                purchase == PurchaseUi.Working -> Notice(stringResource(R.string.purchase_working), busy = true)
+                purchase == PurchaseUi.Pending -> Notice(stringResource(R.string.purchase_pending))
+                problemText != null -> Notice(problemText, info = true)
                 else -> Spacer(Modifier.height(12.dp))
             }
-            if (switch != null && canChange) {
-                Button(
-                    onClick = {
-                        val activity = context.findActivity() ?: return@Button
-                        vm.buy(activity, Tier.PLUS, planChange = true) { show(context.getString(it)) }
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(stringResource(R.string.plan_keep_plus), style = MaterialTheme.typography.titleMedium) }
-                Spacer(Modifier.height(10.dp))
+            if (switch != null) {
                 Text(
-                    stringResource(R.string.plan_keep_plus_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                    stringResource(R.string.plan_switch_pending_note, AccessText.date(context, switch.startsAt)),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 )
             }
             if (owned != Tier.PLUS) {
@@ -298,7 +287,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 Button(
                     onClick = {
                         val activity = context.findActivity() ?: return@Button
-                        vm.buy(activity, selected) { show(context.getString(it)) }
+                        vm.buy(activity, selected)
                     },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -346,7 +335,7 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 TextButton(onClick = {
                     confirmSwitch = false
                     val activity = context.findActivity() ?: return@TextButton
-                    vm.buy(activity, Tier.STANDARD, planChange = true) { show(context.getString(it)) }
+                    vm.buy(activity, Tier.STANDARD)
                 }) { Text(stringResource(R.string.plan_switch)) }
             },
             dismissButton = { TextButton(onClick = { confirmSwitch = false }) { Text(stringResource(R.string.action_not_now)) } },
@@ -361,13 +350,17 @@ private fun SmallLink(text: String, enabled: Boolean = true, modifier: Modifier 
     }
 }
 
+/** A tonal note above the actions: work in progress ([busy]), or something to know ([info]); never red. */
 @Composable
-private fun Notice(text: String, busy: Boolean = false) {
+private fun Notice(text: String, busy: Boolean = false, info: Boolean = false) {
     Spacer(Modifier.height(12.dp))
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             if (busy) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+            } else if (info) {
+                Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Spacer(Modifier.width(12.dp))
             }
             Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)

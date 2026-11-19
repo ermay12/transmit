@@ -62,6 +62,8 @@ import app.transmit.access.AccessManager
 import app.transmit.access.AiAccess
 import app.transmit.access.AllowanceView
 import app.transmit.access.EndReason
+import app.transmit.access.LaunchResult
+import app.transmit.access.PurchaseUi
 import app.transmit.access.Tier
 import app.transmit.ai.AiBlock
 import app.transmit.ai.AiMessages
@@ -129,6 +131,26 @@ object AccessText {
         AccessErrorCode.PAYMENT_PROBLEM -> UiText.res(R.string.restore_payment_problem)
         AccessErrorCode.NETWORK -> AiMessages.NO_CONNECTION
         else -> UiText.res(R.string.restore_failed)
+    }
+
+    /** What the plans screen says when Play's sheet didn't open; null when it did. */
+    @StringRes
+    fun launchProblem(result: LaunchResult): Int? = when (result) {
+        LaunchResult.LAUNCHED -> null
+        LaunchResult.ALREADY_OWNED -> R.string.purchase_already_owned
+        LaunchResult.UNAVAILABLE -> R.string.purchase_play_unavailable
+        LaunchResult.FAILED -> R.string.billing_failed
+    }
+
+    /**
+     * What the plans screen says when buying or changing the plan didn't work. Never silence: any error from Google
+     * Play gets the same calm sentence, whatever its code.
+     */
+    @StringRes
+    fun purchaseProblem(failed: PurchaseUi.Failed): Int = when {
+        failed.error?.retryable == true -> R.string.purchase_retrying
+        failed.error == null || failed.planChange -> R.string.billing_failed
+        else -> R.string.purchase_failed
     }
 
     /** One name for the end of the free week, whether its days or its AI ran out. */

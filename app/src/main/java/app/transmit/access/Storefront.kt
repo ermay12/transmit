@@ -91,22 +91,15 @@ sealed interface PurchasePlan {
         override val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.DEFERRED,
     ) : Change
 
-    /**
-     * "Keep Plus": undoes a switch to Transmit that hasn't happened yet. Google names no cancel call, only "revert to
-     * the original plan" with another plan change, so this replaces the switch's token with Plus again. DEFERRED, as
-     * `backend/API.md` says to try first, since it charges nothing now (CHARGE_FULL_PRICE would bill a new month).
-     * [oldProductId] is the product Play lists on that token, which stays Plus until the switch takes effect.
-     */
-    data class KeepPlus(
-        override val oldPurchaseToken: String,
-        override val oldProductId: String,
-        override val replacementMode: Int = SubscriptionProductReplacementParams.ReplacementMode.DEFERRED,
-    ) : Change
-
     /** The account already has this plan (renewing, canceled or on hold): Manage subscription is the way. */
     data object AlreadyOwned : PurchasePlan
 
-    /** Nothing to buy for this choice: a switch to Transmit that's already set, or Play can't say what's owned. */
+    /**
+     * Nothing to buy for this choice: Play can't say what's owned, or a switch to Transmit is already set. There's no
+     * "Keep Plus" while a switch is set: Google's docs say a user can "revert to the original plan" but name no
+     * replacement mode for it, and DEFERRED back to Plus failed on a device ("Requested replacement mode is not
+     * supported for this request"). After the switch, Standard → Plus is a plain [Upgrade].
+     */
     data object NotOffered : PurchasePlan
 
     companion object {
@@ -115,14 +108,12 @@ sealed interface PurchasePlan {
          * the app holds the key for. Play alone can't tell a switch is set: the switch's token still lists Plus.
          */
         fun choose(target: Tier, owned: List<OwnedPurchase>, switchingTo: Tier? = null, heldToken: String? = null): PurchasePlan {
+            // A switch is set: nothing more to change until it has happened (no Keep Plus, no second switch).
+            if (switchingTo != null) return NotOffered
             val current = owned.filter { it.purchased && it.tier != null }
             // The subscription the app holds: Play's purchase for its token (as Plus, if Play lists both), else the newest.
             val held = current.filter { it.purchaseToken == heldToken }.maxByOrNull { it.tier == Tier.PLUS }
                 ?: current.maxByOrNull { it.purchaseTime }
-            if (switchingTo != null) {
-                held ?: return NotOffered
-                return if (target == Tier.PLUS && switchingTo == Tier.STANDARD) KeepPlus(held.purchaseToken, held.productId) else NotOffered
-            }
             if (current.any { it.tier == target }) return AlreadyOwned
             held ?: return New
             return when {

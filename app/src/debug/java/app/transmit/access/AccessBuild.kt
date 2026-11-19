@@ -42,7 +42,8 @@ import kotlinx.coroutines.launch
  *
  * `mode` is a [FakeMode], `allowance` a percent used, `trial` the next [FakeTrialOutcome]. `--es mode PLUS_SWITCHING`
  * is Plus with a switch to Transmit set for the renewal, and `--ez renew true` renews now (so a set switch takes
- * effect). On the Plans screen, Switch to Transmit and Keep Plus act as Play would. `--ez fromPlay false`
+ * effect). On the Plans screen, Switch to Transmit acts as Play would. `--ei playError 5` makes Play's next sheet
+ * fail with that response code (5 is DEVELOPER_ERROR, which a refused replacement mode gets). `--ez fromPlay false`
  * makes the fake act like a copy not installed from Play (no free week or subscriptions). `--es backend WORKER`
  * (or `FAKE`) picks the backend for the next start: WORKER is the live Worker with real Play Integrity and Billing,
  * without the installed-from-Play check, so the Worker's own answers show (an emulator gets `integrity_failed`).
@@ -154,11 +155,19 @@ class FakeStorefront(private val fake: FakeAccessBackend) : Storefront {
     override suspend fun launch(activity: android.app.Activity, tier: Tier, plan: PurchasePlan): LaunchResult {
         if (plan == PurchasePlan.AlreadyOwned) return LaunchResult.ALREADY_OWNED
         if (plan == PurchasePlan.NotOffered) return LaunchResult.UNAVAILABLE
+        fake.takePlayError()?.let { code ->
+            Log.i("DebugAccess", "Fake Play error $code for $tier as $plan")
+            kotlinx.coroutines.GlobalScope.launch {
+                delay(800)
+                _updates.emit(PurchaseUpdate.Failed(code, "Requested replacement mode is not supported for this request"))
+            }
+            return LaunchResult.LAUNCHED
+        }
         Log.i("DebugAccess", "Fake purchase of $tier as $plan")
-        // A switch to Transmit is set for the renewal; Keep Plus (or any other purchase) clears it.
+        // A switch to Transmit is set for the renewal; any other purchase clears it.
         fake.switching = plan is PurchasePlan.Downgrade
         // Like Play, a switch's new token is listed as the plan it leaves (Plus) until the renewal.
-        val listed = if (plan is PurchasePlan.Downgrade || plan is PurchasePlan.KeepPlus) Tier.PLUS else tier
+        val listed = if (plan is PurchasePlan.Downgrade) Tier.PLUS else tier
         kotlinx.coroutines.GlobalScope.launch {
             delay(800)
             _updates.emit(PurchaseUpdate.Purchases(listOf(OwnedPurchase(listed.productId, "debug-token-${listed.productId}-${System.currentTimeMillis()}", purchased = true, acknowledged = false))))
@@ -217,6 +226,13 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
     var switching: Boolean
         get() = prefs.getBoolean("switching", false)
         set(v) = prefs.edit().putBoolean("switching", v).apply()
+
+    /** The response code Play's next purchase sheet fails with, once; 0 for none. */
+    var playError: Int
+        get() = prefs.getInt("play_error", 0)
+        set(v) = prefs.edit().putInt("play_error", v).apply()
+
+    fun takePlayError(): Int? = playError.takeIf { it != 0 }?.also { playError = 0 }
 
     /** The subscription "on Play", for restore and refresh. */
     var purchased: Tier?
@@ -352,6 +368,7 @@ class DebugAccessReceiver : BroadcastReceiver() {
                 intent.getStringExtra("trial")?.let { v -> FakeTrialOutcome.entries.firstOrNull { it.name == v } }?.let { fake.trialOutcome = it }
                 intent.getStringExtra("mode")?.let { v -> FakeMode.entries.firstOrNull { it.name == v } }?.let { fake.apply(container.access, it) }
                 if (intent.hasExtra("allowance")) fake.setAllowance(container.access, intent.getIntExtra("allowance", 10))
+                if (intent.hasExtra("playError")) fake.playError = intent.getIntExtra("playError", 0)
                 if (intent.getBooleanExtra("renew", false)) fake.renew(container.access)
             } finally {
                 pending.finish()

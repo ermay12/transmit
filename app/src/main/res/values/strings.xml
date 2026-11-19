@@ -252,10 +252,10 @@
     <string name="plan_switch_done">You\'ll switch to Transmit on %1$s. Until then, you keep Plus.</string>
     <string name="plan_switches_on">Switches to Transmit on %1$s</string>
     <string name="plan_switch_starts">Starts %1$s</string>
-    <string name="plan_keep_plus">Keep Plus</string>
-    <string name="plan_keep_plus_note">Stay on Transmit Plus, with twice the AI.</string>
-    <string name="plan_keep_plus_done">You\'re staying on Transmit Plus.</string>
-    <string name="plan_change_failed">Google Play couldn\'t make the change. Try again later, or use Manage subscription.</string>
+    <!-- While a switch is set there's no way back to Plus before it happens (Google documents no replacement mode for undoing it), so the note says what's possible instead. -->
+    <string name="plan_switch_pending_note">Switching to Transmit on %1$s. Changed your mind? You can upgrade back to Plus anytime after the switch.</string>
+    <!-- Any error from Google Play's sheet, whatever its code. -->
+    <string name="billing_failed">Google Play couldn\'t make that change. Please try again later.</string>
     <string name="purchase_working">Setting up your plan…</string>
     <string name="purchase_pending">Your payment is being processed. Translation starts as soon as Google Play confirms it.</string>
     <string name="purchase_done">%1$s is ready</string>

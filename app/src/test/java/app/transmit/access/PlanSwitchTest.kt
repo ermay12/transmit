@@ -2,7 +2,9 @@ package app.transmit.access
 
 import android.app.Activity
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import app.transmit.TestStrings
 import app.transmit.data.KeyVault
+import app.transmit.ui.access.AccessText
 import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,8 +33,8 @@ import org.junit.rules.TemporaryFolder
 import java.time.Instant
 
 /**
- * Plus → Transmit and back, end to end: the plan Play's sheet opens with, the new token reaching the Worker
- * (`backend/API.md` "Switch to Transmit" and "Keep Plus"), and what the app shows meanwhile.
+ * Plus → Transmit, end to end: the plan Play's sheet opens with, the new token reaching the Worker (`backend/API.md`
+ * "Switch to Transmit"), and what the app shows meanwhile.
  */
 class PlanSwitchTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -103,7 +105,7 @@ class PlanSwitchTest {
     }
 
     @Test
-    fun switchingToTransmitKeepsPlusUntilTheRenewalAndKeepPlusUndoesIt() = runBlocking {
+    fun switchingToTransmitKeepsPlusUntilTheRenewal() = runBlocking {
         onPlus()
 
         // Switch to Transmit: DEFERRED on the Plus token.
@@ -125,18 +127,12 @@ class PlanSwitchTest {
         assertEquals("sk-or-v1-plus", access.managedKey())
         assertEquals("switch-2", access.purchaseToken())
 
-        // While it's set: Plus is Keep Plus on the switch's token, and another switch isn't offered.
+        // While it's set nothing more is offered: no Keep Plus (Google documents no mode for it), no second switch.
+        // Play's sheet doesn't open at all.
         assertEquals(PurchasePlan.NotOffered, purchases.planFor(Tier.STANDARD))
-        reply(200, plusAnswer(pending = false))
-        val keep = change(Tier.PLUS, "keep-3", 3)
-        assertEquals(PurchasePlan.KeepPlus("switch-2", "transmit_plus", ReplacementMode.DEFERRED), keep)
-        assertEquals(PurchaseUi.KeptPlus, withTimeout(5_000) { purchases.state.first { it == PurchaseUi.KeptPlus } })
-        assertEquals("keep-3", sent().s("purchaseToken"))
-        val kept = access.current() as AiAccess.Subscribed
-        assertEquals(Tier.PLUS, kept.tier)
-        assertNull(kept.pendingSwitch)
-        assertEquals("sk-or-v1-plus", access.managedKey())
-        assertEquals("keep-3", access.purchaseToken())
+        assertEquals(PurchasePlan.NotOffered, purchases.planFor(Tier.PLUS))
+        assertEquals(LaunchResult.UNAVAILABLE, purchases.buy(Activity(), Tier.PLUS))
+        assertEquals(listOf<PurchasePlan>(down), play.launched)
     }
 
     @Test
@@ -175,8 +171,11 @@ class PlanSwitchTest {
         onPlus()
         purchases.buy(Activity(), Tier.STANDARD)
         withTimeout(5_000) { play.updates.subscriptionCount.first { it > 0 } }
-        play.updates.emit(PurchaseUpdate.Failed(5, "Developer error"))
-        assertEquals(PurchaseUi.Failed(null, planChange = true), withTimeout(5_000) { purchases.state.first { it is PurchaseUi.Failed } })
+        // The device test's refusal: DEVELOPER_ERROR, which Play's sheet explains only as "Something went wrong".
+        play.updates.emit(PurchaseUpdate.Failed(5, "Requested replacement mode is not supported for this request"))
+        val failed = withTimeout(5_000) { purchases.state.first { it is PurchaseUi.Failed } } as PurchaseUi.Failed
+        assertEquals(PurchaseUi.Failed(null, planChange = true), failed)
+        assertEquals("Google Play couldn't make that change. Please try again later.", TestStrings.text(AccessText.purchaseProblem(failed)))
     }
 
     private object NoAttestation : TrialAttestation {
