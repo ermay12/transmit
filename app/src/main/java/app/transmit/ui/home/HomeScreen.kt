@@ -252,7 +252,7 @@ fun HomeScreen(
                     Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 }
                 list.isNullOrEmpty() && complete && syncing && query.isBlank() -> item("syncing") { SyncingState() }
-                list.isNullOrEmpty() && complete -> item("empty") { EmptyState(query.isNotBlank(), showArchived) }
+                list.isNullOrEmpty() && complete -> item("empty") { EmptyState(query.isNotBlank(), showArchived, paired) }
                 list != null -> items(list, key = { it.threadId }) { item ->
                     // Search results stay listed after a change, so they don't swipe.
                     SwipeToArchive(archived = item.archived, enabled = query.isBlank(), onSwiped = { archive(item.threadId, !item.archived) }) {
@@ -476,7 +476,7 @@ private fun SyncingState() {
 }
 
 @Composable
-private fun EmptyState(searching: Boolean, archived: Boolean) {
+private fun EmptyState(searching: Boolean, archived: Boolean, paired: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             when {
@@ -491,9 +491,13 @@ private fun EmptyState(searching: Boolean, archived: Boolean) {
             when {
                 searching -> "No matches"
                 archived -> "No archived conversations"
+                // The banner above says how; this says why the list is empty.
+                !paired -> "Your chats show up here once you pair"
                 else -> "No conversations yet"
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 32.dp),
         )
     }
 }

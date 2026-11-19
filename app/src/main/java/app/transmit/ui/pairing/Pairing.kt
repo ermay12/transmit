@@ -162,8 +162,8 @@ private fun GoogleStep(
     when {
         pairing == null -> {
             Text(
-                "Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does, " +
-                    "so RCS chats keep working.",
+                "Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does. " +
+                    "Nothing changes for the people you text.",
                 style = MaterialTheme.typography.bodyMedium, color = muted,
             )
             Spacer(Modifier.height(24.dp))

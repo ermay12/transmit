@@ -247,7 +247,7 @@ fun SettingsScreen(
                             vm.switchToManaged(onNoPlan = onPlans)
                         }
                     } else {
-                        Row0(Icons.Default.Key, AccessText.OWN_KEY, "Bring a key from OpenRouter, OpenAI, Anthropic or Google") { ownKeyDialog = true }
+                        Row0(Icons.Default.Key, AccessText.OWN_KEY, "Pay an AI provider such as OpenAI or Google yourself") { ownKeyDialog = true }
                     }
                 }
             }
@@ -408,7 +408,8 @@ private fun PlanCard(
             if (access !is AiAccess.Byok && vm.canBuy) {
                 TextButton(
                     onClick = { vm.restore(onMessage) }, enabled = !restoring,
-                    modifier = Modifier.align(Alignment.End),
+                    // Under NONE's centred buttons it's centred too; elsewhere it sits at the end.
+                    modifier = Modifier.align(if (access == AiAccess.None) Alignment.CenterHorizontally else Alignment.End),
                 ) { Text(if (restoring) "Restoring…" else AccessText.RESTORE, style = MaterialTheme.typography.labelMedium) }
             }
         }

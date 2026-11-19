@@ -132,7 +132,7 @@ private fun Title(text: String, sub: String? = null) {
 @Composable
 private fun PracticeStep(vm: SettingsViewModel, s: AppSettings) {
     var pick by remember { mutableStateOf<String?>(null) }
-    Title("What are you practicing?", "Messages arrive in the language you're practicing. Your friends get yours.")
+    Title("What are you practicing?", "Texts from friends arrive in the language you're practicing. Your replies reach them in the language you speak.")
     LanguageCard("I'm practicing", s.target.flag, s.target.nativeName, prominent = true) { pick = "target" }
     Spacer(Modifier.height(12.dp))
     LanguageCard("I speak", s.native.flag, s.native.nativeName, prominent = false) { pick = "native" }
