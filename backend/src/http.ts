@@ -61,6 +61,19 @@ export function json(body: unknown, status = 200, headers: Record<string, string
   });
 }
 
+/** A static page. Nothing on it loads from elsewhere, so the policy allows only its inline style. */
+export function html(body: string): Response {
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=300",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 export function errorResponse(err: ApiError): Response {
   return json({ error: err.code, message: err.message, ...err.extra }, STATUS[err.code], err.headers);
 }
@@ -101,7 +114,7 @@ export function optionalBoolean(body: Record<string, unknown>, field: string): b
   return v;
 }
 
-/** Structured log line. Never pass keys, tokens or device IDs here. */
+/** Structured log line, kept 3 days in Workers Logs. Never pass keys, tokens, device IDs or IP addresses here. */
 export function log(event: string, fields: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, ...fields }));
 }

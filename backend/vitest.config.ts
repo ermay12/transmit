@@ -1,5 +1,7 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
+// Writes src/generated/pages.ts (GET /privacy and GET /) from docs/launch/privacy-policy.md.
+import "./scripts/build-pages.mjs";
 
 export default defineConfig(async () => {
   const migrations = await readD1Migrations("./migrations");

@@ -64,6 +64,39 @@ describe("rate limits", () => {
   });
 });
 
+describe("network keys", () => {
+  const counts = () => env.DB.prepare("SELECT COUNT(*) AS n FROM trial_calls").first<number>("n");
+
+  it("count by a keyed hash of the network and the day, never the address", async () => {
+    const world = new FakeWorld();
+    await call(world, "/v1/trial", junkTrial("a1"), { ip: "203.0.113.77" });
+    await call(world, "/v1/subscription", { purchaseToken: "t" }, { ip: "2001:db8:5:6:1::1" });
+    const keys = [...world.rateCounts.keys()];
+    expect(keys).toHaveLength(2);
+    expect(keys.join(" ")).not.toMatch(/203\.0\.113|2001|db8/);
+    const day1 = await env.DB.prepare("SELECT ip_hash FROM trial_calls").first<string>("ip_hash");
+    expect(day1).toMatch(/^[0-9a-f]{64}$/);
+    expect(keys[0]).toBe(`TRIAL_RATE_LIMIT|${day1}`); // the per-minute and the daily limit share the key
+
+    // The same network the next day gets a different hash, so its days can't be linked.
+    world.now += DAY;
+    await call(world, "/v1/trial", junkTrial("a1"), { ip: "203.0.113.77" });
+    const hashes = (await env.DB.prepare("SELECT ip_hash FROM trial_calls ORDER BY day").all<{ ip_hash: string }>()).results;
+    expect(hashes.map((r) => r.ip_hash)).toEqual([day1, expect.not.stringMatching(day1!)]);
+  });
+
+  it("are deleted by the first job run after UTC midnight", async () => {
+    const world = new FakeWorld(); // 12:00 UTC
+    await call(world, "/v1/trial", junkTrial("a1"));
+    world.now += 11 * 3600_000 + 50 * 60_000; // 23:50, same day: still needed
+    await cron(world);
+    expect(await counts()).toBe(1);
+    world.now += 13 * 60_000; // 00:03 the next day
+    await cron(world);
+    expect(await counts()).toBe(0);
+  });
+});
+
 describe("Google access token", () => {
   it("is shared between isolates through D1, encrypted, until it expires", async () => {
     const world = new FakeWorld();

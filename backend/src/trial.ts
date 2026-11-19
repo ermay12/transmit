@@ -17,25 +17,26 @@ const FUTURE_SKEW_MS = 5 * 60_000;
 const MIN_REMAINING_MS = 60_000;
 const MIN_REMAINING_USD = 0.001;
 
-export async function handleTrial(ctx: Ctx, request: Request, client: string | null): Promise<Response> {
+/** `network` is the client's networkKey() (a keyed hash), or null without a client address. */
+export async function handleTrial(ctx: Ctx, request: Request, network: string | null): Promise<Response> {
   const body = await readJson(request);
   const androidId = requiredString(body, "androidId", ANDROID_ID, 64);
   const integrityToken = requiredString(body, "integrityToken", INTEGRITY_TOKEN, 20_000);
   const now = ctx.now();
 
   // One D1 round trip: take the device's lease, read its trial and the shared Google token,
-  // and count this call against the client's daily limit.
+  // and count this call against the network's daily limit.
   const deviceHash = await keyedHash(ctx.keys, "device", androidId);
   const lease = new Lease(ctx.db, `trial:${deviceHash}`, now, () => shareTokenWrites(ctx));
   const first = [lease.acquire(), trialStmt(ctx.db, deviceHash), readSharedToken(ctx.db)];
-  if (client) {
+  if (network) {
     first.push(
       ctx.db
         .prepare(
           `INSERT INTO trial_calls (day, ip_hash, calls) VALUES (?1, ?2, 1)
            ON CONFLICT(day, ip_hash) DO UPDATE SET calls = calls + 1 RETURNING calls`,
         )
-        .bind(utcDay(now), await keyedHash(ctx.keys, "ip", client)),
+        .bind(utcDay(now), network),
     );
   }
   const [locked, trial, token, calls] = await ctx.db.batch(first);

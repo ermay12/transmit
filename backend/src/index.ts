@@ -4,8 +4,10 @@
 import { type Env, loadConfig } from "./config";
 import { makeCtx, defaultDeps, type Deps } from "./context";
 import { Budget, runScheduled, type CronReport } from "./cron";
-import { ApiError, errorResponse, json, log } from "./http";
-import { checkPerMinute, clientKey } from "./ratelimit";
+import { dataKeys } from "./crypto";
+import { HOME_HTML, PRIVACY_HTML } from "./generated/pages";
+import { ApiError, errorResponse, html, json, log } from "./http";
+import { checkPerMinute, networkKey } from "./ratelimit";
 import { handleSubscription } from "./subscription";
 import { handleTrial } from "./trial";
 
@@ -14,9 +16,11 @@ export async function handleRequest(request: Request, env: Env, deps: Deps): Pro
   try {
     const route = ROUTES[pathname];
     if (!route) throw new ApiError("not_found", "No such endpoint.");
-    const handler = route[request.method];
+    const head = request.method === "HEAD";
+    const handler = route[request.method] ?? (head ? route.GET : undefined);
     if (!handler) throw new ApiError("method_not_allowed", `Use ${Object.keys(route).join(" or ")} for ${pathname}.`);
-    return await handler(request, env, deps);
+    const response = await handler(request, env, deps);
+    return head ? new Response(null, response) : response;
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.code === "upstream_error") log("upstream_error", { path: pathname, message: err.message });
@@ -29,18 +33,26 @@ export async function handleRequest(request: Request, env: Env, deps: Deps): Pro
 
 type Handler = (request: Request, env: Env, deps: Deps) => Promise<Response>;
 
+/** The rate limits' key for this request's network: a keyed hash, never the address. */
+async function network(req: Request, env: Env, deps: Deps): Promise<string | null> {
+  return networkKey(req, await dataKeys(env.DATA_SECRET), deps.now());
+}
+
 const ROUTES: Record<string, Record<string, Handler>> = {
+  // Pages rendered at build time (scripts/build-pages.mjs); the privacy policy is linked from the app and Play.
+  "/": { GET: async () => html(HOME_HTML) },
+  "/privacy": { GET: async () => html(PRIVACY_HTML) },
   "/v1/health": { GET: async () => json({ ok: true }) },
   "/v1/trial": {
     POST: async (req, env, deps) => {
-      const client = clientKey(req);
-      await checkPerMinute(env.TRIAL_RATE_LIMIT, "/v1/trial", client);
-      return handleTrial(await makeCtx(env, deps), req, client);
+      const net = await network(req, env, deps);
+      await checkPerMinute(env.TRIAL_RATE_LIMIT, "/v1/trial", net);
+      return handleTrial(await makeCtx(env, deps), req, net);
     },
   },
   "/v1/subscription": {
     POST: async (req, env, deps) => {
-      await checkPerMinute(env.SUBSCRIPTION_RATE_LIMIT, "/v1/subscription", clientKey(req));
+      await checkPerMinute(env.SUBSCRIPTION_RATE_LIMIT, "/v1/subscription", await network(req, env, deps));
       return handleSubscription(await makeCtx(env, deps), req);
     },
   },

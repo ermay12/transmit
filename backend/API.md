@@ -21,6 +21,8 @@ key it gets here; no message text ever reaches the Worker.
 | `POST /v1/trial` | Start the free trial on this device, or re-issue its key after a reinstall during the trial |
 | `POST /v1/subscription` | Verify a Play subscription and return or refresh its key: after a purchase, an upgrade, a switch to Transmit, a restore, daily, and when the allowance runs low |
 | `GET /v1/health` | Liveness check, returns `{"ok": true}` |
+| `GET /privacy` | The privacy policy, as an HTML page (the link in the app and in Play Console) |
+| `GET /` | A short HTML page that links to `/privacy` |
 
 There is no status endpoint. For the remaining allowance, call OpenRouter with
 the app's own key: `GET https://openrouter.ai/api/v1/key` and read
@@ -289,7 +291,8 @@ it never does, until 3 days after the period ends).
 ## Rate limits
 
 The Worker counts calls per network: an IPv4 address, or an IPv6 `/64` (one
-phone or one home network). Every limit answers `rate_limited` (429) with
+phone or one home network). It counts under a keyed hash of the network and the
+UTC day, and never stores the address. Every limit answers `rate_limited` (429) with
 `retryAfterSeconds` and a `Retry-After` header. A rate-limited call does
 nothing and uses no Google check.
 

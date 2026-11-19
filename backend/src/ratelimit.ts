@@ -3,13 +3,20 @@
 // free allowance. A client is an IPv4 address or an IPv6 /64 (one phone or
 // one home network gets a whole /64).
 //
+// Both limits count by networkKey(): a keyed hash of the client and the UTC
+// day. The address itself is never stored or logged, and a network's hash
+// changes every day, so counts can't be linked across days.
+//
 // - Every call to /v1/trial and /v1/subscription first passes a Workers Rate
 //   Limiting binding: a few dozen calls per minute, counted per Cloudflare
 //   location, with no storage or subrequest cost (limits in wrangler.jsonc).
 // - /v1/trial also counts calls per client per UTC day in D1 (trial.ts),
 //   because a per-minute limit alone still lets one address make thousands of
-//   Integrity checks a day.
+//   Integrity checks a day. The scheduled job deletes those counts once their
+//   day is over.
 
+import { type DataKeys, keyedHash } from "./crypto";
+import { utcDay } from "./db";
 import { ApiError, log } from "./http";
 
 export function rateLimited(retryAfterSeconds: number): ApiError {
@@ -33,12 +40,18 @@ export function clientKey(request: Request): string | null {
   return `${groups.slice(0, 4).map((g) => (parseInt(g, 16) || 0).toString(16)).join(":")}::/64`;
 }
 
-/** Throws rate_limited if the client has used up this minute's calls. Fails open if the binding is missing or errors. */
-export async function checkPerMinute(binding: RateLimit | undefined, path: string, client: string | null): Promise<void> {
-  if (!binding || !client) return;
+/** What the limits count by: HMAC("ip:" + UTC day + "|" + clientKey); null without a client address. */
+export async function networkKey(request: Request, keys: DataKeys, now: number): Promise<string | null> {
+  const client = clientKey(request);
+  return client ? keyedHash(keys, "ip", `${utcDay(now)}|${client}`) : null;
+}
+
+/** Throws rate_limited if the network has used up this minute's calls. Fails open if the binding is missing or errors. */
+export async function checkPerMinute(binding: RateLimit | undefined, path: string, network: string | null): Promise<void> {
+  if (!binding || !network) return;
   let allowed = true;
   try {
-    allowed = (await binding.limit({ key: client })).success;
+    allowed = (await binding.limit({ key: network })).success;
   } catch (err) {
     log("rate_limit_unavailable", { path, error: String(err) });
     return;

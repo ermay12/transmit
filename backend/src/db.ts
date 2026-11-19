@@ -32,9 +32,19 @@ export interface SubscriptionRow {
   /** Product a DEFERRED plan change switches to at expiry_time (null: none pending). */
   pending_product_id: string | null;
   pending_base_plan_id: string | null;
+  /** When the purchase first stopped giving AI for good or was refunded; derived by putSubscription(). */
+  ended_at: number | null;
   created_at: number;
   updated_at: number;
   checked_at: number;
+}
+
+/** States after which the scheduled job deletes the row (90 days after ended_at, cron.ts). */
+const ENDED_STATES = new Set(["expired", "canceled_pending", "refunded", "replaced"]);
+
+/** ended_at for a row about to be written: kept from the first write in an ended state, cleared if the purchase recovered. */
+export function endedAt(row: SubscriptionRow): number | null {
+  return ENDED_STATES.has(row.state) ? (row.ended_at ?? row.updated_at) : null;
 }
 
 export function trialStmt(db: D1Database, deviceHash: string): D1PreparedStatement {
@@ -63,9 +73,9 @@ export function putSubscription(db: D1Database, row: SubscriptionRow, expectedUp
   const cols = [
     "token_hash", "token_enc", "product_id", "base_plan_id", "state", "expiry_time", "auto_renewing", "order_id",
     "allowance_usd", "key_hash", "key_disabled", "limit_usd", "voided_orders", "acknowledged", "replaced_by",
-    "next_check_at", "created_at", "updated_at", "checked_at", "pending_product_id", "pending_base_plan_id",
+    "next_check_at", "created_at", "updated_at", "checked_at", "pending_product_id", "pending_base_plan_id", "ended_at",
   ] as const;
-  const values = cols.map((c) => row[c]);
+  const values = cols.map((c) => (c === "ended_at" ? endedAt(row) : row[c]));
   if (expectedUpdatedAt !== undefined) {
     const sets = cols.slice(1).map((c, i) => `${c} = ?${i + 2}`).join(", ");
     return db

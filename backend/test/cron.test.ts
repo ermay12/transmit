@@ -189,3 +189,131 @@ describe("scheduled job", () => {
     expect(world.keys.get(hash)!.limit).toBe(4.5);
   });
 });
+
+describe("retention", () => {
+  const RETENTION = 90 * DAY;
+  const subs = () => env.DB.prepare("SELECT COUNT(*) AS n FROM subscriptions").first<number>("n");
+  /** ended_at of the only subscription row. */
+  const endedAt = () => env.DB.prepare("SELECT ended_at FROM subscriptions").first<number | null>("ended_at");
+
+  it("deletes an expired subscription and its key 90 days after it ended", async () => {
+    const world = new FakeWorld();
+    const hash = await buy(world, "t1", { state: "SUBSCRIPTION_STATE_CANCELED", autoRenew: false });
+    world.now += 30 * DAY + 10 * 60_000;
+    world.setState("t1", "SUBSCRIPTION_STATE_EXPIRED");
+    expect((await cron(world)).outcomes).toEqual(["expired:disabled"]);
+    const ended = world.now;
+    expect(await endedAt()).toBe(ended);
+
+    // The app asking again with the old token doesn't move the end.
+    world.now += 10 * DAY;
+    expect((await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash })).body).toMatchObject({ state: "expired" });
+    expect(await endedAt()).toBe(ended);
+
+    world.now = ended + RETENTION - 60_000;
+    expect((await cron(world)).subscriptionsDeleted).toBe(0);
+    expect(world.keys.has(hash)).toBe(true);
+    world.now = ended + RETENTION;
+    expect((await cron(world)).subscriptionsDeleted).toBe(1);
+    expect(await subs()).toBe(0);
+    expect(world.keys.has(hash)).toBe(false);
+  });
+
+  it("counts a refunded subscription's 90 days from the refund", async () => {
+    const world = new FakeWorld();
+    const hash = await buy(world, "t1", { orderId: "GPA.9" });
+    world.voided = [{ purchaseToken: "t1", orderId: "GPA.9", voidedTimeMillis: String(world.now) }];
+    world.setState("t1", "SUBSCRIPTION_STATE_EXPIRED"); // refunded and revoked in Play Console
+    world.now += 3_600_000;
+    expect((await cron(world)).refundsApplied).toBe(1);
+    const refunded = world.now;
+    world.now += 30 * DAY; // the period's end: the job re-checks it and Google says expired
+    await cron(world);
+    expect(await env.DB.prepare("SELECT state, ended_at FROM subscriptions").first()).toEqual({ state: "expired", ended_at: refunded });
+
+    world.now = refunded + RETENTION - 60_000;
+    expect((await cron(world)).subscriptionsDeleted).toBe(0);
+    world.now = refunded + RETENTION;
+    expect((await cron(world)).subscriptionsDeleted).toBe(1);
+    expect(world.keys.has(hash)).toBe(false);
+  });
+
+  it("keeps a subscription that renews after a refunded order", async () => {
+    const world = new FakeWorld();
+    const hash = await buy(world, "t1", { orderId: "GPA.1" });
+    world.voided = [{ purchaseToken: "t1", orderId: "GPA.1" }]; // refunded without revoking
+    world.now += 3_600_000;
+    await cron(world);
+    expect(await endedAt()).toBe(world.now);
+    world.now += 30 * DAY;
+    world.renew("t1", "GPA.1..0", world.now + 30 * DAY);
+    expect((await cron(world)).outcomes).toEqual(["active:renewed"]);
+    expect(await endedAt()).toBeNull();
+
+    world.now += RETENTION + DAY;
+    expect((await cron(world)).subscriptionsDeleted).toBe(0);
+    expect(await subs()).toBe(1);
+    expect(world.keys.get(hash)!.disabled).toBe(false);
+  });
+
+  it("deletes a purchase an upgrade replaced 90 days later, leaving the upgrade and its key alone", async () => {
+    const world = new FakeWorld();
+    const hash = await buy(world, "t1");
+    world.addPurchase("t2", { productId: "transmit_plus", linked: "t1", orderId: "GPA.2" });
+    world.setState("t1", "SUBSCRIPTION_STATE_EXPIRED");
+    expect((await call(world, "/v1/subscription", { purchaseToken: "t2", productId: "transmit_plus", keyHash: hash })).status).toBe(200);
+    const upgraded = world.now;
+
+    world.now = upgraded + RETENTION - 60_000;
+    expect((await cron(world)).subscriptionsDeleted).toBe(0);
+    world.now = upgraded + RETENTION;
+    expect((await cron(world)).subscriptionsDeleted).toBe(1);
+    expect(await env.DB.prepare("SELECT product_id, key_hash, ended_at FROM subscriptions").all()).toMatchObject({
+      results: [{ product_id: "transmit_plus", key_hash: hash, ended_at: null }],
+    });
+    expect(world.keys.get(hash)!.disabled).toBe(false); // the key moved to the upgrade: not deleted
+  });
+
+  it("keeps trial rows, so a device still gets one free trial", async () => {
+    const world = new FakeWorld();
+    await world.addIntegrity("i1", "dev1");
+    expect((await call(world, "/v1/trial", { androidId: "dev1", integrityToken: "i1" })).status).toBe(200);
+    world.now += 400 * DAY;
+    await cron(world);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM trials").first("n")).toBe(1);
+    await world.addIntegrity("i2", "dev1");
+    expect((await call(world, "/v1/trial", { androidId: "dev1", integrityToken: "i2" })).body.error).toBe("trial_already_used");
+  });
+
+  it("works through a backlog in batches, within the subrequest budget", async () => {
+    const world = new FakeWorld();
+    const hashes: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      hashes.push(await buy(world, `t${i}`, { state: "SUBSCRIPTION_STATE_CANCELED", autoRenew: false, orderId: `GPA.${i}` }));
+    }
+    world.now += 31 * DAY;
+    for (let i = 0; i < 25; i++) world.setState(`t${i}`, "SUBSCRIPTION_STATE_EXPIRED");
+    const expired = () => env.DB.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE state = 'expired'").first<number>("n");
+    for (let runs = 0; runs < 40 && ((await expired()) ?? 0) < 25; runs++) {
+      await cron(world);
+      world.now += 10 * 60_000;
+    }
+    expect(await expired()).toBe(25);
+
+    world.now += RETENTION + DAY;
+    world.tokenCache = {};
+    let deleted = 0;
+    let runs = 0;
+    for (; runs < 20 && deleted < 25; runs++) {
+      const before = world.calls.length;
+      const report = await cron(world);
+      expectWithinBudget(report, world, before);
+      deleted += report.subscriptionsDeleted;
+      world.now += 10 * 60_000;
+    }
+    expect(deleted).toBe(25);
+    expect(runs).toBe(4); // 8 key deletions fit in each run
+    expect(await subs()).toBe(0);
+    for (const h of hashes) expect(world.keys.has(h)).toBe(false);
+  });
+});

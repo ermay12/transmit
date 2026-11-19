@@ -5,10 +5,23 @@
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true },
+  // Renders GET /privacy from docs/launch/privacy-policy.md (and GET /) into src/generated/pages.ts.
+  "build": { "command": "node scripts/build-pages.mjs", "watch_dir": ["scripts", "../docs/launch"] },
+  // Workers Logs keep only the Worker's own log lines (http.ts log(): no IP addresses, keys, tokens or
+  // device IDs), for 3 days. Invocation logs are off: they store every request's headers, including
+  // cf-connecting-ip, and its location (city, postal code, coordinates, ASN). Request counts, errors and
+  // CPU time stay in the dashboard's Metrics; `wrangler tail` still shows live requests (not stored).
+  // Log lines still carry the request's method and URL; query strings are cut from it (the app sends none).
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false }
+  },
   // Every 10 minutes; each run handles what fits in CRON_SUBREQUEST_BUDGET and leaves the rest for the next.
   "triggers": { "crons": ["3,13,23,33,43,53 * * * *"] },
   // Per-client (IPv4 address or IPv6 /64) call limits per 60 s, per Cloudflare location; see src/ratelimit.ts.
+  // The key is a keyed hash of the network and the UTC day, never the address.
   // namespace_id only has to be unique within the Cloudflare account.
   "ratelimits": [
     { "name": "TRIAL_RATE_LIMIT", "namespace_id": "461001", "simple": { "limit": 10, "period": 60 } },

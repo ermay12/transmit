@@ -423,6 +423,7 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
       checked_at: a.now,
       pending_product_id: p.pendingProductId,
       pending_base_plan_id: p.pendingBasePlanId,
+      ended_at: null, // entitled: not ended (see endedAt)
     }),
   );
   await lease.finish(statements);

@@ -5,9 +5,12 @@
 // It reads everything in one D1 batch and writes everything in another, then:
 //   1. refunds: Google's voided purchases, scanned once a day, page by page;
 //   2. purchases past their period end (renewal or lapse), on hold, or unacknowledged;
-//   3. expired trial keys, which are deleted.
-// It also clears stale locks and old per-client trial counts, and shares a fresh
-// Google token with the request isolates (shared-token.ts).
+//   3. expired trial keys, which are deleted;
+//   4. retention: subscription rows (and their OpenRouter keys) 90 days after the
+//      purchase ended or was refunded. Trial rows are kept: they keep each device
+//      to one free trial.
+// It also clears stale locks and the per-network trial counts of past days, and
+// shares a fresh Google token with the request isolates (shared-token.ts).
 
 import type { Ctx } from "./context";
 import { decrypt, keyedHash } from "./crypto";
@@ -44,6 +47,12 @@ interface ExpiredTrial {
   key_hash: string;
 }
 
+interface EndedSubscription {
+  token_hash: string;
+  key_hash: string | null;
+  updated_at: number;
+}
+
 type Touched = Map<string, { next: SubscriptionRow; expectedUpdatedAt: number }>;
 
 interface VoidedState {
@@ -60,10 +69,15 @@ export interface CronReport {
   subscriptionsChecked: number;
   outcomes: string[];
   trialKeysDeleted: number;
+  subscriptionsDeleted: number;
   errors: number;
 }
 
 const DAY = 86_400_000;
+/** Subscription rows are deleted this long after ended_at (privacy policy, section 6). */
+export const SUBSCRIPTION_RETENTION_MS = 90 * DAY;
+/** Ended rows read per run. Rows without a key cost no subrequest; the rest wait for budget. */
+const PURGE_BATCH = 20;
 /** Google's voided-purchases API looks back at most 30 days. */
 const VOIDED_MAX_LOOKBACK = 29 * DAY;
 const VOIDED_OVERLAP = DAY;
@@ -83,6 +97,7 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
     subscriptionsChecked: 0,
     outcomes: [],
     trialKeysDeleted: 0,
+    subscriptionsDeleted: 0,
     errors: 0,
   };
   const writes: D1PreparedStatement[] = [];
@@ -90,14 +105,15 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
   const touched: Touched = new Map();
 
   // Everything the run reads, in one D1 call: the refund scan's progress, the Google token other
-  // isolates shared, the purchases due for a re-check and the expired trial keys. The loops below
-  // stop at the budget, so the limits only keep the reads small.
-  let reads: { state: Map<string, string>; due: SubscriptionRow[]; trials: ExpiredTrial[] } | undefined;
+  // isolates shared, the purchases due for a re-check, the expired trial keys and the ended
+  // subscriptions past retention (except those due for a re-check, which this run may rewrite). The
+  // loops below stop at the budget, so the limits only keep the reads small.
+  let reads: { state: Map<string, string>; due: SubscriptionRow[]; trials: ExpiredTrial[]; ended: EndedSubscription[] } | undefined;
   try {
     const dueRoom = Math.max(1, Math.floor((budget.left - 2) / RECHECK_TYPICAL_COST));
     const trialRoom = Math.max(1, budget.left - 2);
     budget.spend();
-    const [state, due, trials] = await ctx.db.batch([
+    const [state, due, trials, ended] = await ctx.db.batch([
       ctx.db.prepare("SELECT name, value FROM job_state WHERE name IN ('voided', ?1)").bind(SHARED_TOKEN_ROW),
       ctx.db
         .prepare("SELECT * FROM subscriptions WHERE next_check_at IS NOT NULL AND next_check_at <= ?1 ORDER BY next_check_at LIMIT ?2")
@@ -105,11 +121,19 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
       ctx.db
         .prepare("SELECT device_hash, key_hash FROM trials WHERE key_hash IS NOT NULL AND expires_at <= ?1 ORDER BY expires_at LIMIT ?2")
         .bind(now, trialRoom),
+      ctx.db
+        .prepare(
+          `SELECT token_hash, key_hash, updated_at FROM subscriptions
+           WHERE ended_at IS NOT NULL AND ended_at <= ?1 AND (next_check_at IS NULL OR next_check_at > ?2)
+           ORDER BY ended_at LIMIT ?3`,
+        )
+        .bind(now - SUBSCRIPTION_RETENTION_MS, now, PURGE_BATCH),
     ]);
     reads = {
       state: new Map((state!.results as { name: string; value: string }[]).map((r) => [r.name, r.value])),
       due: due!.results as SubscriptionRow[],
       trials: trials!.results as ExpiredTrial[],
+      ended: ended!.results as EndedSubscription[],
     };
     await adoptSharedToken(ctx, reads.state.get(SHARED_TOKEN_ROW));
   } catch (err) {
@@ -136,11 +160,18 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
       report.errors++;
       log("cron_trials_failed", { error: String(err) });
     }
+    try {
+      await purgeEndedSubscriptions(ctx, budget, reads.ended, writes, report, touched);
+    } catch (err) {
+      report.errors++;
+      log("cron_purge_failed", { error: String(err) });
+    }
   }
 
   writes.push(...(await shareTokenWrites(ctx)));
   writes.push(ctx.db.prepare("DELETE FROM locks WHERE until < ?1").bind(now));
-  writes.push(ctx.db.prepare("DELETE FROM trial_calls WHERE day < ?1").bind(utcDay(now - DAY)));
+  // The daily trial limit only reads today's counts; earlier days go at the first run after UTC midnight.
+  writes.push(ctx.db.prepare("DELETE FROM trial_calls WHERE day < ?1").bind(utcDay(now)));
   budget.spend();
   await ctx.db.batch(writes);
   report.subrequests = budget.used;
@@ -303,5 +334,29 @@ async function deleteExpiredTrialKeys(
         .bind(t.device_hash, t.key_hash, now),
     );
     report.trialKeysDeleted++;
+  }
+}
+
+/**
+ * Retention: deletes subscription rows 90 days after the purchase ended or was refunded, with their
+ * OpenRouter key (already disabled; one subrequest each, so keys wait for budget). The delete is
+ * conditional on updated_at, so a concurrent app call wins; its row keeps ended_at and goes next run.
+ */
+async function purgeEndedSubscriptions(
+  ctx: Ctx,
+  budget: Budget,
+  rows: EndedSubscription[],
+  writes: D1PreparedStatement[],
+  report: CronReport,
+  touched: Touched,
+): Promise<void> {
+  for (const row of rows) {
+    if (touched.has(row.token_hash)) continue; // the refund scan rewrote it this run
+    if (row.key_hash) {
+      if (!budget.allows(1)) continue;
+      await ctx.openrouter.deleteKey(row.key_hash);
+    }
+    writes.push(ctx.db.prepare("DELETE FROM subscriptions WHERE token_hash = ?1 AND updated_at = ?2").bind(row.token_hash, row.updated_at));
+    report.subscriptionsDeleted++;
   }
 }

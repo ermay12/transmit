@@ -30,6 +30,44 @@ describe("routing and errors", () => {
   });
 });
 
+describe("pages", () => {
+  async function get(path: string, method = "GET") {
+    const { handleRequest } = await import("../src/index");
+    const world = new FakeWorld();
+    return handleRequest(new Request(`https://transmit.test${path}`, { method }), await world.env(), world.deps());
+  }
+
+  it("serves the privacy policy as HTML rendered from docs/launch/privacy-policy.md", async () => {
+    const r = await get("/privacy");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
+    const page = await r.text();
+    expect(page).toMatch(/^<!doctype html>/);
+    expect(page).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
+    expect(page).toContain("<title>Transmit privacy policy</title>");
+    expect(page).toContain('<h2 id="7-your-choices-and-rights">7. Your choices and rights</h2>');
+    expect(page).toContain('<div class="table"><table>');
+    // Placeholders stay visible until the developer fills them in; drafting notes don't show.
+    expect(page).toContain("<mark>[LEGAL NAME]</mark>");
+    expect(page).not.toContain("<!--");
+    expect(page).not.toMatch(/<script|<link|src=/);
+  });
+
+  it("links to the policy from the root, and answers HEAD without a body", async () => {
+    const home = await get("/");
+    expect(home.status).toBe(200);
+    expect(await home.text()).toContain('<a href="/privacy">Privacy policy</a>');
+    const head = await get("/privacy", "HEAD");
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await head.text()).toBe("");
+    const post = await get("/privacy", "POST");
+    expect(post.status).toBe(405);
+    expect(await post.json()).toMatchObject({ error: "method_not_allowed" });
+  });
+});
+
 describe("config", () => {
   it("reads every amount from vars", async () => {
     const world = new FakeWorld();
