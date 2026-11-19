@@ -176,9 +176,9 @@ class AccessManager(
     /**
      * Re-checks the subscription with the backend, at most every few minutes unless [force]d.
      *
-     * The Worker rotates a key whose hash doesn't match, so refreshing with a key another device has since taken
-     * would silently take it back (and the two devices would keep taking it from each other). So the key is first
-     * checked with OpenRouter, and a refused key goes through [subscriptionKeyRefused] instead.
+     * A refresh never takes the key from another device: it sends `"rotate": false`, and a `key_mismatch` marks
+     * the subscription in use elsewhere (see [backgroundRefresh]). The key is also checked with OpenRouter first,
+     * which is cheap and covers a Worker that predates `rotate`; a refused key goes through [refusedLocked].
      */
     suspend fun refresh(force: Boolean = false): AccessError? = refreshLock.withLock {
         val s = store.current()
@@ -191,7 +191,23 @@ class AccessManager(
             refusedLocked(token, s)
             return null
         }
-        handle(activate = false) { backend.refresh(token, s.keyHash) }
+        backgroundRefresh(token, s)
+    }
+
+    /**
+     * `POST /v1/subscription` with `"rotate": false`, for calls the user didn't ask for. If the key is on another
+     * device the Worker changes nothing and answers `key_mismatch`: mark it so the app asks before taking it back.
+     */
+    private suspend fun backgroundRefresh(token: String, s: StoredAccess): AccessError? {
+        val error = handle(activate = false) { backend.refresh(token, s.keyHash) }
+        if (error?.code != AccessErrorCode.KEY_IN_USE_ELSEWHERE) return error
+        markInUseElsewhere()
+        return null
+    }
+
+    private suspend fun markInUseElsewhere() {
+        store.update { it.copy(inUseElsewhere = true) }
+        if (!isForeground()) listener.onInUseElsewhereInBackground()
     }
 
     private suspend fun read(key: String): AllowanceCheck = try {
@@ -226,11 +242,8 @@ class AccessManager(
     private suspend fun refusedLocked(token: String, s: StoredAccess) {
         keyCheckedAt = clock()
         when (backend.activeOnPlay()) {
-            true -> {
-                store.update { it.copy(inUseElsewhere = true) }
-                if (!isForeground()) listener.onInUseElsewhereInBackground()
-            }
-            false -> handle(activate = false) { backend.refresh(token, s.keyHash) }
+            true -> markInUseElsewhere()
+            false -> backgroundRefresh(token, s)
             // Play can't be asked now: a service problem; the next failure or refresh looks again.
             null -> Unit
         }

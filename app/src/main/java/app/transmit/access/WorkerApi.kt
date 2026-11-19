@@ -81,14 +81,24 @@ class WorkerApi(private val http: OkHttpClient = defaultHttp(), baseUrl: String 
         },
     )
 
-    /** [keyHash]: the subscription key held now (kept when it matches, else rotated). [androidId]: after a purchase. */
-    suspend fun subscription(purchaseToken: String, productId: String?, keyHash: String?, androidId: String?): WorkerReply = post(
+    /**
+     * [keyHash]: the subscription key held now (kept when it matches, else rotated). [androidId]: after a purchase.
+     * [rotate] false: never take the key from another device; the Worker answers `key_mismatch` instead.
+     */
+    suspend fun subscription(
+        purchaseToken: String,
+        productId: String?,
+        keyHash: String?,
+        androidId: String?,
+        rotate: Boolean = true,
+    ): WorkerReply = post(
         "/v1/subscription",
         buildJsonObject {
             put("purchaseToken", purchaseToken)
             productId?.let { put("productId", it) }
             keyHash?.let { put("keyHash", it) }
             androidId?.let { put("androidId", it) }
+            if (!rotate) put("rotate", false)
         },
     )
 

@@ -24,7 +24,9 @@ interface AccessBackend {
 
     /**
      * Re-checks a subscription the app already holds: daily, when the allowance nears its end, and when it's used
-     * up. Picks up renewals, upgrades, lapses and refunds. The key is kept when [keyHash] still matches.
+     * up. Picks up renewals, upgrades, lapses and refunds. The key is kept when [keyHash] still matches; when it
+     * doesn't (the key moved to another device), this never takes it back: it fails with
+     * [AccessErrorCode.KEY_IN_USE_ELSEWHERE] and changes nothing. Only [restore] takes the key.
      */
     suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult
 
@@ -129,6 +131,8 @@ enum class AccessErrorCode {
     PAYMENT_PROBLEM,
     /** Another call for this device or purchase is running; retry in a few seconds. */
     BUSY,
+    /** A background refresh found the subscription's key on another device (`key_mismatch`); nothing was changed. */
+    KEY_IN_USE_ELSEWHERE,
     /** No connection to the backend. */
     NETWORK,
     /** The backend, Google or OpenRouter failed, or something unexpected came back. Try again later. */
@@ -163,6 +167,7 @@ enum class AccessErrorCode {
                     else -> fail(SERVICE)
                 }
                 "busy" -> fail(BUSY)
+                "key_mismatch" -> fail(KEY_IN_USE_ELSEWHERE)
                 "rate_limited" -> fail(RATE_LIMITED)
                 else -> fail(SERVICE)
             }

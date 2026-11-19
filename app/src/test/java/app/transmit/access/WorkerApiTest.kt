@@ -89,6 +89,12 @@ class WorkerApiTest {
         reply(400, """{"error":"bad_request","message":"x"}""")
         api.subscription("ptok", "transmit_plus", "kh", "aid")
         assertEquals(setOf("purchaseToken", "productId", "keyHash", "androidId"), body().keys)
+        // "rotate" only goes out to say no.
+        reply(400, """{"error":"bad_request","message":"x"}""")
+        api.subscription("ptok", null, "kh", null, rotate = false)
+        val noRotate = body()
+        assertEquals(setOf("purchaseToken", "keyHash", "rotate"), noRotate.keys)
+        assertEquals("false", noRotate["rotate"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -143,7 +149,11 @@ class WorkerApiTest {
         // The caller swaps in the newer token first; reaching resultFor with it is unexpected.
         assertEquals(AccessErrorCode.SERVICE, result("""{"error":"purchase_not_active","state":"replaced"}""").error().code)
 
-        val busy = result("""{"error":"busy"}""", 409).error()
+        // Only with "rotate": false. Nothing changed on the Worker, so neither sending it again nor retrying helps.
+        val mismatch = result("""{"error":"key_mismatch"}""", 409).error()
+        assertEquals(AccessErrorCode.KEY_IN_USE_ELSEWHERE, mismatch.code)
+        assertFalse(mismatch.retryable)
+                val busy = result("""{"error":"busy"}""", 409).error()
         assertEquals(AccessErrorCode.BUSY, busy.code)
         assertTrue(busy.retryable)
         val upstream = result("""{"error":"upstream_error","service":"google"}""", 502).error()
@@ -197,6 +207,7 @@ class WorkerApiTest {
         assertEquals(Delivery.USE_NEWER_TOKEN, d(402, "purchase_not_active", "replaced"))
         assertEquals(Delivery.DONE, d(400, "purchase_invalid"))
         assertEquals(Delivery.DONE, d(400, "bad_request"))
+        assertEquals(Delivery.DONE, d(409, "key_mismatch"))
         assertEquals(Delivery.DONE, d(402, "purchase_not_active", "expired"))
         assertEquals(Delivery.DONE, d(402, "purchase_not_active", "on_hold"))
         assertEquals(Delivery.DONE, d(404, null))

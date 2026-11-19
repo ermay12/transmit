@@ -139,9 +139,14 @@ class PlayAccessBackendTest {
         val body = sent()
         assertEquals(setOf("purchaseToken", "productId", "androidId"), body.keys)
 
+        // A refresh is never the user's say-so to take the key from another device.
         reply(200, subOk())
         backend().refresh("ptok", "sh")
-        assertEquals(mapOf("purchaseToken" to "ptok", "keyHash" to "sh"), sent().mapValues { it.value.jsonPrimitive.content })
+        assertEquals(mapOf("purchaseToken" to "ptok", "keyHash" to "sh", "rotate" to "false"), sent().mapValues { it.value.jsonPrimitive.content })
+
+        reply(409, """{"error":"key_mismatch"}""")
+        assertEquals(AccessErrorCode.KEY_IN_USE_ELSEWHERE, (backend().refresh("ptok", "stale") as AccessResult.Failed).error.code)
+        assertEquals("stale", sent().s("keyHash"))
     }
 
     @Test
@@ -161,6 +166,7 @@ class PlayAccessBackendTest {
         assertEquals("transmit_plus", second.s("productId"))
         // The key is kept across the upgrade.
         assertEquals("sh", second.s("keyHash"))
+        assertEquals("false", second.s("rotate"))
 
         // Nothing newer on Play: give up rather than loop.
         store.owned = listOf(OwnedPurchase("transmit_monthly", "old", purchased = true, acknowledged = true))
@@ -179,6 +185,8 @@ class PlayAccessBackendTest {
         val body = sent()
         assertEquals("plus", body.s("purchaseToken"))
         assertEquals("sh", body.s("keyHash"))
+        // "Restore purchase" is the user asking to take the key: rotate stays at its default.
+        assertFalse("rotate" in body)
 
         store.owned = emptyList()
         assertEquals(AccessErrorCode.NO_PURCHASE, (backend().restore(null) as AccessResult.Failed).error.code)

@@ -350,6 +350,33 @@ class AccessManagerTest {
     }
 
     @Test
+    fun aRefreshThatFindsTheKeyOnAnotherDeviceAsksInsteadOfTakingIt() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        // OpenRouter still takes the key (or couldn't be asked), but the Worker says it's another device's now.
+        check = AllowanceCheck.Unavailable
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
+        foreground = false
+        assertNull(m.refresh(force = true))
+        assertEquals(1, backend.refreshes)
+        assertEquals("sk-sub", m.managedKey())
+        assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
+        assertEquals(1, inUseElsewhereNotices)
+        // Marked: later refreshes leave it alone until "Use it here".
+        assertNull(m.refresh(force = true))
+        assertEquals(1, backend.refreshes)
+
+        // The same answer after a refused key, with Play unsure, in the foreground: marked, no notice.
+        val other = manager()
+        other.applyGrant(subGrant(), activate = true)
+        backend.onPlay = false
+        foreground = true
+        assertEquals(AiBlock.InUseElsewhere, other.onManagedError(refused))
+        assertTrue((other.current() as AiAccess.Subscribed).inUseElsewhere)
+        assertEquals(1, inUseElsewhereNotices)
+    }
+
+    @Test
     fun reconcilingNoticesAUsedUpOrRefusedTrialKey() = runBlocking {
         val m = manager()
         m.applyGrant(trialGrant(), activate = true)

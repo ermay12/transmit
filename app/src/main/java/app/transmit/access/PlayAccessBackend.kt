@@ -54,8 +54,9 @@ class PlayAccessBackend(
     override suspend fun activatePurchase(purchase: PlayPurchase, currentKeyHash: String?): AccessResult =
         subscription(purchase.purchaseToken, purchase.productId, currentKeyHash, androidId())
 
+    // A call the user didn't ask for never takes the key from another device (API.md `rotate`).
     override suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult =
-        subscription(purchaseToken, null, keyHash, null)
+        subscription(purchaseToken, null, keyHash, null, rotate = false)
 
     override suspend fun restore(currentKeyHash: String?): AccessResult {
         if (checkInstall && !store.available) return fail(AccessErrorCode.NOT_FROM_PLAY, "Not installed from Play")
@@ -70,11 +71,17 @@ class PlayAccessBackend(
      * `POST /v1/subscription`. After an upgrade the old token answers `replaced`: Play's newer token for the
      * subscription is sent instead (once), and kept from then on.
      */
-    private suspend fun subscription(token: String, productId: String?, keyHash: String?, androidId: String?): AccessResult {
+    private suspend fun subscription(
+        token: String,
+        productId: String?,
+        keyHash: String?,
+        androidId: String?,
+        rotate: Boolean = true,
+    ): AccessResult {
         var t = token
         var product = productId
         repeat(2) {
-            val reply = retryingBusy { api.subscription(t, product, keyHash, androidId) }
+            val reply = retryingBusy { api.subscription(t, product, keyHash, androidId, rotate) }
             if (reply.delivery != Delivery.USE_NEWER_TOKEN) return reply.toResult { WorkerApi.subscriptionGrant(it, t) }
             val newer = store.purchases()?.let { newerThan(t, it) }
                 ?: return fail(AccessErrorCode.SERVICE, "Replaced, and Play has no newer purchase")
