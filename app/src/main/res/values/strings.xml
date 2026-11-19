@@ -220,6 +220,22 @@
     <string name="plan_manage">Manage subscription</string>
     <string name="plan_restore">Restore purchase</string>
     <string name="plan_restoring">Restoring…</string>
+    <!--
+        Plus → Transmit (DEFERRED): Plus and its AI stay until the paid month ends, then the plan renews as Transmit.
+        An offer, never a hurdle in front of Manage subscription.
+    -->
+    <string name="plan_switch">Switch to Transmit</string>
+    <string name="plan_switch_takes_effect">Takes effect on %1$s</string>
+    <string name="plan_switch_instead">Paying too much? Switch to Transmit instead</string>
+    <string name="plan_switch_confirm_title">Switch to Transmit?</string>
+    <string name="plan_switch_confirm_body">You keep Transmit Plus and all its AI until %1$s. After that, you\'re on Transmit.</string>
+    <string name="plan_switch_done">You\'ll switch to Transmit on %1$s. Until then, you keep Plus.</string>
+    <string name="plan_switches_on">Switches to Transmit on %1$s</string>
+    <string name="plan_switch_starts">Starts %1$s</string>
+    <string name="plan_keep_plus">Keep Plus</string>
+    <string name="plan_keep_plus_note">Stay on Transmit Plus, with twice the AI.</string>
+    <string name="plan_keep_plus_done">You\'re staying on Transmit Plus.</string>
+    <string name="plan_change_failed">Google Play couldn\'t make the change. Try again later, or use Manage subscription.</string>
     <string name="purchase_working">Setting up your plan…</string>
     <string name="purchase_pending">Your payment is being processed. Translation starts as soon as Google Play confirms it.</string>
     <string name="purchase_done">%1$s is ready</string>

@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,6 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,7 +69,10 @@ import app.transmit.access.Tier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-/** The paywall: the two plans at Play's prices, buying, upgrading, restoring and managing. */
+/**
+ * The paywall: the two plans at Play's prices, buying, upgrading, switching Plus to Transmit (and keeping Plus after
+ * all), restoring and managing.
+ */
 class PlansViewModel(private val c: AppContainer) : ViewModel() {
     val access = c.access.access
     val purchase = c.purchases.state
@@ -89,14 +95,18 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** [onProblem] gets a string resource when Play's sheet couldn't open. */
-    fun buy(activity: Activity, tier: Tier, onProblem: (Int) -> Unit) {
+    /**
+     * Opens Play's sheet for [tier]: a purchase, an upgrade, a switch from Plus to Transmit, or Keep Plus while a
+     * switch is set (see `PurchasePlan.choose`). [onProblem] gets a string resource when the sheet couldn't open;
+     * [planChange] says it was a switch or Keep Plus rather than a purchase.
+     */
+    fun buy(activity: Activity, tier: Tier, planChange: Boolean = false, onProblem: (Int) -> Unit) {
         viewModelScope.launch {
             when (c.purchases.buy(activity, tier)) {
                 LaunchResult.LAUNCHED -> Unit
                 LaunchResult.ALREADY_OWNED -> onProblem(R.string.purchase_already_owned)
                 LaunchResult.UNAVAILABLE -> onProblem(R.string.purchase_play_unavailable)
-                LaunchResult.FAILED -> onProblem(R.string.purchase_failed)
+                LaunchResult.FAILED -> onProblem(if (planChange) R.string.plan_change_failed else R.string.purchase_failed)
             }
         }
     }
@@ -137,13 +147,38 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 vm.purchaseSeen()
                 onBack()
             }
+            // A switch or Keep Plus stays here, where the plan now shows what's set.
+            is PurchaseUi.SwitchSet -> {
+                vm.purchaseSeen()
+                p.at?.let { show(context.getString(R.string.plan_switch_done, AccessText.date(context, it))) }
+            }
+            PurchaseUi.KeptPlus -> {
+                vm.purchaseSeen()
+                show(context.getString(R.string.plan_keep_plus_done))
+            }
             is PurchaseUi.Failed -> {
                 vm.purchaseSeen()
-                show(context.getString(if (p.error?.retryable == true) R.string.purchase_retrying else R.string.purchase_failed))
+                show(
+                    context.getString(
+                        when {
+                            p.error?.retryable == true -> R.string.purchase_retrying
+                            p.planChange -> R.string.plan_change_failed
+                            else -> R.string.purchase_failed
+                        },
+                    ),
+                )
             }
             else -> Unit
         }
     }
+    var confirmSwitch by rememberSaveable { mutableStateOf(false) }
+    val subscribed = access as? AiAccess.Subscribed
+    val owned = subscribed?.tier
+    // Plus → Transmit: set now, it takes effect when the paid month ends (DEFERRED). While one is set, the plan is
+    // still Plus, with Plus's AI, and Keep Plus undoes it. Neither while another device has the key.
+    val switch = subscribed?.pendingSwitch.takeIf { owned == Tier.PLUS }
+    val canChange = subscribed?.inUseElsewhere != true
+    val switchAt = subscribed?.periodEndsAt.takeIf { owned == Tier.PLUS && switch == null && canChange }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -156,8 +191,6 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             val current = access
-            val subscribed = current as? AiAccess.Subscribed
-            val owned = subscribed?.tier
             (current as? AiAccess.Ended)?.let {
                 Text(stringResource(AccessText.ended(it.reason)), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(6.dp))
@@ -195,22 +228,40 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             }
             Spacer(Modifier.height(20.dp))
 
-            // Plus has nothing to move up to, so a Plus subscriber sees just their plan.
-            val shown = if (owned == Tier.PLUS) listOf(Tier.PLUS) else Tier.entries
+            val busy = purchase == PurchaseUi.Working
+            // Plus has nothing to move up to: a Plus subscriber sees their plan first, then Transmit to switch to.
+            val shown = when {
+                owned != Tier.PLUS -> Tier.entries
+                switch != null || switchAt != null -> listOf(Tier.PLUS, Tier.STANDARD)
+                else -> listOf(Tier.PLUS)
+            }
             var choice by rememberSaveable { mutableStateOf(Tier.STANDARD.name) }
             // A Standard subscriber can only pick Plus.
             val selected = if (owned == Tier.STANDARD) Tier.PLUS else Tier.valueOf(choice)
-            val busy = purchase == PurchaseUi.Working
             for (tier in shown) {
+                val mine = tier == owned
+                val date = { at: Long -> AccessText.date(context, at) }
                 PlanOption(
                     tier = tier,
                     offer = offers?.get(tier),
                     loading = loading,
-                    current = tier == owned,
-                    renewsAt = subscribed?.renewsAt.takeIf { tier == owned },
-                    selected = owned != tier && selected == tier,
+                    current = mine,
+                    detail = when {
+                        mine && switch != null -> stringResource(R.string.plan_switches_on, date(switch.startsAt))
+                        mine -> subscribed?.renewsAt?.let { stringResource(R.string.plan_renews, date(it)) }
+                        owned == Tier.PLUS && switch != null -> stringResource(R.string.plan_switch_starts, date(switch.startsAt))
+                        else -> null
+                    },
+                    selected = owned == null && selected == tier,
                     selectable = owned == null && !busy,
                     onSelect = { choice = tier.name },
+                    radio = owned != Tier.PLUS,
+                    scheduled = !mine && switch != null,
+                    action = switchAt?.takeIf { !mine }?.let {
+                        stringResource(R.string.plan_switch) + " · " + stringResource(R.string.plan_switch_takes_effect, date(it))
+                    },
+                    actionEnabled = !busy,
+                    onAction = { confirmSwitch = true },
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -225,6 +276,21 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                 PurchaseUi.Working -> Notice(stringResource(R.string.purchase_working), busy = true)
                 PurchaseUi.Pending -> Notice(stringResource(R.string.purchase_pending))
                 else -> Spacer(Modifier.height(12.dp))
+            }
+            if (switch != null && canChange) {
+                Button(
+                    onClick = {
+                        val activity = context.findActivity() ?: return@Button
+                        vm.buy(activity, Tier.PLUS, planChange = true) { show(context.getString(it)) }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) { Text(stringResource(R.string.plan_keep_plus), style = MaterialTheme.typography.titleMedium) }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.plan_keep_plus_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                )
             }
             if (owned != Tier.PLUS) {
                 val upgrade = owned == Tier.STANDARD
@@ -252,13 +318,33 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
                     SmallLink(stringResource(R.string.plan_manage)) { openManageSubscription(context, owned) }
                 }
             }
+            // Beside Manage subscription, where people go to cancel: a calm alternative, never a hurdle.
+            if (switchAt != null) {
+                SmallLink(stringResource(R.string.plan_switch_instead), enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) { confirmSwitch = true }
+            }
         }
+    }
+
+    if (confirmSwitch && switchAt != null) {
+        AlertDialog(
+            onDismissRequest = { confirmSwitch = false },
+            title = { Text(stringResource(R.string.plan_switch_confirm_title)) },
+            text = { Text(stringResource(R.string.plan_switch_confirm_body, AccessText.date(context, switchAt))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSwitch = false
+                    val activity = context.findActivity() ?: return@TextButton
+                    vm.buy(activity, Tier.STANDARD, planChange = true) { show(context.getString(it)) }
+                }) { Text(stringResource(R.string.plan_switch)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmSwitch = false }) { Text(stringResource(R.string.action_not_now)) } },
+        )
     }
 }
 
 @Composable
-private fun SmallLink(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+private fun SmallLink(text: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = modifier, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
         Text(text, style = MaterialTheme.typography.labelMedium)
     }
 }
@@ -282,7 +368,9 @@ private val Tier.allowanceRes @StringRes get() = if (this == Tier.PLUS) R.string
 
 /**
  * One plan: its name, one line of what it gives, and Play's price. A choice when nothing is owned yet; the
- * subscriber's own plan is marked, with its renewal date.
+ * subscriber's own plan is marked, with its renewal (or switch) date in [detail]. With [radio] off there's no choice
+ * to make: [action] makes the whole card a button (Plus's "Switch to Transmit"), and [scheduled] marks the plan a
+ * switch moves to.
  */
 @Composable
 private fun PlanOption(
@@ -290,12 +378,16 @@ private fun PlanOption(
     offer: PlanOffer?,
     loading: Boolean,
     current: Boolean,
-    renewsAt: Long?,
+    detail: String?,
     selected: Boolean,
     selectable: Boolean,
     onSelect: () -> Unit,
+    radio: Boolean = true,
+    scheduled: Boolean = false,
+    action: String? = null,
+    actionEnabled: Boolean = true,
+    onAction: () -> Unit = {},
 ) {
-    val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     // The plan you have is filled in; the one you'd pick is outlined.
     Surface(
@@ -310,16 +402,24 @@ private fun PlanOption(
             selected -> BorderStroke(2.dp, colors.primary)
             else -> BorderStroke(1.dp, colors.outlineVariant)
         },
-        modifier = Modifier.fillMaxWidth().selectable(selected = selected, enabled = selectable, role = Role.RadioButton, onClick = onSelect),
+        modifier = Modifier.fillMaxWidth().then(
+            when {
+                action != null -> Modifier.clickable(enabled = actionEnabled, role = Role.Button, onClick = onAction)
+                radio && !current -> Modifier.selectable(selected = selected, enabled = selectable, role = Role.RadioButton, onClick = onSelect)
+                else -> Modifier
+            },
+        ),
     ) {
         Row(Modifier.padding(start = 8.dp, end = 18.dp, top = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (current) {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            when {
+                current -> Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.CheckCircle, null, tint = colors.primary)
                 }
-            } else {
                 // The whole card is the touch target; the radio only shows the choice.
-                RadioButton(selected = selected, onClick = null, enabled = selectable || selected, modifier = Modifier.size(48.dp))
+                radio -> RadioButton(selected = selected, onClick = null, enabled = selectable || selected, modifier = Modifier.size(48.dp))
+                else -> Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    if (scheduled) Icon(Icons.Outlined.Schedule, null, tint = colors.onSurfaceVariant)
+                }
             }
             Spacer(Modifier.width(4.dp))
             Column(Modifier.weight(1f)) {
@@ -337,8 +437,10 @@ private fun PlanOption(
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(stringResource(tier.allowanceRes), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                renewsAt?.let {
-                    Text(stringResource(R.string.plan_renews, AccessText.date(context, it)), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
+                action?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.labelLarge, color = if (actionEnabled) colors.primary else colors.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.width(12.dp))

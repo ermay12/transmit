@@ -1,4 +1,4 @@
-Reflects commit 246e412.
+Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f).
 
 | Screen | String resource | English text |
 | --- | --- | --- |
@@ -117,6 +117,9 @@ Reflects commit 246e412.
 | Settings: Subscription (subscribers) | `plan_renews` | Renews %1$s |
 | Settings: Subscription (subscribers) | `settings_subscription_in_use` | In use on another device |
 | Settings: Subscription (subscribers) | `settings_subscription_ai_used` | %1$d%% AI used |
+| Settings: Subscription, Plus switching to Transmit | `plan_plus_name` | Transmit Plus |
+| Settings: Subscription, Plus switching to Transmit | `plan_switches_on` | Switches to Transmit on %1$s |
+| Settings: Subscription, Plus switching to Transmit | `settings_subscription_ai_used` | %1$d%% AI used |
 | Settings: Advanced | `settings_advanced` | Advanced |
 | Settings: Advanced | `access_own_key` | Use my own AI key |
 | Settings: Advanced | `settings_own_key_summary` | Pay an AI provider such as OpenAI or Google yourself |
@@ -182,6 +185,29 @@ Reflects commit 246e412.
 | Plans | `plan_restore` | Restore purchase |
 | Plans | `plan_restoring` | Restoring… |
 | Plans | `plan_manage` | Manage subscription |
+| Plans: Plus | `plan_plus_name` | Transmit Plus |
+| Plans: Plus | `plan_current` | Current plan |
+| Plans: Plus | `plan_renews` | Renews %1$s |
+| Plans: Plus | `plan_standard_name` | Transmit |
+| Plans: Plus | `plan_standard_allowance` | Around 3,000 translations a month |
+| Plans: Plus (Transmit card, shown as "Switch to Transmit · Takes effect on %1$s") | `plan_switch` | Switch to Transmit |
+| Plans: Plus (Transmit card, shown as "Switch to Transmit · Takes effect on %1$s") | `plan_switch_takes_effect` | Takes effect on %1$s |
+| Plans: Plus | `plan_restore` | Restore purchase |
+| Plans: Plus | `plan_manage` | Manage subscription |
+| Plans: Plus (below Manage subscription) | `plan_switch_instead` | Paying too much? Switch to Transmit instead |
+| Plans: switch confirmation | `plan_switch_confirm_title` | Switch to Transmit? |
+| Plans: switch confirmation | `plan_switch_confirm_body` | You keep Transmit Plus and all its AI until %1$s. After that, you're on Transmit. |
+| Plans: switch confirmation | `plan_switch` | Switch to Transmit |
+| Plans: switch confirmation | `action_not_now` | Not now |
+| Plans: switch set | `plan_switch_done` | You'll switch to Transmit on %1$s. Until then, you keep Plus. |
+| Plans: switch set | `plan_switches_on` | Switches to Transmit on %1$s |
+| Plans: switch set | `plan_switch_starts` | Starts %1$s |
+| Plans: switch set | `plan_keep_plus` | Keep Plus |
+| Plans: switch set | `plan_keep_plus_note` | Stay on Transmit Plus, with twice the AI. |
+| Plans: switch set | `plan_keep_plus_done` | You're staying on Transmit Plus. |
+| Plans: switch or Keep Plus didn't go through | `plan_change_failed` | Google Play couldn't make the change. Try again later, or use Manage subscription. |
+| Plans: switch or Keep Plus didn't go through | `purchase_play_unavailable` | Google Play isn't available right now. Try again later. |
+| Plans: switch or Keep Plus didn't go through | `purchase_retrying` | Your purchase went through, but Transmit couldn't finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts. |
 | Plans: in use on another device | `access_in_use_elsewhere_explained` | Your subscription is in use on another device. A subscription works on one device at a time. Using it here stops it on the other device. |
 | Plans: in use on another device | `access_use_here` | Use it here |
 | Plans: buying | `purchase_working` | Setting up your plan… |

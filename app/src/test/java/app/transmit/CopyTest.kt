@@ -13,11 +13,20 @@ class CopyTest {
         assertEquals("Your free week has ended", TestStrings.all["ended_free_week"])
     }
 
-    /** Moving down from Plus comes with backend work. Until then the app says nothing about it, either way. */
+    /**
+     * Moving down from Plus is "Switch to Transmit", offered calmly beside Manage subscription: never called a
+     * downgrade, and with no new words about cancelling (only Play's "Cancel anytime" and the dialogs' Cancel).
+     */
     @Test
-    fun nothingSaysWhetherPlusCanMoveDown() {
-        val mentions = TestStrings.all.filterValues { v -> listOf("downgrad", "switch plans", "change plans", "move down").any { v.contains(it, ignoreCase = true) } }
-        assertEquals(emptyMap<String, String>(), mentions)
+    fun plusMovesDownBySwitchingToTransmitAndNothingNewTalksAboutCancelling() {
+        val downgrade = TestStrings.all.filterValues { v -> listOf("downgrad", "move down").any { v.contains(it, ignoreCase = true) } }
+        assertEquals(emptyMap<String, String>(), downgrade)
+        assertEquals("Switch to Transmit", TestStrings.all["plan_switch"])
+        assertEquals("Paying too much? Switch to Transmit instead", TestStrings.all["plan_switch_instead"])
+        assertEquals("Switches to Transmit on %1\$s", TestStrings.all["plan_switches_on"])
+        assertEquals("Keep Plus", TestStrings.all["plan_keep_plus"])
+        val cancelling = TestStrings.all.filterValues { it.contains("cancel", ignoreCase = true) }.keys
+        assertEquals(setOf("action_cancel", "plans_cancel_anytime"), cancelling)
     }
 
     @Test
