@@ -217,10 +217,14 @@ fun AiBlockDialog(
     onAllowOnce: () -> Unit,
     onUseHere: () -> Unit,
     onDismiss: () -> Unit,
+    /** False when not installed from Play: no free week or Subscribe, only the user's own key. */
+    canBuy: Boolean = true,
 ) {
     val context = LocalContext.current
     data class Content(val title: String, val text: String, val confirm: String?, val onConfirm: () -> Unit, val dismiss: String)
-    val content = when (block) {
+    val content = if (!canBuy && block !is AiBlock.Budget && block != AiBlock.InUseElsewhere) {
+        Content(block.message.removeSuffix("."), "Use your own AI key to translate messages and get help with your replies.", AccessText.OWN_KEY, onOwnKey, "Not now")
+    } else when (block) {
         is AiBlock.Budget -> Content("Budget reached", block.message, "Allow once", onAllowOnce, "Cancel")
         is AiBlock.AllowanceUsedUp -> when (val a = block.access) {
             is AiAccess.Subscribed -> {
@@ -263,7 +267,7 @@ fun AiBlockDialog(
         },
         dismissButton = {
             Row {
-                if (block == AiBlock.NotSetUp && trial is TrialUi.Failed) TextButton(onClick = onOwnKey) { Text(AccessText.OWN_KEY) }
+                if (canBuy && block == AiBlock.NotSetUp && trial is TrialUi.Failed) TextButton(onClick = onOwnKey) { Text(AccessText.OWN_KEY) }
                 TextButton(onClick = onDismiss) { Text(content.dismiss) }
             }
         },
@@ -280,9 +284,9 @@ data class AllowanceBannerContent(
     val useHere: Boolean = false,
 )
 
-fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?): AllowanceBannerContent? {
+fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? {
     fun resets(at: Long?) = at?.let { "Resets ${AccessText.date(context, it)}." }
-    return when (access) {
+    val banner = when (access) {
         is AiAccess.Ended -> AllowanceBannerContent(AccessText.ended(access.reason), "Subscribe to keep translating.", AccessText.SUBSCRIBE, false)
         is AiAccess.Trial -> when {
             allowance == null || !allowance.nearlyUsedUp -> null
@@ -304,4 +308,6 @@ fun allowanceBanner(context: Context, access: AiAccess?, allowance: AllowanceVie
         }
         else -> null
     }
+    // Not installed from Play: nothing to buy, so no Subscribe or Upgrade.
+    return if (canBuy || banner == null || banner.useHere) banner else banner.copy(action = null, body = banner.body?.takeUnless { it.startsWith("Subscribe") })
 }

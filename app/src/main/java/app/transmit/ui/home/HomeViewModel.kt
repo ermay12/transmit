@@ -68,6 +68,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         c.scope.launch { c.access.dismissWarning() }
     }
 
+    val canBuy get() = c.purchases.available
+
     /** Takes the subscription back from the other device that has it. */
     fun useSubscriptionHere() {
         c.scope.launch { c.access.useHere() }

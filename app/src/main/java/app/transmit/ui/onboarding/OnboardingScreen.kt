@@ -215,13 +215,20 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     var ownKey by remember { mutableStateOf(false) }
     // The free week started, or a plan was bought on the plans screen.
     LaunchedEffect(access) { if (access?.isManaged == true) onFinish() }
+    // Play Integrity takes a moment to get ready; start now so the free week starts quickly.
+    LaunchedEffect(Unit) { if (vm.canBuy) vm.warmTrial() }
     Title("Turn on translation", "Read every message in the language you're practicing, and reply with confidence.")
     Benefit(Icons.Default.Translate, "Translations as you chat")
     Benefit(Icons.Default.School, "A tutor that checks your replies")
     Benefit(Icons.Default.Lightbulb, "Words and grammar explained")
     Spacer(Modifier.height(28.dp))
     val failed = trial as? TrialUi.Failed
-    if (failed != null) {
+    if (!vm.canBuy) {
+        // Not installed from Play (a GitHub APK): no free week, only the user's own key.
+        Button(onClick = { ownKey = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Text(AccessText.OWN_KEY, style = MaterialTheme.typography.titleMedium)
+        }
+    } else if (failed != null) {
         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = { ownKey = true }, onRetry = { vm.trial.start() })
     } else {
         Button(

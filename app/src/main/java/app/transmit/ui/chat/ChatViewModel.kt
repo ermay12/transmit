@@ -717,6 +717,9 @@ class ChatViewModel(
 
     fun useHere() = c.bridge.useHere()
 
+    /** Installed from Google Play, so the free week and subscriptions can be offered. */
+    val canBuy get() = c.purchases.available
+
     /** "Use it here" for a subscription another device has: takes its key back. */
     fun useSubscriptionHere() {
         c.scope.launch { c.access.useHere() }

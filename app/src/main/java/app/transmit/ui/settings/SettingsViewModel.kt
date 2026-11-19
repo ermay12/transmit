@@ -3,8 +3,6 @@ package app.transmit.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
-import app.transmit.access.PlayPurchase
-import app.transmit.access.Tier
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.TrialStarter
 import app.transmit.ai.AiException
@@ -88,11 +86,11 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** Stand-in for the Play purchase flow until the paywall exists; only the debug fake accepts it. */
-    fun placeholderPurchase(tier: Tier, onResult: (String?) -> Unit) = launch {
-        val error = c.access.activatePurchase(PlayPurchase(tier.productId, "placeholder-${System.currentTimeMillis()}"))
-        onResult(error?.let { "Purchases aren't available in this build yet." })
-    }
+    /** Installed from Google Play: only then are the free week and subscriptions offered. */
+    val canBuy get() = c.purchases.available
+
+    /** Gets Play Integrity ready while the user reads about the free week. */
+    fun warmTrial() = c.trialCheck.warm()
 
     fun unpair() {
         viewModelScope.launch { c.bridge.unpair() }

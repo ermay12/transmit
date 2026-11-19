@@ -36,6 +36,7 @@ import app.transmit.gm.BridgeService
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.notify.ConversationShortcuts
 import app.transmit.ui.access.PlansScreen
+import app.transmit.ui.access.PlansViewModel
 import app.transmit.ui.chat.ChatScreen
 import app.transmit.ui.chat.ChatViewModel
 import app.transmit.ui.home.HomeScreen
@@ -368,7 +369,11 @@ private fun TransmitNav(c: AppContainer, initial: NavRequest?, requests: Flow<Na
             )
         }
         composable(Routes.PLANS) {
-            PlansScreen(viewModel { SettingsViewModel(c) }, onBack = { nav.popBackStack() })
+            PlansScreen(
+                viewModel { PlansViewModel(c) },
+                onBack = { if (!nav.popBackStack()) onExit() },
+                onOwnKey = { nav.navigate(Routes.settings(ownKey = true)) { popUpTo(Routes.PLANS) { inclusive = true } } },
+            )
         }
         composable(Routes.MODELS, arguments = listOf(navArgument("slot") { type = NavType.StringType })) { entry ->
             val slot = runCatching { ModelSlot.valueOf(entry.arguments?.getString("slot").orEmpty()) }.getOrDefault(ModelSlot.TRANSLATE)

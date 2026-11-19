@@ -302,6 +302,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
             onOwnKey = { close(); onOwnKey() },
             onAllowOnce = { close(); prompt.retry() },
             onUseHere = { close(); vm.useSubscriptionHere() },
+            canBuy = vm.canBuy,
             onDismiss = close,
         )
     }

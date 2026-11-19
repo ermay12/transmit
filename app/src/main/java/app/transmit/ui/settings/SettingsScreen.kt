@@ -355,7 +355,10 @@ private fun PlanCard(
                 AiAccess.None -> {
                     PlanTitle("Translation is off", "Translations as you chat, and a tutor for your replies.")
                     val failed = trial as? TrialUi.Failed
-                    if (failed != null) {
+                    if (!vm.canBuy) {
+                        // Not installed from Play: no free week or subscription, only the user's own key.
+                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
+                    } else if (failed != null) {
                         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = { vm.trial.start() })
                     } else {
                         Button(onClick = { vm.trial.start() }, enabled = trial != TrialUi.Starting, modifier = Modifier.fillMaxWidth()) {
@@ -373,7 +376,7 @@ private fun PlanCard(
                     PlanTitle(AccessText.trialTitle(access.endsAt), null)
                     AllowanceBar(allowance, trial = true)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                    if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
                 }
                 is AiAccess.Subscribed -> if (access.inUseElsewhere) {
                     PlanTitle(access.tier.label, "${AccessText.IN_USE_ELSEWHERE}. ${AccessText.USE_HERE_EXPLAINED}")
@@ -383,13 +386,18 @@ private fun PlanCard(
                     AllowanceBar(allowance?.copy(resetsAt = null), trial = false)
                     Spacer(Modifier.height(16.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (access.tier == Tier.STANDARD) Button(onClick = onPlans) { Text(AccessText.UPGRADE) }
+                        if (access.tier == Tier.STANDARD && vm.canBuy) Button(onClick = onPlans) { Text(AccessText.UPGRADE) }
                         OutlinedButton(onClick = { openManageSubscription(context, access.tier) }) { Text("Manage subscription") }
                     }
                 }
                 is AiAccess.Ended -> {
-                    PlanTitle(AccessText.ended(access.reason), AccessText.KEEP_GOING)
-                    Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                    if (vm.canBuy) {
+                        PlanTitle(AccessText.ended(access.reason), AccessText.KEEP_GOING)
+                        Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(AccessText.SUBSCRIBE) }
+                    } else {
+                        PlanTitle(AccessText.ended(access.reason), "Use your own AI key to keep translating.")
+                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(AccessText.OWN_KEY) }
+                    }
                 }
                 AiAccess.Byok -> {
                     val s by vm.settings.collectAsStateWithLifecycle()
@@ -397,7 +405,7 @@ private fun PlanCard(
                     TextButton(onClick = onAdvanced, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Advanced settings") }
                 }
             }
-            if (access !is AiAccess.Byok) {
+            if (access !is AiAccess.Byok && vm.canBuy) {
                 TextButton(
                     onClick = { vm.restore(onMessage) }, enabled = !restoring,
                     modifier = Modifier.align(Alignment.End),

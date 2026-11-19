@@ -214,7 +214,7 @@ fun HomeScreen(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showArchived) {
                 item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
-                allowanceBanner(context, access, allowance)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
+                allowanceBanner(context, access, allowance, vm.canBuy)?.takeUnless { it.dismissible && warningDismissed }?.let { b ->
                     item("allowance-banner") {
                         StatusBanner(
                             Icons.Default.AutoAwesome, b.title, b.body, b.action,
