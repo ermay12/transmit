@@ -120,6 +120,11 @@ class WorkerApiTest {
         // Only the header: still read.
         reply(429, """{"error":"trial_capacity_reached"}""", retryAfter = "60")
         assertEquals(60_000L, trial().error().retryAfterMs)
+
+        // Too many calls from this network: its own reason, and the wait.
+        val limited = code("""{"error":"rate_limited","message":"x","retryAfterSeconds":60}""", 429)
+        assertEquals(AccessErrorCode.RATE_LIMITED, limited.code)
+        assertEquals(60_000L, limited.retryAfterMs)
     }
 
     @Test
@@ -187,6 +192,7 @@ class WorkerApiTest {
         assertEquals(Delivery.RETRY, d(502, "upstream_error"))
         assertEquals(Delivery.RETRY, d(500, "internal_error"))
         assertEquals(Delivery.RETRY, d(503, null))
+        assertEquals(Delivery.RETRY, d(429, "rate_limited"))
         assertEquals(Delivery.RETRY, d(402, "purchase_not_active", "pending"))
         assertEquals(Delivery.USE_NEWER_TOKEN, d(402, "purchase_not_active", "replaced"))
         assertEquals(Delivery.DONE, d(400, "purchase_invalid"))

@@ -86,6 +86,31 @@ class PlayAccessBackendTest {
     }
 
     @Test
+    fun aBusyTrialIsAskedAgainWithAFreshToken() = runBlocking {
+        reply(409, """{"error":"busy","message":"A trial request for this device is already in progress."}""")
+        reply(200, trialOk)
+        assertTrue(backend().startTrial() is AccessResult.Granted)
+        assertEquals(listOf(3_000L), pauses)
+        assertEquals("token-1", sent().s("integrityToken"))
+        assertEquals("token-2", sent().s("integrityToken"))
+
+        // Not forever.
+        repeat(3) { reply(409, """{"error":"busy"}""") }
+        assertEquals(AccessErrorCode.BUSY, (backend().startTrial() as AccessResult.Failed).error.code)
+        assertEquals(5, server.requestCount)
+    }
+
+    @Test
+    fun aRateLimitedTrialIsntRetriedInALoop() = runBlocking {
+        reply(429, """{"error":"rate_limited","retryAfterSeconds":60}""")
+        val e = (backend().startTrial() as AccessResult.Failed).error
+        assertEquals(AccessErrorCode.RATE_LIMITED, e.code)
+        assertEquals(60_000L, e.retryAfterMs)
+        assertEquals(1, server.requestCount)
+        assertTrue(pauses.isEmpty())
+    }
+
+    @Test
     fun noIntegrityTokenSaysWhy() = runBlocking {
         attestation.failWith = AccessError(AccessErrorCode.DEVICE_NOT_SUPPORTED)
         assertEquals(AccessErrorCode.DEVICE_NOT_SUPPORTED, (backend().startTrial() as AccessResult.Failed).error.code)

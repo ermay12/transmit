@@ -119,6 +119,8 @@ enum class AccessErrorCode {
     NOT_FROM_PLAY,
     /** Today's free trials are taken; try tomorrow. */
     TRIALS_FULL,
+    /** Too many calls from this network (`rate_limited`); try again after [AccessError.retryAfterMs]. */
+    RATE_LIMITED,
     /** "Restore purchase" found no Transmit subscription on this Google account. */
     NO_PURCHASE,
     /** The purchase's payment hasn't gone through yet. */
@@ -161,12 +163,16 @@ enum class AccessErrorCode {
                     else -> fail(SERVICE)
                 }
                 "busy" -> fail(BUSY)
+                "rate_limited" -> fail(RATE_LIMITED)
                 else -> fail(SERVICE)
             }
         }
 
-        /** Worker errors worth sending the same request again for (`backend/API.md`). */
-        val RETRYABLE = setOf("busy", "upstream_error", "internal_error")
+        /**
+         * Worker errors worth sending the same request again for (`backend/API.md`). `rate_limited` only after its
+         * `retryAfterSeconds`, never in a loop: the purchase job's backoff starts at 30 s and doubles.
+         */
+        val RETRYABLE = setOf("busy", "upstream_error", "internal_error", "rate_limited")
     }
 }
 

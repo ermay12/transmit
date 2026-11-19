@@ -93,6 +93,7 @@ object AccessText {
         AccessErrorCode.DEVICE_NOT_SUPPORTED -> "This device isn't supported for free trials."
         AccessErrorCode.NOT_FROM_PLAY -> "Free trials need Transmit installed from Google Play."
         AccessErrorCode.TRIALS_FULL -> "Free trials are full today. Try again tomorrow."
+        AccessErrorCode.RATE_LIMITED -> "Too many attempts from this network. Try again later."
         AccessErrorCode.NETWORK -> AiMessages.NO_CONNECTION
         AccessErrorCode.BUSY -> "Still working on it. Try again in a moment."
         else -> "Your free week couldn't start right now. Try again later."

@@ -5,6 +5,8 @@ import android.content.Context
 import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * The real backend: the Worker (`backend/API.md`), with Play Integrity for the trial and Play Billing for purchases.
@@ -19,23 +21,34 @@ class PlayAccessBackend(
     private val pause: suspend (Long) -> Unit = { delay(it) },
 ) : AccessBackend {
 
-    override suspend fun startTrial(): AccessResult {
+    /** One `/v1/trial` at a time: a second call for the same device is `busy`, and its retry would replace the key. */
+    private val trialLock = Mutex()
+
+    override suspend fun startTrial(): AccessResult = trialLock.withLock {
         if (checkInstall && !store.available) return fail(AccessErrorCode.NOT_FROM_PLAY, "Not installed from Play")
         val id = androidId()?.takeIf { it.isNotBlank() } ?: return fail(AccessErrorCode.SERVICE, "No ANDROID_ID")
         val hash = TrialAttestation.requestHash(id)
-        var reply: WorkerReply? = null
-        for (attempt in 0..1) {
+        var staleRetries = 1
+        var busyRetries = BUSY_RETRIES
+        var reply: WorkerReply
+        do {
+            // Every attempt gets a fresh token: the Worker rejects tokens over 10 minutes old.
             val token = try {
                 attestation.token(hash)
             } catch (e: AttestationException) {
                 return AccessResult.Failed(e.error)
             }
-            reply = retryingBusy { api.trial(id, token) }
-            // A token that went stale on the way (or a clock that's off) gets one fresh try.
-            val stale = reply is WorkerReply.Error && reply.error == "integrity_failed" && reply.reason == "token_expired"
-            if (!stale) break
-        }
-        return reply!!.toResult(WorkerApi::trialGrant)
+            reply = api.trial(id, token)
+            val e = reply as? WorkerReply.Error
+            val again = when {
+                // A token that went stale on the way gets one fresh try; twice means the phone's clock is off.
+                e?.error == "integrity_failed" && e.reason == "token_expired" -> staleRetries-- > 0
+                // Another call for this device is running (API.md "Concurrent calls"): wait, then ask with a new token.
+                e?.error == "busy" -> (busyRetries-- > 0).also { if (it) pause(BUSY_WAIT_MS) }
+                else -> false
+            }
+        } while (again)
+        reply.toResult(WorkerApi::trialGrant)
     }
 
     override suspend fun activatePurchase(purchase: PlayPurchase, currentKeyHash: String?): AccessResult =
