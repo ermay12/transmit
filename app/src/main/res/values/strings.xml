@@ -146,6 +146,11 @@
     <string name="settings_auto_translate_unknown_summary">Chats with numbers not in your contacts</string>
     <string name="settings_translate_sent">Translate my sent messages</string>
 
+    <!-- Settings: the Subscription section subscribers get instead of the plan card. Tapping it opens Plans. -->
+    <string name="settings_subscription">Subscription</string>
+    <string name="settings_subscription_in_use">In use on another device</string>
+    <string name="settings_subscription_ai_used">%1$d%% AI used</string>
+
     <!-- Settings: Advanced. For BYOK, every AI control; for everyone else, only "Use my own AI key". -->
     <string name="settings_advanced">Advanced</string>
     <string name="settings_switch_to_managed">Switch to a Transmit subscription</string>

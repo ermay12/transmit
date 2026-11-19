@@ -11,7 +11,6 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -22,14 +21,13 @@ import androidx.compose.ui.text.style.TextAlign
 import app.transmit.R
 import app.transmit.access.AccessBuild
 import app.transmit.access.AiAccess
-import app.transmit.access.Tier
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.AllowanceBar
 import app.transmit.ui.access.GetOnPlay
+import app.transmit.ui.theme.LocalTransmitColors
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.nameRes
-import app.transmit.ui.access.openManageSubscription
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -158,7 +156,8 @@ fun SettingsScreen(
         val s = settings ?: return@Scaffold
         val a = access ?: return@Scaffold
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(scroll).padding(bottom = 32.dp)) {
-            PlanCard(
+            // A subscriber's Settings start with Languages; their plan is in the Subscription section.
+            if (a !is AiAccess.Subscribed) PlanCard(
                 vm, a,
                 onPlans = onPlans,
                 onOwnKey = { ownKeyDialog = true },
@@ -239,6 +238,11 @@ fun SettingsScreen(
                         shape = SegmentedButtonDefaults.itemShape(i, NotificationContent.entries.size),
                     ) { Text(v.label, maxLines = 1) }
                 }
+            }
+
+            if (a is AiAccess.Subscribed) {
+                Section(stringResource(R.string.settings_subscription))
+                SubscriptionRow(vm, a, onPlans)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -351,8 +355,9 @@ private fun OwnKeySettings(
     Row0(Icons.Default.BarChart, stringResource(R.string.settings_usage), stringResource(R.string.settings_usage_summary), onClick = onUsage)
 }
 
-/** The top of Settings: what AI the user has, how much is used, and what they can do about it. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The top of Settings, except for subscribers: what AI the user has, how much is used, and what they can do about it.
+ */
 @Composable
 private fun PlanCard(
     vm: SettingsViewModel,
@@ -363,7 +368,6 @@ private fun PlanCard(
     onMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val allowance by vm.allowance.collectAsStateWithLifecycle()
     val trial by vm.trial.state.collectAsStateWithLifecycle()
     val restoring by vm.restoring.collectAsStateWithLifecycle()
@@ -399,18 +403,8 @@ private fun PlanCard(
                     Spacer(Modifier.height(16.dp))
                     if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                 }
-                is AiAccess.Subscribed -> if (access.inUseElsewhere) {
-                    PlanTitle(stringResource(access.tier.nameRes), stringResource(R.string.access_in_use_elsewhere_explained))
-                    Button(onClick = { vm.restore(onMessage) }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_use_here)) }
-                } else {
-                    PlanTitle(stringResource(access.tier.nameRes), access.renewsAt?.let { stringResource(R.string.plan_renews, AccessText.date(context, it)) })
-                    AllowanceBar(allowance?.copy(resetsAt = null), trial = false)
-                    Spacer(Modifier.height(16.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (access.tier == Tier.STANDARD && vm.canBuy) Button(onClick = onPlans) { Text(stringResource(R.string.plan_upgrade)) }
-                        OutlinedButton(onClick = { openManageSubscription(context, access.tier) }) { Text(stringResource(R.string.plan_manage)) }
-                    }
-                }
+                // Subscribers get the Subscription section near the bottom instead.
+                is AiAccess.Subscribed -> Unit
                 is AiAccess.Ended -> {
                     PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_keep_going))
                     // Only Subscribe: the user's own key stays under Advanced.
@@ -432,6 +426,37 @@ private fun PlanCard(
             }
         }
     }
+}
+
+/**
+ * A subscriber's plan, in one row: its name, when it renews and how much of this month's AI is used. Upgrading,
+ * restoring and managing it in Google Play are on the Plans screen it opens.
+ */
+@Composable
+private fun SubscriptionRow(vm: SettingsViewModel, access: AiAccess.Subscribed, onPlans: () -> Unit) {
+    val context = LocalContext.current
+    val allowance by vm.allowance.collectAsStateWithLifecycle()
+    val detail = when {
+        access.inUseElsewhere -> stringResource(R.string.settings_subscription_in_use)
+        else -> access.renewsAt?.let { stringResource(R.string.plan_renews, AccessText.date(context, it)) }
+    }
+    Row0(Icons.Default.AutoAwesome, stringResource(access.tier.nameRes), detail, trailing = allowance?.takeUnless { access.inUseElsewhere }?.let { view ->
+        {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    progress = { view.fraction.toFloat() }, modifier = Modifier.size(18.dp), strokeWidth = 3.dp,
+                    color = when {
+                        view.usedUp -> MaterialTheme.colorScheme.error
+                        view.nearlyUsedUp -> LocalTransmitColors.current.warn
+                        else -> MaterialTheme.colorScheme.primary
+                    },
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.settings_subscription_ai_used, view.percent), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }, onClick = onPlans)
 }
 
 @Composable
