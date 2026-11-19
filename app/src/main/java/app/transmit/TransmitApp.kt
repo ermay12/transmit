@@ -114,11 +114,14 @@ class AppContainer(val context: Context) {
         access.start()
     }
 
-    /** At launch and whenever the app comes back: a trial or subscription that ended meanwhile, and lost purchases. */
+    /**
+     * At launch and whenever the app comes back: a trial or subscription that ended meanwhile (OpenRouter refuses a
+     * key the Worker turned off; a trial past its end resolves as ended), and purchases still to be delivered. The
+     * Worker itself is asked daily and near the limit, not on every return.
+     */
     fun checkAccess() {
         scope.launch {
             access.reconcile()
-            access.refresh()
             purchases.sync()
         }
     }
