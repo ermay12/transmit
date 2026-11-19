@@ -88,6 +88,14 @@ Finish → Home.
 - When the app isn't installed from Google Play, hide Subscribe and offer only "Use my own AI key".
 - In NONE mode, chats show a slim "Translation is off · Start your free week" strip. Dismissing it hides it in every chat; the Home and Settings CTAs remain.
 - A trial whose AI is used up becomes ENDED.
+- (After phase 2b) The Home NONE banner can be dismissed, and stays dismissed across restarts; the Settings plan card is always there.
+- (After phase 2b) In NONE and ENDED, translation must not *look* on:
+  - The composer is a plain single box.
+  - Translate icons and actions open a small "Turn on translation" sheet: Start your free week, or Use my own AI key when not installed from Play, plus Subscribe when ENDED.
+  - The Settings → Translation switches stay editable, with the caption "These apply once translation is on."
+- (After phase 2b) A trial that can't start is information, not an error: use a neutral or tonal style, never red.
+- (After phase 2b) Use one name for the end of a trial everywhere: "Your free week has ended". Call the trial "free week" in all user-facing copy.
+- (After phase 2b) Moving from Plus down to Transmit is out of scope for 1.0. Users cancel in Google Play, then subscribe again.
 
 ## Technical requirements from the launch plan (mostly phase 2)
 
