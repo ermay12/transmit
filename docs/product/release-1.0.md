@@ -95,7 +95,9 @@ Finish → Home.
   - The Settings → Translation switches stay editable, with the caption "These apply once translation is on."
 - (After phase 2b) A trial that can't start is information, not an error: use a neutral or tonal style, never red.
 - (After phase 2b) Use one name for the end of a trial everywhere: "Your free week has ended". Call the trial "free week" in all user-facing copy.
-- (After phase 2b) Moving from Plus down to Transmit is out of scope for 1.0. Users cancel in Google Play, then subscribe again.
+- (User, after phase 2b) **Downgrade is IN scope for 1.0.** Plus subscribers can switch to Transmit in the app, with replacement mode DEFERRED: they keep Plus and its allowance until the next renewal, then move to Transmit. The Plans screen shows it to Plus subscribers ("Switch to Transmit: takes effect on <date>"), and it also appears next to Manage subscription as the alternative to cancelling. The goal is to keep the customer rather than lose them.
+- (User, after phase 2b) **Conversion first.** When the free week ends on a Play install, the only CTA is **Subscribe** (Home, plan card, chat sheet, dialogs, notifications). "Use my own AI key" appears only in Settings → Advanced. For copies not installed from Play, the primary CTA is **Get Transmit on Google Play** (the Play listing), and "Use my own AI key" is a secondary link.
+- (User, after phase 2b) **Paying customers don't get a plan card at the top of Settings.** For SUBSCRIBED, Settings starts with Languages. A compact **Subscription** section near the bottom, above Advanced, has one row: the plan, "Renews <date>" and the percent of AI used. Tapping it opens the Plans screen, which holds upgrade, downgrade, restore and Manage in Play. This keeps account management out of the way, so subscribers aren't nudged to change it. TRIAL, NONE and ENDED keep the plan card at the top.
 
 ## Technical requirements from the launch plan (mostly phase 2)
 
