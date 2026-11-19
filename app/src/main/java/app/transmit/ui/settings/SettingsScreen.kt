@@ -188,7 +188,7 @@ fun SettingsScreen(
                 )
             }
 
-            Section("Translation")
+            Section(stringResource(R.string.settings_translation))
             if (!a.canUseAi) {
                 // No AI set up, or it ended: the switches stay editable, but say they don't do anything yet.
                 Text(
@@ -197,16 +197,16 @@ fun SettingsScreen(
                 )
             }
             SwitchRow0(
-                Icons.Default.Contacts, "Auto-translate contacts", s.contactDefaults.autoTranslate,
+                Icons.Default.Contacts, stringResource(R.string.settings_auto_translate_contacts), s.contactDefaults.autoTranslate,
                 { vm.setContactDefaults(s.contactDefaults.copy(autoTranslate = it)) },
-                subtitle = "Chats with people in your contacts",
+                subtitle = stringResource(R.string.settings_auto_translate_contacts_summary),
             )
             SwitchRow0(
-                Icons.Outlined.HelpOutline, "Auto-translate unknown numbers", s.unknownDefaults.autoTranslate,
+                Icons.Outlined.HelpOutline, stringResource(R.string.settings_auto_translate_unknown), s.unknownDefaults.autoTranslate,
                 { vm.setUnknownDefaults(s.unknownDefaults.copy(autoTranslate = it)) },
-                subtitle = "Chats with numbers not in your contacts",
+                subtitle = stringResource(R.string.settings_auto_translate_unknown_summary),
             )
-            SwitchRow0(Icons.Default.Send, "Translate my sent messages", s.translateOutgoing, vm::setTranslateOutgoing)
+            SwitchRow0(Icons.Default.Send, stringResource(R.string.settings_translate_sent), s.translateOutgoing, vm::setTranslateOutgoing)
 
             Section("Messages")
             val paired = bridge !is BridgeState.Unpaired && bridge !is BridgeState.LoggedOut
@@ -247,14 +247,14 @@ fun SettingsScreen(
                     .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Advanced", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.settings_advanced), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 Icon(if (advanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (advanced) "Collapse" else "Expand")
             }
             AnimatedVisibility(advanced) {
                 Column {
                     if (a is AiAccess.Byok) {
                         OwnKeySettings(vm, s, spent, onKey = { keyDialog = true }, onModels = onModels, onUsage = onUsage)
-                        Row0(Icons.Default.AutoAwesome, "Switch to a Transmit subscription", "No key or AI settings to look after") {
+                        Row0(Icons.Default.AutoAwesome, stringResource(R.string.settings_switch_to_managed), stringResource(R.string.settings_switch_to_managed_summary)) {
                             vm.switchToManaged(onNoPlan = onPlans)
                         }
                     } else {
@@ -284,7 +284,8 @@ fun SettingsScreen(
             "target" -> LanguagePickerDialog("Practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
         }
         if (keyDialog) KeyDialog(vm, s.provider) { keyDialog = false }
-        if (ownKeyDialog) OwnKeyDialog(vm, onDismiss = { ownKeyDialog = false }, onDone = { ownKeyDialog = false; show("Using your own AI key") })
+        val usingOwnKey = stringResource(R.string.own_key_done)
+        if (ownKeyDialog) OwnKeyDialog(vm, onDismiss = { ownKeyDialog = false }, onDone = { ownKeyDialog = false; show(usingOwnKey) })
         if (confirmUnpair) {
             AlertDialog(
                 onDismissRequest = { confirmUnpair = false },
@@ -310,7 +311,7 @@ private fun OwnKeySettings(
     onUsage: () -> Unit,
 ) {
     Text(
-        "AI provider", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        stringResource(R.string.settings_ai_provider), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
     )
     ProviderChips(s.provider, vm::setProvider, Modifier.padding(horizontal = 16.dp))
@@ -318,7 +319,7 @@ private fun OwnKeySettings(
         var url by remember { mutableStateOf(s.customBaseUrl) }
         OutlinedTextField(
             value = url, onValueChange = { url = it; vm.setCustomBaseUrl(it) },
-            label = { Text("Base URL") }, placeholder = { Text("https://host/v1") }, singleLine = true,
+            label = { Text(stringResource(R.string.settings_base_url)) }, placeholder = { Text("https://host/v1") }, singleLine = true,
             leadingIcon = { Icon(Icons.Default.Link, null) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
@@ -326,21 +327,27 @@ private fun OwnKeySettings(
     }
     val masked = vm.maskedKey(s.provider)
     Row0(
-        Icons.Default.Key, "API key", masked ?: "Not set",
+        Icons.Default.Key, stringResource(R.string.settings_api_key), masked ?: stringResource(R.string.settings_api_key_not_set),
         trailing = {
             if (masked != null) Icon(Icons.Default.CheckCircle, "Saved", tint = MaterialTheme.colorScheme.primary)
             else Icon(Icons.Default.ErrorOutline, "Missing", tint = MaterialTheme.colorScheme.error)
         },
         onClick = onKey,
     )
-    ModelRow(Icons.Default.Translate, "Translation model", s, ModelSlot.TRANSLATE) { onModels(ModelSlot.TRANSLATE) }
-    ModelRow(Icons.Default.Psychology, "Tutor model", s, ModelSlot.TUTOR) { onModels(ModelSlot.TUTOR) }
+    ModelRow(Icons.Default.Translate, stringResource(R.string.settings_translation_model), s, ModelSlot.TRANSLATE) { onModels(ModelSlot.TRANSLATE) }
+    ModelRow(Icons.Default.Psychology, stringResource(R.string.settings_tutor_model), s, ModelSlot.TUTOR) { onModels(ModelSlot.TUTOR) }
     MonthlyBudget(spent, s.monthlyBudgetUsd, vm::setMonthlyBudget, onUsage)
-    DefaultsRow(Icons.Default.Contacts, "Contacts", s.contactDefaults, vm::setContactDefaults)
-    DefaultsRow(Icons.Outlined.HelpOutline, "Unknown numbers", s.unknownDefaults, vm::setUnknownDefaults)
-    StepperRow(Icons.Default.History, "Context messages", "Earlier messages sent with each request", s.contextMessages, 0..12, vm::setContextMessages)
-    StepperRow(Icons.Default.DoneAll, "Translate on open", "Older messages translated when a chat opens", s.backfillCount, 0..50, vm::setBackfill, step = 4)
-    Row0(Icons.Default.BarChart, "Usage", "What your key spent this month, by feature and chat", onClick = onUsage)
+    DefaultsRow(Icons.Default.Contacts, stringResource(R.string.settings_budget_contacts), s.contactDefaults, vm::setContactDefaults)
+    DefaultsRow(Icons.Outlined.HelpOutline, stringResource(R.string.settings_budget_unknown), s.unknownDefaults, vm::setUnknownDefaults)
+    StepperRow(
+        Icons.Default.History, stringResource(R.string.settings_context_messages), stringResource(R.string.settings_context_messages_summary),
+        s.contextMessages, 0..12, vm::setContextMessages,
+    )
+    StepperRow(
+        Icons.Default.DoneAll, stringResource(R.string.settings_translate_on_open), stringResource(R.string.settings_translate_on_open_summary),
+        s.backfillCount, 0..50, vm::setBackfill, step = 4,
+    )
+    Row0(Icons.Default.BarChart, stringResource(R.string.settings_usage), stringResource(R.string.settings_usage_summary), onClick = onUsage)
 }
 
 /** The top of Settings: what AI the user has, how much is used, and what they can do about it. */
@@ -458,17 +465,14 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
         title = { Text(stringResource(R.string.access_own_key)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "Pay your AI provider directly. Pick one and paste a key from it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text(stringResource(R.string.own_key_body), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
                 ProviderChips(provider, vm::setProvider)
                 if (provider == ProviderType.CUSTOM) {
                     var url by remember { mutableStateOf(settings?.customBaseUrl.orEmpty()) }
                     OutlinedTextField(
                         value = url, onValueChange = { url = it; vm.setCustomBaseUrl(it) },
-                        label = { Text("Base URL") }, placeholder = { Text("https://host/v1") }, singleLine = true,
+                        label = { Text(stringResource(R.string.settings_base_url)) }, placeholder = { Text("https://host/v1") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     )
@@ -476,7 +480,7 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = key, onValueChange = { key = it }, singleLine = true,
-                    label = { Text("${provider.label} key") },
+                    label = { Text(stringResource(R.string.own_key_label, provider.label)) },
                     placeholder = { Text(saved ?: provider.keyHint) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -486,18 +490,18 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
                 when (val c = check) {
                     KeyCheck.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp)); Text("Checking…", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.own_key_checking), style = MaterialTheme.typography.bodySmall)
                     }
                     is KeyCheck.Failed -> Text(c.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     else -> Text(
-                        if (saved != null) "Key $saved is saved. Paste another to replace it." else "Stored encrypted on this device only.",
+                        if (saved != null) stringResource(R.string.own_key_saved, saved) else stringResource(R.string.own_key_stored),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (provider.keyUrl.isNotEmpty()) {
                     TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(provider.keyUrl))) }) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp)); Text("Get a key")
+                        Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.own_key_get))
                     }
                 }
             }
@@ -514,9 +518,9 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
                     }
                 },
                 enabled = (key.isNotBlank() || useSaved) && check != KeyCheck.Checking,
-            ) { Text(if (useSaved) "Use saved key" else "Save") }
+            ) { Text(stringResource(if (useSaved) R.string.own_key_use_saved else R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -592,7 +596,7 @@ private fun SwitchRow0(icon: ImageVector, title: String, checked: Boolean, onCha
 private fun ModelRow(icon: ImageVector, title: String, s: AppSettings, slot: ModelSlot, onClick: () -> Unit) {
     val model = s.model(slot)
     val effort = s.effort(slot)
-    Row0(icon, title, model ?: "Choose a model", trailing = {
+    Row0(icon, title, model ?: stringResource(R.string.settings_choose_model), trailing = {
         androidx.compose.material3.AssistChip(onClick = onClick, label = { Text(effort.label) })
     }, onClick = onClick)
 }
@@ -614,7 +618,7 @@ private fun MonthlyBudget(spent: Double, limit: Double, onLimit: (Double) -> Uni
         Icon(Icons.Outlined.Savings, null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text("${usd(spent)} of ${usd(limit)} this month", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.settings_budget_spent, usd(spent), usd(limit)), style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(6.dp))
             LinearProgressIndicator(
                 progress = { if (limit > 0) (spent / limit).toFloat().coerceIn(0f, 1f) else 1f },
@@ -650,7 +654,7 @@ private fun DefaultsRow(icon: ImageVector, title: String, d: ChatDefaults, onCha
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text("Per chat, monthly", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.settings_budget_per_chat), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         MoneyField(d.monthlyBudgetUsd, { onChange(d.copy(monthlyBudgetUsd = it)) })
     }
@@ -664,7 +668,7 @@ fun KeyDialog(vm: SettingsViewModel, provider: ProviderType, onDismiss: () -> Un
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Key, null) },
-        title = { Text("${provider.label} key") },
+        title = { Text(stringResource(R.string.own_key_label, provider.label)) },
         text = {
             Column {
                 OutlinedTextField(
@@ -678,27 +682,31 @@ fun KeyDialog(vm: SettingsViewModel, provider: ProviderType, onDismiss: () -> Un
                 when (val c = check) {
                     KeyCheck.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp)); Text("Checking…", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.own_key_checking), style = MaterialTheme.typography.bodySmall)
                     }
-                    is KeyCheck.Ok -> Text("✓ ${c.models} models available", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    is KeyCheck.Ok -> Text(stringResource(R.string.own_key_models, c.models), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                     is KeyCheck.Failed -> Text(c.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    KeyCheck.Idle -> Text("Stored encrypted on this device only.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    KeyCheck.Idle -> Text(stringResource(R.string.own_key_stored), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (provider.keyUrl.isNotEmpty()) {
                     TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(provider.keyUrl))) }) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp)); Text("Get a key")
+                        Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.own_key_get))
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { vm.saveKey(provider, key) { onDismiss() } }, enabled = key.isNotBlank() && check != KeyCheck.Checking) { Text("Save") }
+            TextButton(onClick = { vm.saveKey(provider, key) { onDismiss() } }, enabled = key.isNotBlank() && check != KeyCheck.Checking) {
+                Text(stringResource(R.string.action_save))
+            }
         },
         dismissButton = {
             Row {
-                if (vm.hasKey(provider)) TextButton(onClick = { vm.removeKey(provider); onDismiss() }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                if (vm.hasKey(provider)) {
+                    TextButton(onClick = { vm.removeKey(provider); onDismiss() }) { Text(stringResource(R.string.action_remove), color = MaterialTheme.colorScheme.error) }
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
             }
         },
     )

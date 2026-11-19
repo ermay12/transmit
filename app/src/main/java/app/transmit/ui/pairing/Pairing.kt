@@ -1,5 +1,7 @@
 package app.transmit.ui.pairing
 
+import androidx.compose.ui.res.stringResource
+import app.transmit.R
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -108,7 +110,7 @@ fun PairingScreen(bridge: GmBridge, onDone: () -> Unit, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Pair with Google Messages") },
+                title = { Text(stringResource(R.string.pair_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
         },
@@ -162,65 +164,59 @@ private fun GoogleStep(
     when {
         pairing == null -> {
             Text(
-                "Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does. " +
-                    "Nothing changes for the people you text.",
+                stringResource(R.string.pair_intro),
                 style = MaterialTheme.typography.bodyMedium, color = muted,
             )
             Spacer(Modifier.height(24.dp))
-            Numbered(
-                listOf(
-                    "Sign in with the Google account Google Messages uses",
-                    "Google Messages asks you to confirm: tap the emoji Transmit shows",
-                ),
-            )
+            Numbered(listOf(stringResource(R.string.pair_step_sign_in), stringResource(R.string.pair_step_confirm)))
             Spacer(Modifier.height(28.dp))
-            Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth()) { Text("Sign in with Google") }
+            Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pair_sign_in)) }
         }
         pairing.error != null -> {
             Icon(Icons.Default.CloudOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(12.dp))
             Text(pairing.error, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
             Spacer(Modifier.height(20.dp))
-            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_try_again)) }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOtherAccount, modifier = Modifier.fillMaxWidth()) { Text("Sign in again") }
+            OutlinedButton(onClick = onOtherAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pair_sign_in_again)) }
         }
         pairing.emoji == null -> {
             Spacer(Modifier.height(48.dp))
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
-            Text("Finding your phone…", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.pair_finding_phone), style = MaterialTheme.typography.bodyLarge)
         }
         else -> {
             Spacer(Modifier.height(16.dp))
-            Text("Open Google Messages and tap", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.pair_tap_emoji), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             Spacer(Modifier.height(16.dp))
             Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Text(pairing.emoji, fontSize = 88.sp, modifier = Modifier.padding(horizontal = 36.dp, vertical = 20.dp))
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "Google Messages shows a pairing request with a few emoji. Pick this one to link Transmit.",
+                stringResource(R.string.pair_emoji_explained),
                 style = MaterialTheme.typography.bodyMedium, color = muted, textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(24.dp))
             Button(onClick = { openGoogleMessages(context) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Open Google Messages")
+                Text(stringResource(R.string.pair_open_messages))
             }
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text("Waiting for you to confirm…", style = MaterialTheme.typography.bodySmall, color = muted)
+                Text(stringResource(R.string.pair_waiting), style = MaterialTheme.typography.bodySmall, color = muted)
             }
         }
     }
     if (pairing?.emoji == null || pairing.error != null) {
         Spacer(Modifier.height(32.dp))
-        TextButton(onClick = onUseQr) { Text("Pair with a QR code instead") }
-        Text("Needs a second screen to show the code on", style = MaterialTheme.typography.bodySmall, color = muted)
+        TextButton(onClick = onUseQr) { Text(stringResource(R.string.pair_use_qr)) }
+        Text(stringResource(R.string.pair_use_qr_note), style = MaterialTheme.typography.bodySmall, color = muted)
     }
 }
 
@@ -229,7 +225,7 @@ private fun QrStep(pairing: BridgeState.Pairing?, onRetry: () -> Unit, onUseGoog
     val url = pairing?.qrUrl
     val qr = remember(url) { url?.let { qrBitmap(it, 768) } }
     Text(
-        "Show this code on another screen if you're using Transmit on the same phone as Google Messages.",
+        stringResource(R.string.pair_qr_intro),
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(20.dp))
@@ -245,14 +241,14 @@ private fun QrStep(pairing: BridgeState.Pairing?, onRetry: () -> Unit, onUseGoog
     }
     Spacer(Modifier.height(20.dp))
     if (pairing?.error != null) {
-        Button(onClick = onRetry) { Text("Try again") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.action_try_again)) }
         Spacer(Modifier.height(20.dp))
     }
     Numbered(
         listOf(
-            "Open Google Messages on your phone",
-            "Tap your profile picture, then Device pairing",
-            "Tap QR code scanner and point it at this code",
+            stringResource(R.string.pair_qr_step_open),
+            stringResource(R.string.pair_qr_step_device_pairing),
+            stringResource(R.string.pair_qr_step_scan),
         ),
     )
     Spacer(Modifier.height(16.dp))
@@ -261,11 +257,11 @@ private fun QrStep(pairing: BridgeState.Pairing?, onRetry: () -> Unit, onUseGoog
         OutlinedButton(onClick = { shareQr(context, qr) }) {
             Icon(Icons.Default.Share, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Share code")
+            Text(stringResource(R.string.pair_qr_share))
         }
     }
     Spacer(Modifier.height(16.dp))
-    TextButton(onClick = onUseGoogle) { Text("Sign in with Google instead") }
+    TextButton(onClick = onUseGoogle) { Text(stringResource(R.string.pair_use_google)) }
 }
 
 private fun openGoogleMessages(context: Context) {
@@ -311,19 +307,23 @@ private fun shareQr(context: Context, qr: Bitmap) {
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     send.clipData = ClipData.newRawUri(null, uri)
-    context.startActivity(Intent.createChooser(send, "Show the pairing code on another screen"))
+    context.startActivity(Intent.createChooser(send, context.getString(R.string.pair_qr_share_chooser)))
 }
 
 /** A strip explaining why messages may not be flowing, with the fix when there is one. */
 @Composable
 fun BridgeBanner(state: BridgeState, onPair: () -> Unit, onUseHere: () -> Unit, modifier: Modifier = Modifier) {
     data class Content(val icon: ImageVector, val title: String, val body: String?, val action: String?, val onAction: (() -> Unit)?)
+    val pair = stringResource(R.string.bridge_pair)
     val content = when (state) {
-        BridgeState.Unpaired -> Content(Icons.Default.Link, "Pair with Google Messages", "Needed to send and receive", "Pair", onPair)
-        is BridgeState.LoggedOut -> Content(Icons.Default.PhonelinkErase, "Disconnected from Google Messages", state.reason, "Pair", onPair)
+        BridgeState.Unpaired -> Content(Icons.Default.Link, stringResource(R.string.pair_title), stringResource(R.string.bridge_unpaired_body), pair, onPair)
+        is BridgeState.LoggedOut -> Content(Icons.Default.PhonelinkErase, stringResource(R.string.bridge_logged_out_title), state.reason, pair, onPair)
         is BridgeState.Connected -> when {
-            state.inactive -> Content(Icons.Default.Devices, "Messages for Web is open elsewhere", "Google Messages talks to one at a time", "Use here", onUseHere)
-            !state.phoneResponding -> Content(Icons.Default.CloudOff, "Your phone isn't responding", "Check that it's on and online", null, null)
+            state.inactive -> Content(
+                Icons.Default.Devices, stringResource(R.string.bridge_inactive_title), stringResource(R.string.bridge_inactive_body),
+                stringResource(R.string.bridge_use_here), onUseHere,
+            )
+            !state.phoneResponding -> Content(Icons.Default.CloudOff, stringResource(R.string.bridge_phone_title), stringResource(R.string.bridge_phone_body), null, null)
             state.trouble != null -> Content(Icons.Default.Sync, state.trouble, null, null, null)
             else -> null
         }

@@ -115,7 +115,7 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
             }
         }
         if (step == 0) {
-            Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Continue") }
+            Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.onboarding_continue)) }
         }
     }
 }
@@ -133,17 +133,17 @@ private fun Title(text: String, sub: String? = null) {
 @Composable
 private fun PracticeStep(vm: SettingsViewModel, s: AppSettings) {
     var pick by remember { mutableStateOf<String?>(null) }
-    Title("What are you practicing?", "Texts from friends arrive in the language you're practicing. Your replies reach them in the language you speak.")
-    LanguageCard("I'm practicing", s.target.flag, s.target.nativeName, prominent = true) { pick = "target" }
+    Title(stringResource(R.string.onboarding_practice_title), stringResource(R.string.onboarding_practice_body))
+    LanguageCard(stringResource(R.string.onboarding_practicing), s.target.flag, s.target.nativeName, prominent = true) { pick = "target" }
     Spacer(Modifier.height(12.dp))
-    LanguageCard("I speak", s.native.flag, s.native.nativeName, prominent = false) { pick = "native" }
+    LanguageCard(stringResource(R.string.onboarding_speak), s.native.flag, s.native.nativeName, prominent = false) { pick = "native" }
     Spacer(Modifier.height(28.dp))
-    Text("Your level", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(stringResource(R.string.onboarding_level), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
     LevelSelector(s.level, vm::setLevel)
     when (pick) {
-        "native" -> LanguagePickerDialog("I speak", s.nativeLang, { it?.let(vm::setNative); pick = null }, { pick = null })
-        "target" -> LanguagePickerDialog("I'm practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
+        "native" -> LanguagePickerDialog(stringResource(R.string.onboarding_speak), s.nativeLang, { it?.let(vm::setNative); pick = null }, { pick = null })
+        "target" -> LanguagePickerDialog(stringResource(R.string.onboarding_practicing), s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
     }
 }
 
@@ -160,7 +160,7 @@ private fun LanguageCard(label: String, flag: String, name: String, prominent: B
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(name, style = if (prominent) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium)
             }
-            Text("Change", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.onboarding_change), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -179,33 +179,30 @@ private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Bool
     LaunchedEffect(paired, pairingStarted) {
         if (paired && pairingStarted) askThenNext()
     }
-    Title(
-        "Connect your messages",
-        "Transmit works with Google Messages on your phone, like Messages for Web. Your texts keep going through Google Messages.",
-    )
+    Title(stringResource(R.string.onboarding_connect_title), stringResource(R.string.onboarding_connect_body))
     if (paired) {
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(14.dp))
-                Text("Connected to Google Messages", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.onboarding_connected), style = MaterialTheme.typography.titleMedium)
             }
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Next, allow contacts and notifications so your chats show names and you hear about new messages.",
+            stringResource(R.string.onboarding_permissions),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(20.dp))
-        Button(onClick = ::askThenNext, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Continue") }
+        Button(onClick = ::askThenNext, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.onboarding_continue)) }
     } else {
         Button(onClick = onPair, modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(20.dp)) {
             Icon(Icons.Default.Sms, null)
             Spacer(Modifier.width(12.dp))
-            Text("Connect Google Messages", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.onboarding_connect), style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onNext, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Do this later") }
+        TextButton(onClick = onNext, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.onboarding_later)) }
     }
 }
 
@@ -218,10 +215,10 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     LaunchedEffect(access) { if (access?.isManaged == true) onFinish() }
     // Play Integrity takes a moment to get ready; start now so the free week starts quickly.
     LaunchedEffect(Unit) { if (vm.canBuy) vm.warmTrial() }
-    Title("Turn on translation", "Read every message in the language you're practicing, and reply with confidence.")
-    Benefit(Icons.Default.Translate, "Translations as you chat")
-    Benefit(Icons.Default.School, "A tutor that checks your replies")
-    Benefit(Icons.Default.Lightbulb, "Words and grammar explained")
+    Title(stringResource(R.string.turn_on_title), stringResource(R.string.onboarding_translation_body))
+    Benefit(Icons.Default.Translate, stringResource(R.string.onboarding_benefit_translate))
+    Benefit(Icons.Default.School, stringResource(R.string.onboarding_benefit_tutor))
+    Benefit(Icons.Default.Lightbulb, stringResource(R.string.onboarding_benefit_explain))
     Spacer(Modifier.height(28.dp))
     val failed = trial as? TrialUi.Failed
     if (!vm.canBuy) {
@@ -249,7 +246,7 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     TextButton(
         onClick = { vm.turnOffAi(); onFinish() }, enabled = trial != TrialUi.Starting,
         modifier = Modifier.align(Alignment.CenterHorizontally),
-    ) { Text("Not now") }
+    ) { Text(stringResource(R.string.action_not_now)) }
     if (ownKey) OwnKeyDialog(vm, onDismiss = { ownKey = false }, onDone = { ownKey = false; onFinish() })
 }
 

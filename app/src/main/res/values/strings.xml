@@ -21,6 +21,55 @@
     <string name="action_ok">OK</string>
     <string name="action_cancel">Cancel</string>
 
+    <!-- Onboarding: what you're practicing, connecting Google Messages, turning on translation. -->
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_practice_title">What are you practicing?</string>
+    <string name="onboarding_practice_body">Texts from friends arrive in the language you\'re practicing. Your replies reach them in the language you speak.</string>
+    <string name="onboarding_practicing">I\'m practicing</string>
+    <string name="onboarding_speak">I speak</string>
+    <string name="onboarding_level">Your level</string>
+    <string name="onboarding_change">Change</string>
+    <string name="onboarding_connect_title">Connect your messages</string>
+    <string name="onboarding_connect_body">Transmit works with Google Messages on your phone, like Messages for Web. Your texts keep going through Google Messages.</string>
+    <string name="onboarding_connect">Connect Google Messages</string>
+    <string name="onboarding_later">Do this later</string>
+    <string name="onboarding_connected">Connected to Google Messages</string>
+    <string name="onboarding_permissions">Next, allow contacts and notifications so your chats show names and you hear about new messages.</string>
+    <string name="onboarding_translation_body">Read every message in the language you\'re practicing, and reply with confidence.</string>
+    <string name="onboarding_benefit_translate">Translations as you chat</string>
+    <string name="onboarding_benefit_tutor">A tutor that checks your replies</string>
+    <string name="onboarding_benefit_explain">Words and grammar explained</string>
+
+    <!-- Pairing with Google Messages (where Connect in onboarding leads), and the banner when messages stop flowing. -->
+    <string name="pair_title">Pair with Google Messages</string>
+    <string name="pair_intro">Transmit sends and receives through Google Messages on this phone, the same way Messages for Web does. Nothing changes for the people you text.</string>
+    <string name="pair_step_sign_in">Sign in with the Google account Google Messages uses</string>
+    <string name="pair_step_confirm">Google Messages asks you to confirm: tap the emoji Transmit shows</string>
+    <string name="pair_sign_in">Sign in with Google</string>
+    <string name="pair_sign_in_again">Sign in again</string>
+    <string name="pair_finding_phone">Finding your phone…</string>
+    <string name="pair_tap_emoji">Open Google Messages and tap</string>
+    <string name="pair_emoji_explained">Google Messages shows a pairing request with a few emoji. Pick this one to link Transmit.</string>
+    <string name="pair_open_messages">Open Google Messages</string>
+    <string name="pair_waiting">Waiting for you to confirm…</string>
+    <string name="pair_use_qr">Pair with a QR code instead</string>
+    <string name="pair_use_qr_note">Needs a second screen to show the code on</string>
+    <string name="pair_qr_intro">Show this code on another screen if you\'re using Transmit on the same phone as Google Messages.</string>
+    <string name="pair_qr_step_open">Open Google Messages on your phone</string>
+    <string name="pair_qr_step_device_pairing">Tap your profile picture, then Device pairing</string>
+    <string name="pair_qr_step_scan">Tap QR code scanner and point it at this code</string>
+    <string name="pair_qr_share">Share code</string>
+    <string name="pair_qr_share_chooser">Show the pairing code on another screen</string>
+    <string name="pair_use_google">Sign in with Google instead</string>
+    <string name="bridge_unpaired_body">Needed to send and receive</string>
+    <string name="bridge_pair">Pair</string>
+    <string name="bridge_logged_out_title">Disconnected from Google Messages</string>
+    <string name="bridge_inactive_title">Messages for Web is open elsewhere</string>
+    <string name="bridge_inactive_body">Google Messages talks to one at a time</string>
+    <string name="bridge_use_here">Use here</string>
+    <string name="bridge_phone_title">Your phone isn\'t responding</string>
+    <string name="bridge_phone_body">Check that it\'s on and online</string>
+
     <!-- Why the free week couldn't start: plain language, never about integrity verdicts, keys or servers. -->
     <string name="trial_failed_title">Couldn\'t start your free week</string>
     <string name="trial_failed_already_used">This device has already used its free week.</string>
@@ -79,7 +128,7 @@
     <string name="allowance_month_used">%1$d%% of this month\'s AI used</string>
     <string name="allowance_resets">Resets %1$s</string>
 
-    <!-- Settings: the plan card, and Advanced for managed modes. -->
+    <!-- Settings: the plan card, the Translation switches, and Advanced for managed modes. -->
     <plurals name="settings_plan_trial_days">
         <item quantity="one">Free week · %d day left</item>
         <item quantity="other">Free week · %d days left</item>
@@ -88,7 +137,48 @@
     <string name="settings_plan_byok_detail">%1$s · models, budgets and usage are under Advanced</string>
     <string name="settings_plan_byok_advanced">Advanced settings</string>
     <string name="settings_own_key_summary">Pay an AI provider such as OpenAI or Google yourself</string>
+    <string name="settings_translation">Translation</string>
     <string name="settings_translation_off_caption">These apply once translation is on.</string>
+    <string name="settings_auto_translate_contacts">Auto-translate contacts</string>
+    <string name="settings_auto_translate_contacts_summary">Chats with people in your contacts</string>
+    <string name="settings_auto_translate_unknown">Auto-translate unknown numbers</string>
+    <string name="settings_auto_translate_unknown_summary">Chats with numbers not in your contacts</string>
+    <string name="settings_translate_sent">Translate my sent messages</string>
+
+    <!-- Settings: Advanced. For BYOK, every AI control; for everyone else, only "Use my own AI key". -->
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_switch_to_managed">Switch to a Transmit subscription</string>
+    <string name="settings_switch_to_managed_summary">No key or AI settings to look after</string>
+    <string name="settings_ai_provider">AI provider</string>
+    <string name="settings_base_url">Base URL</string>
+    <string name="settings_api_key">API key</string>
+    <string name="settings_api_key_not_set">Not set</string>
+    <string name="settings_translation_model">Translation model</string>
+    <string name="settings_tutor_model">Tutor model</string>
+    <string name="settings_choose_model">Choose a model</string>
+    <string name="settings_budget_spent">%1$s of %2$s this month</string>
+    <string name="settings_budget_contacts">Contacts</string>
+    <string name="settings_budget_unknown">Unknown numbers</string>
+    <string name="settings_budget_per_chat">Per chat, monthly</string>
+    <string name="settings_context_messages">Context messages</string>
+    <string name="settings_context_messages_summary">Earlier messages sent with each request</string>
+    <string name="settings_translate_on_open">Translate on open</string>
+    <string name="settings_translate_on_open_summary">Older messages translated when a chat opens</string>
+    <string name="settings_usage">Usage</string>
+    <string name="settings_usage_summary">What your key spent this month, by feature and chat</string>
+
+    <!-- Using your own key: the dialog from onboarding, the plan card and Advanced, and the BYOK key dialog. -->
+    <string name="own_key_body">Pay your AI provider directly. Pick one and paste a key from it.</string>
+    <string name="own_key_label">%1$s key</string>
+    <string name="own_key_checking">Checking…</string>
+    <string name="own_key_models">✓ %1$d models available</string>
+    <string name="own_key_saved">Key %1$s is saved. Paste another to replace it.</string>
+    <string name="own_key_stored">Stored encrypted on this device only.</string>
+    <string name="own_key_get">Get a key</string>
+    <string name="own_key_use_saved">Use saved key</string>
+    <string name="own_key_done">Using your own AI key</string>
+    <string name="action_save">Save</string>
+    <string name="action_remove">Remove</string>
 
     <!-- Restore purchase (Settings and Plans). -->
     <string name="restore_done">%1$s is restored.</string>
