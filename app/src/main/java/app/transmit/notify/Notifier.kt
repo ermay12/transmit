@@ -220,11 +220,13 @@ class Notifier(
 
     // ---- plan ------------------------------------------------------------------------------------
 
-    /** Day 6 of the free week. */
-    fun notifyTrialEndsTomorrow() = notifyPlan(R.string.notify_trial_ends_tomorrow, R.string.access_keep_going)
+    /** Day 6 of the free week. [canBuy] is false when not installed from Play, where subscribing needs the Play version. */
+    fun notifyTrialEndsTomorrow(canBuy: Boolean) = notifyPlan(R.string.notify_trial_ends_tomorrow, keepGoing(canBuy))
 
-    /** The trial or subscription ended (or the trial's AI ran out) while the app wasn't open. */
-    fun notifyAccessEnded(reason: EndReason) = notifyPlan(AccessText.ended(reason), R.string.access_keep_going)
+    /** The trial or subscription ended (or the trial's AI ran out) while the app wasn't open. Tapping opens Plans. */
+    fun notifyAccessEnded(reason: EndReason, canBuy: Boolean) = notifyPlan(AccessText.ended(reason), keepGoing(canBuy))
+
+    private fun keepGoing(canBuy: Boolean) = if (canBuy) R.string.access_keep_going else R.string.play_needed_subscribe
 
     /** Another device took the subscription while the app wasn't open. */
     fun notifyInUseElsewhere() = notifyPlan(R.string.access_in_use_elsewhere, R.string.notify_in_use_elsewhere_body)

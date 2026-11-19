@@ -105,6 +105,7 @@ import app.transmit.ui.access.BannerAction
 import app.transmit.ui.access.BannerDismiss
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.allowanceBanner
+import app.transmit.ui.access.openPlayListing
 import app.transmit.ui.components.Avatar
 import app.transmit.ui.components.StatusBanner
 import app.transmit.ui.components.awaitSideways
@@ -245,9 +246,11 @@ fun HomeScreen(
                                 BannerAction.PLANS -> onPlans
                                 BannerAction.USE_HERE -> vm::useSubscriptionHere
                                 BannerAction.START_TRIAL -> ({ vm.trial.start() })
-                                BannerAction.OWN_KEY -> onOwnKey
+                                BannerAction.GET_PLAY -> ({ openPlayListing(context) })
                             }.takeIf { b.action != null },
                             onDismiss = b.dismiss?.let { kind -> { vm.dismissBanner(kind) } },
+                            secondary = if (b.ownKeyLink) stringResource(R.string.access_own_key) else null,
+                            onSecondary = onOwnKey,
                         )
                     }
                 }

@@ -7,6 +7,7 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.transmit.access.AccessError
 import app.transmit.access.AccessErrorCode
@@ -101,7 +104,7 @@ object AccessText {
     fun trialFailure(code: AccessErrorCode): Int = when (code) {
         AccessErrorCode.TRIAL_ALREADY_USED -> R.string.trial_failed_already_used
         AccessErrorCode.DEVICE_NOT_SUPPORTED -> R.string.trial_failed_device
-        AccessErrorCode.NOT_FROM_PLAY -> R.string.trial_failed_not_from_play
+        AccessErrorCode.NOT_FROM_PLAY -> R.string.play_needed_free_week
         AccessErrorCode.TRIALS_FULL -> R.string.trial_failed_full
         AccessErrorCode.RATE_LIMITED -> R.string.trial_failed_rate_limited
         AccessErrorCode.NETWORK -> R.string.ai_no_connection
@@ -150,6 +153,16 @@ fun openManageSubscription(context: Context, tier: Tier?) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
+/** Transmit's listing on Google Play: in the Play Store app, or on the web where there's no Play Store. */
+fun openPlayListing(context: Context) {
+    fun view(uri: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    runCatching { view("market://details?id=$PLAY_LISTING_ID") }
+        .recoverCatching { view("https://play.google.com/store/apps/details?id=$PLAY_LISTING_ID") }
+}
+
+/** The Play listing's id: the release's applicationId, whatever this build is called. */
+private const val PLAY_LISTING_ID = "com.ermay12.transmit"
+
 /** "42% of this month's AI used", a bar, and when it resets. Never dollars. */
 @Composable
 fun AllowanceBar(view: AllowanceView?, trial: Boolean, modifier: Modifier = Modifier) {
@@ -195,6 +208,7 @@ fun TrialFailure(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -204,6 +218,7 @@ fun TrialFailure(
             }
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (error.code == AccessErrorCode.NOT_FROM_PLAY) Button(onClick = { openPlayListing(context) }) { Text(stringResource(R.string.play_get)) }
                 if (AccessText.canSubscribeAfter(error.code)) Button(onClick = onSubscribe) { Text(stringResource(R.string.plan_subscribe)) }
                 if (AccessText.canRetry(error.code)) TextButton(onClick = onRetry) { Text(stringResource(R.string.action_try_again)) }
                 TextButton(onClick = onOwnKey) { Text(stringResource(R.string.access_own_key)) }
@@ -214,7 +229,8 @@ fun TrialFailure(
 
 /**
  * What a blocked AI call shows. BYOK budgets keep "Allow once"; managed modes never get it, and their wording never
- * mentions dollars, keys or settings. With no AI set up, the free week can start right here.
+ * mentions dollars, keys or settings. With no AI set up, the free week can start right here. Once the free week or
+ * subscription has ended, the only way on is Subscribe; a copy not installed from Play offers the Play version first.
  */
 @Composable
 fun AiBlockDialog(
@@ -230,16 +246,22 @@ fun AiBlockDialog(
     canBuy: Boolean = true,
 ) {
     data class Content(val title: UiText, val text: UiText, @StringRes val confirm: Int?, val onConfirm: () -> Unit, @StringRes val dismiss: Int)
-    val content = if (!canBuy && block !is AiBlock.Budget && block != AiBlock.InUseElsewhere) {
-        Content(blockTitle(block), UiText.res(R.string.block_own_key_body), R.string.access_own_key, onOwnKey, R.string.action_not_now)
+    val context = LocalContext.current
+    val getPlay = { openPlayListing(context) }
+    // Translation has stopped, or never started, and only a plan would turn it on.
+    val needsPlan = block == AiBlock.NotSetUp || block is AiBlock.Ended || (block is AiBlock.AllowanceUsedUp && block.access !is AiAccess.Subscribed)
+    val content = if (!canBuy && needsPlan) {
+        // Not installed from Play: the way on is the Play version. The user's own key is the second choice.
+        val text = UiText.res(if (block == AiBlock.NotSetUp) R.string.play_needed_free_week else R.string.play_needed_subscribe)
+        Content(blockTitle(block), text, R.string.play_get, getPlay, R.string.action_not_now)
     } else when (block) {
         is AiBlock.Budget -> Content(UiText.res(R.string.block_budget_title), block.message, R.string.block_allow_once, onAllowOnce, R.string.action_cancel)
         is AiBlock.AllowanceUsedUp -> when (val a = block.access) {
             is AiAccess.Subscribed -> {
-                val standard = a.tier == Tier.STANDARD
-                val text = a.renewsAt?.let { UiText.res(if (standard) R.string.block_resets_upgrade else R.string.block_resets, UiText.Date(it)) }
-                    ?: UiText.res(if (standard) R.string.block_resets_at_renewal_upgrade else R.string.block_resets_at_renewal)
-                if (standard) Content(UiText.res(R.string.access_month_used), text, R.string.plan_upgrade, onPlans, R.string.action_ok)
+                val upgrade = a.tier == Tier.STANDARD && canBuy
+                val text = a.renewsAt?.let { UiText.res(if (upgrade) R.string.block_resets_upgrade else R.string.block_resets, UiText.Date(it)) }
+                    ?: UiText.res(if (upgrade) R.string.block_resets_at_renewal_upgrade else R.string.block_resets_at_renewal)
+                if (upgrade) Content(UiText.res(R.string.access_month_used), text, R.string.plan_upgrade, onPlans, R.string.action_ok)
                 else Content(UiText.res(R.string.access_month_used), text, null, onDismiss, R.string.action_ok)
             }
             else -> Content(UiText.res(R.string.ended_free_week), UiText.res(R.string.access_keep_going), R.string.plan_subscribe, onPlans, R.string.action_not_now)
@@ -249,10 +271,16 @@ fun AiBlockDialog(
             UiText.res(R.string.block_in_use_title), UiText.res(R.string.access_use_here_explained), R.string.access_use_here, onUseHere, R.string.action_not_now,
         )
         AiBlock.NotSetUp -> when (trial) {
-            is TrialUi.Failed -> Content(
-                UiText.res(R.string.trial_failed_title), UiText.res(AccessText.trialFailure(trial.error.code)),
-                R.string.plan_subscribe.takeIf { AccessText.canSubscribeAfter(trial.error.code) }, onPlans, R.string.action_not_now,
-            )
+            is TrialUi.Failed -> {
+                val code = trial.error.code
+                val title = UiText.res(R.string.trial_failed_title)
+                val text = UiText.res(AccessText.trialFailure(code))
+                when {
+                    code == AccessErrorCode.NOT_FROM_PLAY -> Content(title, text, R.string.play_get, getPlay, R.string.action_not_now)
+                    AccessText.canSubscribeAfter(code) -> Content(title, text, R.string.plan_subscribe, onPlans, R.string.action_not_now)
+                    else -> Content(title, text, null, onDismiss, R.string.action_not_now)
+                }
+            }
             else -> Content(UiText.res(R.string.translation_off), UiText.res(R.string.block_off_body), R.string.access_start_trial, onStartTrial, R.string.action_not_now)
         }
     }
@@ -276,14 +304,16 @@ fun AiBlockDialog(
         },
         dismissButton = {
             Row {
-                if (canBuy && block == AiBlock.NotSetUp && trial is TrialUi.Failed) TextButton(onClick = onOwnKey) { Text(stringResource(R.string.access_own_key)) }
+                // The user's own key, second to the free week or the Play version. An ended plan offers only Subscribe.
+                val ownKey = if (canBuy) block == AiBlock.NotSetUp && trial is TrialUi.Failed else needsPlan
+                if (ownKey) TextButton(onClick = onOwnKey) { Text(stringResource(R.string.access_own_key)) }
                 TextButton(onClick = onDismiss) { Text(stringResource(content.dismiss)) }
             }
         },
     )
 }
 
-/** A blocked call's title when the only way on is the user's own key: what stopped, without the full stop. */
+/** A blocked call's title when not installed from Play: what stopped, without the full stop. */
 private fun blockTitle(block: AiBlock): UiText = UiText.res(
     when (block) {
         is AiBlock.AllowanceUsedUp -> if (block.access is AiAccess.Trial) R.string.ended_free_week else R.string.access_month_used
@@ -294,8 +324,9 @@ private fun blockTitle(block: AiBlock): UiText = UiText.res(
 
 /**
  * What a chat's translate icons and actions open while translation is off: a small sheet to turn it on. With no AI
- * set up it offers the free week; once the free week or a subscription has ended, Subscribe. A copy not installed
- * from Play can only buy neither, so it offers the user's own key. A free week that can't start says why, in place.
+ * set up it offers the free week; once the free week or a subscription has ended, only Subscribe. A copy not installed
+ * from Play can buy neither, so it offers the Play version, then the user's own key. A free week that can't start says
+ * why, in place.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -320,17 +351,13 @@ fun TurnOnTranslationSheet(
             Text(stringResource(R.string.turn_on_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                when {
-                    ended == null -> stringResource(R.string.plans_benefits)
-                    canBuy -> stringResource(R.string.access_keep_going)
-                    else -> stringResource(R.string.access_own_key_to_keep_going)
-                },
+                stringResource(if (ended == null) R.string.plans_benefits else R.string.access_keep_going),
                 style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
             val failed = trial as? TrialUi.Failed
             when {
-                !canBuy -> Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
+                !canBuy -> GetOnPlay(subscribe = ended != null, onOwnKey = onOwnKey)
                 ended != null -> Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
                 failed != null -> TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = onStartTrial)
                 else -> {
@@ -352,15 +379,34 @@ fun TurnOnTranslationSheet(
 }
 
 /**
- * The slim strip chats show with no AI set up: "Translation is off · Start your free week", or "Use my own AI key" for
- * a copy not installed from Play. Tapping the text does it; the cross hides the strip in every chat.
+ * For a copy not installed from Play, which can't start the free week or subscribe: Get Transmit on Google Play, why,
+ * and the user's own key as the second choice. [subscribe] says the free week is over, so the reason is about
+ * subscribing.
+ */
+@Composable
+fun ColumnScope.GetOnPlay(subscribe: Boolean, onOwnKey: () -> Unit, buttonHeight: Dp? = null) {
+    val context = LocalContext.current
+    Button(onClick = { openPlayListing(context) }, modifier = Modifier.fillMaxWidth().let { m -> buttonHeight?.let { m.height(it) } ?: m }) {
+        Text(stringResource(R.string.play_get), style = if (buttonHeight != null) MaterialTheme.typography.titleMedium else LocalTextStyle.current)
+    }
+    Text(
+        stringResource(if (subscribe) R.string.play_needed_subscribe else R.string.play_needed_free_week),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+    )
+    TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
+}
+
+/**
+ * The slim strip chats show with no AI set up: "Translation is off · Start your free week", or "Get Transmit on Google
+ * Play" for a copy not installed from Play. Tapping the text does it; the cross hides the strip in every chat.
  */
 @Composable
 fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val onColor = MaterialTheme.colorScheme.onSecondaryContainer
     val action = stringResource(
         when {
-            !canBuy -> R.string.access_own_key
+            !canBuy -> R.string.play_get
             starting -> R.string.strip_starting
             else -> R.string.access_start_trial
         },
@@ -389,7 +435,7 @@ fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit
 }
 
 /** What a Home banner's button does. */
-enum class BannerAction { PLANS, USE_HERE, START_TRIAL, OWN_KEY }
+enum class BannerAction { PLANS, USE_HERE, START_TRIAL, GET_PLAY }
 
 /** Which dismissal a Home banner's close button records; each is remembered across restarts. */
 enum class BannerDismiss {
@@ -402,6 +448,7 @@ enum class BannerDismiss {
 /**
  * The Home banner: no AI set up yet, the managed AI nearly or entirely used, or the trial or subscription over.
  * [action] is the button's label, and [does] what it does. [dismiss] is null for a banner that can't be closed.
+ * [ownKeyLink] adds "Use my own AI key" as a second, quieter choice.
  */
 data class AllowanceBannerContent(
     val title: UiText,
@@ -409,9 +456,13 @@ data class AllowanceBannerContent(
     @StringRes val action: Int?,
     val dismiss: BannerDismiss?,
     val does: BannerAction = BannerAction.PLANS,
+    val ownKeyLink: Boolean = false,
 )
 
-/** [canBuy] is false when not installed from Play: then nothing offers Subscribe or Upgrade. */
+/**
+ * [canBuy] is false when not installed from Play: then nothing offers Subscribe or Upgrade, and where translation is
+ * off the banner offers the Play version, then the user's own key.
+ */
 fun allowanceBanner(access: AiAccess?, allowance: AllowanceView?, canBuy: Boolean = true): AllowanceBannerContent? = when (access) {
     // Dismissible for good: someone who only wants messaging can put it away. The Settings plan card stays.
     AiAccess.None ->
@@ -421,7 +472,10 @@ fun allowanceBanner(access: AiAccess?, allowance: AllowanceView?, canBuy: Boolea
                 BannerDismiss.TRANSLATION_OFF, BannerAction.START_TRIAL,
             )
         } else {
-            AllowanceBannerContent(UiText.res(R.string.translation_off), null, R.string.access_own_key, BannerDismiss.TRANSLATION_OFF, BannerAction.OWN_KEY)
+            AllowanceBannerContent(
+                UiText.res(R.string.translation_off), UiText.res(R.string.play_needed_free_week), R.string.play_get,
+                BannerDismiss.TRANSLATION_OFF, BannerAction.GET_PLAY, ownKeyLink = true,
+            )
         }
     is AiAccess.Ended -> stopped(AccessText.ended(access.reason), canBuy)
     is AiAccess.Trial -> when {
@@ -462,9 +516,9 @@ fun allowanceBanner(access: AiAccess?, allowance: AllowanceView?, canBuy: Boolea
 }
 
 /**
- * The managed AI has stopped: Subscribe, or where nothing can be bought, the user's own key (as in Settings), so the
- * banner is never a dead end. It can't be dismissed.
+ * The managed AI has stopped: only Subscribe. Where nothing can be bought, the Play version, then the user's own key,
+ * so the banner is never a dead end. It can't be dismissed.
  */
 private fun stopped(@StringRes title: Int, canBuy: Boolean) =
     if (canBuy) AllowanceBannerContent(UiText.res(title), UiText.res(R.string.banner_subscribe_to_keep), R.string.plan_subscribe, null)
-    else AllowanceBannerContent(UiText.res(title), UiText.res(R.string.access_own_key_to_keep_going), R.string.access_own_key, null, BannerAction.OWN_KEY)
+    else AllowanceBannerContent(UiText.res(title), UiText.res(R.string.play_needed_subscribe), R.string.play_get, null, BannerAction.GET_PLAY, ownKeyLink = true)

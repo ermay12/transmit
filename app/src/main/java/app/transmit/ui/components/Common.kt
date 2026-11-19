@@ -130,6 +130,9 @@ fun StatusBanner(
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onDismiss: (() -> Unit)? = null,
+    /** A second, quieter choice beside the button. */
+    secondary: String? = null,
+    onSecondary: (() -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -138,7 +141,8 @@ fun StatusBanner(
     ) {
         // A long label, or a button beside a close icon, would squeeze the text into a narrow column: it goes under it.
         val hasAction = action != null && onAction != null
-        val stacked = hasAction && (onDismiss != null || action!!.length > 12)
+        val hasSecondary = hasAction && secondary != null && onSecondary != null
+        val stacked = hasAction && (onDismiss != null || hasSecondary || action!!.length > 12)
         Row(Modifier.padding(14.dp), verticalAlignment = if (stacked) Alignment.Top else Alignment.CenterVertically) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.width(12.dp))
@@ -148,6 +152,9 @@ fun StatusBanner(
                 if (stacked) {
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(onClick = onAction!!) { Text(action!!) }
+                    if (hasSecondary) {
+                        androidx.compose.material3.TextButton(onClick = onSecondary!!) { Text(secondary!!, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                    }
                 }
             }
             if (hasAction && !stacked) {

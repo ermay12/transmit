@@ -25,6 +25,7 @@ import app.transmit.access.AiAccess
 import app.transmit.access.Tier
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.AllowanceBar
+import app.transmit.ui.access.GetOnPlay
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.access.nameRes
@@ -374,8 +375,8 @@ private fun PlanCard(
                     PlanTitle(stringResource(R.string.translation_off), stringResource(R.string.plans_benefits))
                     val failed = trial as? TrialUi.Failed
                     if (!vm.canBuy) {
-                        // Not installed from Play: no free week or subscription, only the user's own key.
-                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
+                        // Not installed from Play: no free week or subscription here. The Play version, then the user's own key.
+                        GetOnPlay(subscribe = false, onOwnKey = onOwnKey)
                     } else if (failed != null) {
                         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = onOwnKey, onRetry = { vm.trial.start() })
                     } else {
@@ -411,13 +412,10 @@ private fun PlanCard(
                     }
                 }
                 is AiAccess.Ended -> {
-                    if (vm.canBuy) {
-                        PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_keep_going))
-                        Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
-                    } else {
-                        PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_own_key_to_keep_going))
-                        Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.access_own_key)) }
-                    }
+                    PlanTitle(stringResource(AccessText.ended(access.reason)), stringResource(R.string.access_keep_going))
+                    // Only Subscribe: the user's own key stays under Advanced.
+                    if (vm.canBuy) Button(onClick = onPlans, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_subscribe)) }
+                    else GetOnPlay(subscribe = true, onOwnKey = onOwnKey)
                 }
                 AiAccess.Byok -> {
                     val s by vm.settings.collectAsStateWithLifecycle()

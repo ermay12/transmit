@@ -9,6 +9,7 @@ import app.transmit.access.Tier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AllowanceBannerTest {
@@ -27,11 +28,17 @@ class AllowanceBannerTest {
         assertEquals(listOf("Translation is off", "7 days free. No card needed.", "Start your free week"), b.texts())
         assertEquals(BannerDismiss.TRANSLATION_OFF, b.dismiss)
         assertEquals(BannerAction.START_TRIAL, b.does)
+        assertFalse(b.ownKeyLink)
 
+        // Not installed from Play: the Play version first, the user's own key second.
         val notFromPlay = allowanceBanner(AiAccess.None, null, canBuy = false)!!
-        assertEquals(listOf("Translation is off", "Use my own AI key"), notFromPlay.texts())
+        assertEquals(
+            listOf("Translation is off", "The free week needs Transmit installed from Google Play.", "Get Transmit on Google Play"),
+            notFromPlay.texts(),
+        )
         assertEquals(BannerDismiss.TRANSLATION_OFF, notFromPlay.dismiss)
-        assertEquals(BannerAction.OWN_KEY, notFromPlay.does)
+        assertEquals(BannerAction.GET_PLAY, notFromPlay.does)
+        assertTrue(notFromPlay.ownKeyLink)
     }
 
     @Test
@@ -43,10 +50,24 @@ class AllowanceBannerTest {
         }
         // A free week whose AI is spent reads the same before it's marked ended.
         assertEquals("Your free week has ended", TestStrings.resolve(allowanceBanner(trial, used(100))!!.title))
-        // Not installed from Play: the user's own key, never a dead end.
+        // Not installed from Play: the Play version, then the user's own key. Never a dead end.
         val own = allowanceBanner(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), null, canBuy = false)!!
-        assertEquals(listOf("Your subscription has ended", "Use your own AI key to keep translating.", "Use my own AI key"), own.texts())
-        assertEquals(BannerAction.OWN_KEY, own.does)
+        assertEquals(
+            listOf("Your subscription has ended", "Subscriptions need Transmit installed from Google Play.", "Get Transmit on Google Play"),
+            own.texts(),
+        )
+        assertEquals(BannerAction.GET_PLAY, own.does)
+        assertTrue(own.ownKeyLink)
+    }
+
+    @Test
+    fun onAPlayInstallAnEndedPlanOffersOnlySubscribe() {
+        val stopped = EndReason.entries.map { allowanceBanner(AiAccess.Ended(it), null)!! } + allowanceBanner(trial, used(100))!!
+        for (b in stopped) {
+            assertEquals(R.string.plan_subscribe, b.action)
+            assertEquals(BannerAction.PLANS, b.does)
+            assertFalse(b.ownKeyLink)
+        }
     }
 
     @Test

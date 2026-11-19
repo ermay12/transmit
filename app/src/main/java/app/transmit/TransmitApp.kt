@@ -106,7 +106,7 @@ class AppContainer(val context: Context) {
 
     init {
         access.listener = object : AccessListener {
-            override fun onEndedInBackground(reason: EndReason) = notifier.notifyAccessEnded(reason)
+            override fun onEndedInBackground(reason: EndReason) = notifier.notifyAccessEnded(reason, purchases.available)
             override fun onInUseElsewhereInBackground() = notifier.notifyInUseElsewhere()
             override fun onTrialGranted(endsAt: Long) = AccessWork.scheduleTrialReminder(context, endsAt)
             override fun onSubscriptionGranted() = AccessWork.cancelTrialReminder(context)

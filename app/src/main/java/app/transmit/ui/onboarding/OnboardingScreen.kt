@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.data.AppSettings
 import app.transmit.gm.BridgeState
 import app.transmit.ui.Permissions
+import app.transmit.ui.access.GetOnPlay
 import app.transmit.ui.access.TrialFailure
 import app.transmit.ui.access.TrialUi
 import app.transmit.ui.components.LanguagePickerDialog
@@ -222,10 +223,8 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
     Spacer(Modifier.height(28.dp))
     val failed = trial as? TrialUi.Failed
     if (!vm.canBuy) {
-        // Not installed from Play (a GitHub APK): no free week, only the user's own key.
-        Button(onClick = { ownKey = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text(stringResource(R.string.access_own_key), style = MaterialTheme.typography.titleMedium)
-        }
+        // Not installed from Play (a GitHub APK): no free week here. The Play version, then the user's own key.
+        GetOnPlay(subscribe = false, onOwnKey = { ownKey = true }, buttonHeight = 56.dp)
     } else if (failed != null) {
         TrialFailure(failed.error, onSubscribe = onPlans, onOwnKey = { ownKey = true }, onRetry = { vm.trial.start() })
     } else {

@@ -73,6 +73,7 @@ import app.transmit.smart.SmartActions
 import app.transmit.smart.SmartEntity
 import app.transmit.messaging.Attachment
 import app.transmit.messaging.PhoneNumbers
+import app.transmit.ui.access.openPlayListing
 import app.transmit.ui.access.AiBlockDialog
 import app.transmit.ai.AiBlock
 import app.transmit.ui.access.TranslationOffStrip
@@ -172,7 +173,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 TranslationOffStrip(
                     canBuy = vm.canBuy,
                     starting = trial == TrialUi.Starting,
-                    onAction = { if (vm.canBuy) vm.startTrialFromStrip() else onOwnKey() },
+                    onAction = { if (vm.canBuy) vm.startTrialFromStrip() else openPlayListing(context) },
                     onDismiss = vm::dismissOffStrip,
                 )
             }

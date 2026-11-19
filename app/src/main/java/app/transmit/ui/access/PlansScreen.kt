@@ -180,9 +180,14 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             if (!vm.canBuy) {
-                Text(stringResource(R.string.plans_not_from_play), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Not installed from Play: nothing can be bought here. The Play version, then the user's own key.
+                Text(stringResource(R.string.play_needed_subscribe), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = onOwnKey, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.access_own_key)) }
+                Button(onClick = { openPlayListing(context) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text(stringResource(R.string.play_get), style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onOwnKey, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
                 return@Column
             }
             if (owned == null) {

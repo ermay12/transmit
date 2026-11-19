@@ -80,7 +80,7 @@ class AccessRefreshWorker(context: Context, params: WorkerParameters) : Coroutin
 class TrialReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val c = applicationContext.app.container
-        if (AccessWork.reminderDue(c.access.current(), System.currentTimeMillis())) c.notifier.notifyTrialEndsTomorrow()
+        if (AccessWork.reminderDue(c.access.current(), System.currentTimeMillis())) c.notifier.notifyTrialEndsTomorrow(c.purchases.available)
         return Result.success()
     }
 }

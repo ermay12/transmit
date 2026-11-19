@@ -8,12 +8,15 @@
     <string name="access_trial_subtext">7 days free. No card needed.</string>
     <string name="access_own_key">Use my own AI key</string>
     <string name="access_keep_going">Subscribe to keep translating and getting help with your replies.</string>
-    <string name="access_own_key_to_keep_going">Use your own AI key to keep translating.</string>
     <string name="access_month_used">You\'ve used this month\'s AI</string>
     <string name="access_in_use_elsewhere">Your subscription is in use on another device</string>
     <string name="access_use_here">Use it here</string>
     <string name="access_use_here_explained">A subscription works on one device at a time. Using it here stops it on the other device.</string>
     <string name="access_in_use_elsewhere_explained">Your subscription is in use on another device. A subscription works on one device at a time. Using it here stops it on the other device.</string>
+    <!-- A copy not installed from Google Play can't start the free week or subscribe: the way on is the Play version. -->
+    <string name="play_get">Get Transmit on Google Play</string>
+    <string name="play_needed_free_week">The free week needs Transmit installed from Google Play.</string>
+    <string name="play_needed_subscribe">Subscriptions need Transmit installed from Google Play.</string>
     <string name="ended_free_week">Your free week has ended</string>
     <string name="ended_subscription">Your subscription has ended</string>
     <string name="action_not_now">Not now</string>
@@ -74,7 +77,6 @@
     <string name="trial_failed_title">Couldn\'t start your free week</string>
     <string name="trial_failed_already_used">This device has already used its free week.</string>
     <string name="trial_failed_device">This device isn\'t supported for the free week.</string>
-    <string name="trial_failed_not_from_play">The free week needs Transmit installed from Google Play.</string>
     <string name="trial_failed_full">Today\'s free weeks are all taken. Try again tomorrow.</string>
     <string name="trial_failed_rate_limited">Too many attempts from this network. Try again later.</string>
     <string name="trial_failed_busy">Still working on it. Try again in a moment.</string>
@@ -96,7 +98,6 @@
 
     <!-- Chats: the dialog a blocked AI call shows. -->
     <string name="block_off_body">Start your free week to translate messages and get help with your replies. 7 days free. No card needed.</string>
-    <string name="block_own_key_body">Use your own AI key to translate messages and get help with your replies.</string>
     <string name="block_in_use_title">Your subscription is in use on another device. Use it here?</string>
     <string name="block_resets">It resets %1$s.</string>
     <string name="block_resets_upgrade">It resets %1$s. Transmit Plus has twice the AI.</string>
@@ -216,7 +217,6 @@
     <string name="plan_manage">Manage subscription</string>
     <string name="plan_restore">Restore purchase</string>
     <string name="plan_restoring">Restoring…</string>
-    <string name="plans_not_from_play">Subscriptions need Transmit installed from Google Play. You can still use your own AI key.</string>
     <string name="purchase_working">Setting up your plan…</string>
     <string name="purchase_pending">Your payment is being processed. Translation starts as soon as Google Play confirms it.</string>
     <string name="purchase_done">%1$s is ready</string>
