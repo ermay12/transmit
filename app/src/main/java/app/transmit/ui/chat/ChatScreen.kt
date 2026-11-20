@@ -198,8 +198,9 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                         val list = items.asReversed()
                         list.forEach { item ->
                             item(item.key, contentType = "message") {
+                                val (shown, mark) = search.bubble(item)
                                 MessageBubble(
-                                    item = item.revealing(search.current),
+                                    item = shown,
                                     group = group,
                                     sender = item.message.sender?.let { people[it] ?: ContactInfo(it, null, null, null) },
                                     target = target,
@@ -223,7 +224,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                                     quoteAuthor = item.quote?.let { quoteAuthor(it, people) },
                                     onQuote = vm::showQuoted,
                                     highlighted = item.key == highlighted,
-                                    search = search.markFor(item.key),
+                                    search = mark,
                                 )
                             }
                             if (item.newDay) {

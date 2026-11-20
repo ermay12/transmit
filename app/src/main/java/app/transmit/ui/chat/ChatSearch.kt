@@ -267,8 +267,17 @@ data class SearchUi(
     }
 }
 
-/** How a bubble marks matches of [query]: [current] ones more strongly. */
-data class SearchMark(val query: String, val current: Boolean)
+/**
+ * How a bubble marks matches of [query]: [current] ones more strongly. [revealed]: the bubble shows its other side
+ * for the current match ([revealing]), so the change fades as a translation's arrival does.
+ */
+data class SearchMark(val query: String, val current: Boolean, val revealed: Boolean = false)
+
+/** [item] as its bubble shows while searching ([revealing] the current match), and how it marks its matches. */
+internal fun SearchUi.bubble(item: MessageUi): Pair<MessageUi, SearchMark?> {
+    val shown = item.revealing(current)
+    return shown to markFor(item.key)?.let { if (shown !== item) it.copy(revealed = true) else it }
+}
 
 /**
  * This bubble as it shows while [hit] is the current match: when the match is only on the side that isn't showing

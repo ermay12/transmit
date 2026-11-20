@@ -241,6 +241,23 @@ class ChatSearchTest {
         assertSame(b, b.revealing(null))
     }
 
+    @Test
+    fun aBubbleShowingItsOtherSideForTheMatchSaysSo() {
+        val b = bubble()
+        // The match is only in the original, under the translation: the original shows, marked as revealed.
+        val (shown, mark) = SearchUi(open = true).withHits("dinner", listOf(SearchHit("g1", 0, inOriginal = true, inTranslation = false)), 1).bubble(b)
+        assertEquals("See you at dinner", shown.displayText)
+        assertEquals(SearchMark("dinner", current = true, revealed = true), mark)
+        // On the side showing: nothing revealed.
+        val (same, plain) = SearchUi(open = true).withHits("cena", listOf(SearchHit("g1", 0, inOriginal = false, inTranslation = true)), 1).bubble(b)
+        assertSame(b, same)
+        assertEquals(SearchMark("cena", current = true), plain)
+        // Not a match: as it was, with no mark.
+        val (other, none) = SearchUi(open = true).withHits("dinner", listOf(SearchHit("g2", 1, true, false)), 2).bubble(b)
+        assertSame(b, other)
+        assertNull(none)
+    }
+
     // ---- highlighting -----------------------------------------------------------------------------
 
     @Test

@@ -430,9 +430,9 @@ private data class ShownText(val item: MessageUi, val mark: SearchMark?)
 
 /**
  * A translation that arrives fades in over what was there (the placeholder bars, or the original) as the bubble
- * resizes. The bars fade in the same way when auto-translate is switched on. A tap between original and translation
- * still switches at once. Each text fades with its own search highlights: the one going as it was, the one coming
- * with the search's.
+ * resizes. The bars fade in the same way when auto-translate is switched on, and so does the other side when search
+ * shows it for the current match, and when it goes back. A tap between original and translation still switches at
+ * once. Each text fades with its own highlights: the one going as it was, the one coming with the search's.
  */
 @Composable
 private fun BubbleText(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, search: SearchMark?, onLink: (SmartEntity) -> Unit) {
@@ -440,7 +440,7 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language, links: L
         targetState = ShownText(item, search),
         transitionSpec = { fadeIn(tween(ARRIVAL_MS)) togetherWith fadeOut(tween(ARRIVAL_MS)) using SizeTransform(clip = true) },
         label = "translation",
-        contentKey = { (it.item.awaiting && !it.item.showOriginal) to (it.item.translation != null) },
+        contentKey = { Triple(it.item.awaiting && !it.item.showOriginal, it.item.translation != null, it.mark?.revealed == true) },
     ) { shown ->
         // Links are found in the text on screen; the text fading out has none.
         val text = shown.item
