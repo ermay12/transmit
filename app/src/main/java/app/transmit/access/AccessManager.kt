@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -39,6 +38,21 @@ data class AllowanceView(val fraction: Double, val resetsAt: Long?) {
     }
 }
 
+/** What [AccessManager.refresh] did, so a caller can tell a call that was skipped from one that changed nothing. */
+sealed interface RefreshResult {
+    /** Not asked: within the throttle, or nothing to ask about (no subscription, ended, in use elsewhere). */
+    data object Skipped : RefreshResult
+
+    /**
+     * The Worker (or Play) answered, and what it said is stored. [renewed]: a new allowance period (a renewal, an
+     * upgrade), or an allowance that was used up has room again (a higher limit).
+     */
+    data class Answered(val renewed: Boolean) : RefreshResult
+
+    /** The Worker couldn't be asked, or failed. */
+    data class Failed(val error: AccessError) : RefreshResult
+}
+
 /**
  * Owns [AiAccess]: what it is, how it changes, and the managed key. The backend and Play are behind
  * [AccessBackend]; the allowance is counted from the usage ledger ([managedSpend], each call's `usage.cost`)
@@ -58,6 +72,8 @@ class AccessManager(
     private val clock: () -> Long = System::currentTimeMillis,
     /** False to hold off noticing transitions until [start], once [listener] is set. */
     autoStart: Boolean = true,
+    /** How late OpenRouter books spending, so a figure from it (through the Worker too) covers calls up to then. */
+    private val usageLagMs: Long = OpenRouterAllowance.LAG_MS,
 ) {
     var listener: AccessListener = object : AccessListener {}
 
@@ -112,8 +128,24 @@ class AccessManager(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /**
+     * "You've used this month's AI", for a chat to show once per allowance period: a subscription ran out, the Worker
+     * was asked once in case it had renewed ([limitReached]), and it hadn't. Null otherwise, and once
+     * [usedUpPromptShown] has recorded it for this period (across restarts). A trial that runs out ends instead.
+     */
+    val usedUpPrompt: StateFlow<AiBlock.AllowanceUsedUp?> = combine(store.state, access.filterNotNull(), allowance) { s, a, v ->
+        (a as? AiAccess.Subscribed)?.takeIf {
+            !it.inUseElsewhere && v?.usedUp == true && s.allowancePeriod != null &&
+                s.limitCheckedFor == s.allowancePeriod && s.usedUpPromptedFor != s.allowancePeriod
+        }?.let { AiBlock.AllowanceUsedUp(it) }
+    }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
     private val refreshLock = Mutex()
     private var lastRefreshAt = 0L
+    /** One check at a time when the allowance runs out. */
+    private val limitLock = Mutex()
     /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
     private var keyCheckedAt = 0L
 
@@ -126,10 +158,15 @@ class AccessManager(
             started.await()
             access.filterNotNull().collect { noticeTransition(it) }
         }
-        // Used up: the dismissal is spent, so the 80% banner shows again if a correction brings it back below 100%.
         scope.launch {
-            allowance.filterNotNull().filter { it.usedUp }.collect {
-                store.update { s -> if (s.warningDismissedFor != null) s.copy(warningDismissedFor = null) else s }
+            allowance.filterNotNull().collect { v ->
+                if (v.usedUp) {
+                    // Used up: the dismissal is spent, so the 80% banner shows again if a correction brings it back below 100%.
+                    store.update { s -> if (s.warningDismissedFor != null) s.copy(warningDismissedFor = null) else s }
+                } else if (store.current().limitCheckedFor != null && allowanceNow()?.usedUp == false) {
+                    // Below 100% again: the next time it runs out gets its own check.
+                    store.update { s -> s.copy(limitCheckedFor = null) }
+                }
             }
         }
     }
@@ -144,6 +181,9 @@ class AccessManager(
     suspend fun dismissOffStrip() = store.update { it.copy(offStripDismissed = true) }
 
     suspend fun dismissOffBanner() = store.update { it.copy(offBannerDismissed = true) }
+
+    /** The used-up dialog was shown: not again this allowance period. */
+    suspend fun usedUpPromptShown() = store.update { it.copy(usedUpPromptedFor = it.allowancePeriod) }
 
     suspend fun current(): AiAccess = store.current().resolve(clock())
 
@@ -197,18 +237,18 @@ class AccessManager(
      * the subscription in use elsewhere (see [backgroundRefresh]). The key is also checked with OpenRouter first,
      * which is cheap and covers a Worker that predates `rotate`; a refused key goes through [refusedLocked].
      */
-    suspend fun refresh(force: Boolean = false): AccessError? = refreshLock.withLock {
+    suspend fun refresh(force: Boolean = false): RefreshResult = refreshLock.withLock {
         val s = store.current()
-        if (s.entitlement !is Entitlement.Subscription || s.ended != null || s.inUseElsewhere) return null
-        val token = vault.get(PURCHASE_TOKEN) ?: return null
-        if (!force && clock() - lastRefreshAt < REFRESH_INTERVAL_MS) return null
+        if (s.entitlement !is Entitlement.Subscription || s.ended != null || s.inUseElsewhere) return RefreshResult.Skipped
+        val token = vault.get(PURCHASE_TOKEN) ?: return RefreshResult.Skipped
+        if (!force && clock() - lastRefreshAt < REFRESH_INTERVAL_MS) return RefreshResult.Skipped
         lastRefreshAt = clock()
+        val wasUsedUp = allowanceNow()?.usedUp == true
         val key = managedKey()
-        if (key != null && read(key) == AllowanceCheck.KeyRejected) {
-            refusedLocked(token, s)
-            return null
-        }
-        backgroundRefresh(token, s)
+        val error = if (key != null && read(key) == AllowanceCheck.KeyRejected) refusedLocked(token, s) else backgroundRefresh(token, s)
+        if (error != null) return RefreshResult.Failed(error)
+        val after = store.current()
+        RefreshResult.Answered(renewed = after.allowancePeriod != s.allowancePeriod || (wasUsedUp && allowanceNow()?.usedUp == false))
     }
 
     /**
@@ -256,13 +296,16 @@ class AccessManager(
         }
     }
 
-    private suspend fun refusedLocked(token: String, s: StoredAccess) {
+    private suspend fun refusedLocked(token: String, s: StoredAccess): AccessError? {
         keyCheckedAt = clock()
-        when (backend.activeOnPlay()) {
-            true -> markInUseElsewhere()
+        return when (backend.activeOnPlay()) {
+            true -> {
+                markInUseElsewhere()
+                null
+            }
             false -> backgroundRefresh(token, s)
             // Play can't be asked now: a service problem; the next failure or refresh looks again.
-            null -> Unit
+            null -> AccessError(AccessErrorCode.SERVICE, detail = "Play purchases unavailable", retryable = true)
         }
     }
 
@@ -299,12 +342,15 @@ class AccessManager(
         g.key?.let { vault.put(MANAGED_KEY, it) }
         if (g.entitlement is Entitlement.Subscription) g.purchaseToken?.let { vault.put(PURCHASE_TOKEN, it) }
         store.update {
-            it.copy(
+            val next = it.copy(entitlement = g.entitlement)
+            // The same key in the same period: what's left is OpenRouter's figure, which lags, so the calls logged in
+            // that time count on top (as in [reconcile]). Otherwise a used-up allowance would look free again.
+            val samePeriod = g.key == null && it.allowancePeriod != null && next.allowancePeriod == it.allowancePeriod
+            next.copy(
                 ownKey = if (activate) false else it.ownKey,
-                entitlement = g.entitlement,
                 ended = null,
                 keyHash = g.keyHash ?: it.keyHash.takeIf { g.key == null },
-                baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, clock()),
+                baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, if (samePeriod) clock() - usageLagMs else clock()),
                 // A key from the Worker works here, whichever device had it before.
                 inUseElsewhere = false,
             )
@@ -342,22 +388,45 @@ class AccessManager(
         return AllowanceView(b.usedFraction(managedSpend(b.at).first()), (a as? AiAccess.Subscribed)?.renewsAt)
     }
 
-    /** Before a managed call. A subscription used up asks the backend once, in case it has renewed. */
+    /** Before a managed call. The first time a subscription is found used up, the Worker is asked ([limitReached]). */
     suspend fun allowanceUsedUp(): Boolean {
         val a = allowanceNow() ?: return false
         if (!a.usedUp) return false
-        if (current() is AiAccess.Subscribed && refresh() == null) return allowanceNow()?.usedUp ?: false
-        return true
+        return limitReached()
     }
 
-    /** After each managed call: a trial whose AI is spent ends; a subscription near its end checks for a renewal. */
+    /**
+     * After each managed call: a trial whose AI is spent ends; a subscription that just ran out asks the Worker
+     * ([limitReached], without holding up the result), and one near its end checks for a renewal.
+     */
     suspend fun afterManagedCall() {
         val a = allowanceNow() ?: return
         when (current()) {
             is AiAccess.Trial -> if (a.usedUp) markEnded(EndReason.TRIAL_USED_UP)
-            is AiAccess.Subscribed -> if (a.fraction >= REFRESH_AT) scope.launch { refresh() }
+            is AiAccess.Subscribed -> when {
+                a.usedUp -> scope.launch { limitReached() }
+                a.fraction >= REFRESH_AT -> scope.launch { refresh() }
+            }
             else -> Unit
         }
+    }
+
+    /**
+     * A subscription's allowance is used up (the ledger after a call, a 403, OpenRouter's figure). Once each time it
+     * runs out, the Worker is asked at once, past [refresh]'s throttle, in case a new period or a higher limit has
+     * come: then it's no longer used up, without a word. If not, that's recorded (across restarts) and nothing more is
+     * asked until it's below 100% again; [usedUpPrompt] then has the dialog. Returns whether it's still used up.
+     */
+    private suspend fun limitReached(): Boolean = limitLock.withLock {
+        if (allowanceNow()?.usedUp != true) return false
+        if (current() !is AiAccess.Subscribed) return true
+        val s = store.current()
+        if (s.limitCheckedFor == s.allowancePeriod) return true
+        refresh(force = true)
+        // Whatever the answer (renewed, no change, failed, skipped), this was the check for this time.
+        val usedUp = allowanceNow()?.usedUp == true
+        if (usedUp) store.update { it.copy(limitCheckedFor = it.allowancePeriod) }
+        usedUp
     }
 
     /**
@@ -398,7 +467,8 @@ class AccessManager(
 
     /**
      * A managed call failed. Returns the block to show when the failure means the allowance is spent or the trial is
-     * over; null for anything else, which is a service problem and never a paywall.
+     * over; null for anything else, which is a service problem and never a paywall. A 403 for a subscription asks the
+     * Worker once ([limitReached]): when it reports a renewal or a higher limit, it's null, and the call may run again.
      */
     suspend fun onManagedError(e: AiException): AiBlock? {
         val a = current()
@@ -406,8 +476,14 @@ class AccessManager(
         return when {
             e.kind == AiException.Kind.KEY_LIMIT -> {
                 setBaseline { it.copy(remainingUsd = 0.0, at = clock()) }
-                if (a is AiAccess.Trial) markEnded(EndReason.TRIAL_USED_UP)
-                AiBlock.AllowanceUsedUp(a)
+                when {
+                    a is AiAccess.Trial -> {
+                        markEnded(EndReason.TRIAL_USED_UP)
+                        AiBlock.AllowanceUsedUp(a)
+                    }
+                    limitReached() -> AiBlock.AllowanceUsedUp(a)
+                    else -> null
+                }
             }
             // By status, never by wording: "API key expired." and "User not found." are both a refused key.
             e.httpStatus == 401 -> keyRefused(a)

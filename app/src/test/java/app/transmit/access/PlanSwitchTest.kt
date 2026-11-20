@@ -143,7 +143,7 @@ class PlanSwitchTest {
         play.owned = listOf(owned("switch-2", 2))
         reply(402, """{"error":"purchase_not_active","state":"replaced"}""")
         reply(200, plusAnswer(pending = true))
-        assertNull(access.refresh(force = true))
+        assertEquals(RefreshResult.Answered(renewed = false), access.refresh(force = true))
         assertEquals("plus-1", sent().s("purchaseToken"))
         val retry = sent()
         assertEquals("switch-2", retry.s("purchaseToken"))

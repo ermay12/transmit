@@ -62,6 +62,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.res.stringResource
+import app.transmit.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -235,7 +240,21 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                     Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (b.budget) Icons.Outlined.Savings else Icons.Outlined.Info, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                         Spacer(Modifier.width(10.dp))
-                        Text(b.text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        // The next step follows the text, as on the translation-off strip: Upgrade to Plus opens the plans.
+                        val upgrade = stringResource(R.string.plan_upgrade)
+                        Text(
+                            buildAnnotatedString {
+                                append(b.text)
+                                b.note?.let { append(" · "); append(it) }
+                                if (b.upgrade) {
+                                    append(" · ")
+                                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)) { append(upgrade) }
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f).clickable(enabled = b.upgrade, onClick = onPlans).padding(vertical = 10.dp),
+                        )
                         IconButton(onClick = { vm.banner.value = null }) { Icon(Icons.Default.Close, "Dismiss", Modifier.size(18.dp)) }
                     }
                 }
@@ -315,6 +334,9 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
         null -> Unit
     }
 
+    // An AI call ran this month's AI out: say so, and what's next, once per allowance period.
+    val usedUpPrompt by vm.usedUpPrompt.collectAsStateWithLifecycle()
+    LaunchedEffect(usedUpPrompt, budgetPrompt == null) { usedUpPrompt?.let(vm::showUsedUpPrompt) }
     budgetPrompt?.let { prompt ->
         val close = { vm.budgetPrompt.value = null; vm.trial.reset() }
         val a = access

@@ -93,6 +93,23 @@ class AllowanceBannerTest {
         for (b in listOf(t, s)) assertFalse(b.texts().any { "Subscribe" in it || "Plus" in it })
     }
 
+    /** A chat's strip when automatic translation stopped on a used-up month carries the next step. */
+    @Test
+    fun theUsedUpStripInAChatSaysWhatsNext() {
+        fun UsedUpStrip.texts() = listOfNotNull(TestStrings.resolve(text), "Upgrade to Plus".takeIf { upgrade }, resets?.let(TestStrings::resolve))
+        // Transmit: Upgrade to Plus, which opens the plans.
+        assertEquals(listOf("You've used this month's AI", "Upgrade to Plus"), usedUpStrip(standard, canBuy = true)!!.texts())
+        assertEquals("Upgrade to Plus", TestStrings.text(R.string.plan_upgrade))
+        // Plus, or Transmit where nothing can be bought: when it resets.
+        assertEquals(listOf("You've used this month's AI", "Resets <date>"), usedUpStrip(plus, canBuy = true)!!.texts())
+        assertEquals(listOf("You've used this month's AI", "Resets <date>"), usedUpStrip(standard, canBuy = false)!!.texts())
+        // Renewal off: there's no reset to promise.
+        assertEquals(listOf("You've used this month's AI"), usedUpStrip(AiAccess.Subscribed(Tier.PLUS, null), canBuy = true)!!.texts())
+        // A free week that runs out has ended: the ENDED handling covers it, not this strip.
+        assertNull(usedUpStrip(trial, canBuy = true))
+        assertNull(usedUpStrip(AiAccess.Ended(EndReason.TRIAL_USED_UP), canBuy = true))
+    }
+
     @Test
     fun theFreeWeekFailureReasonsNeverSayTrial() {
         for (code in app.transmit.access.AccessErrorCode.entries) {

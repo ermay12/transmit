@@ -457,6 +457,23 @@ fun TranslationOffStrip(canBuy: Boolean, starting: Boolean, onAction: () -> Unit
     }
 }
 
+/**
+ * A chat's slim strip when automatic translation stopped because this month's AI is used: what happened, then the next
+ * step. [upgrade]: "Upgrade to Plus", which opens the plans (Transmit, where Plus can be bought). Otherwise [resets]
+ * says when it starts again, if that's known.
+ */
+data class UsedUpStrip(val text: UiText, val upgrade: Boolean, val resets: UiText?)
+
+/** The strip for a subscription whose month is used; null for anything else (a free week that runs out ends). */
+fun usedUpStrip(access: AiAccess, canBuy: Boolean): UsedUpStrip? {
+    val a = access as? AiAccess.Subscribed ?: return null
+    val upgrade = a.tier == Tier.STANDARD && canBuy
+    return UsedUpStrip(
+        UiText.res(R.string.access_month_used), upgrade,
+        a.renewsAt?.takeIf { !upgrade }?.let { UiText.res(R.string.allowance_resets, UiText.Date(it)) },
+    )
+}
+
 /** What a Home banner's button does. */
 enum class BannerAction { PLANS, USE_HERE, START_TRIAL, GET_PLAY }
 

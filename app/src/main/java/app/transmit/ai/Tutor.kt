@@ -189,11 +189,20 @@ class Tutor(
             ai.client(s.provider, s)
         }
         val via = client.takeIf { managed }
+        val request = CompletionRequest(model, system, prompt, maxTokens, effortFor(s, slot, model, via), fast)
         val result = try {
-            client.complete(CompletionRequest(model, system, prompt, maxTokens, effortFor(s, slot, model, via), fast))
+            client.complete(request)
         } catch (e: AiException) {
-            if (managed) access.onManagedError(e)?.let { throw AiBlockedException(it) }
-            throw e
+            if (!managed) throw e
+            access.onManagedError(e)?.let { throw AiBlockedException(it) }
+            // A 403 the Worker answered with a renewal or a higher limit: the same call once more, so it's never seen.
+            if (e.kind != AiException.Kind.KEY_LIMIT) throw e
+            try {
+                client.complete(request)
+            } catch (again: AiException) {
+                access.onManagedError(again)?.let { throw AiBlockedException(it) }
+                throw again
+            }
         }
         val price = ai.price(s.provider, result.model, s, via) ?: ai.price(s.provider, model, s, via)
         val cost = result.reportedCostUsd ?: price?.cost(result.inputTokens, result.outputTokens) ?: 0.0

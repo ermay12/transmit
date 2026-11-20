@@ -41,6 +41,13 @@ data class StoredAccess(
     val offStripDismissed: Boolean = false,
     /** Home's "Translation is off" banner was dismissed; it stays hidden from then on. Settings keeps its plan card. */
     val offBannerDismissed: Boolean = false,
+    /**
+     * The [allowancePeriod] whose run to 100% has had its one Worker check (in case it renewed) and is still used up.
+     * Cleared once the allowance is below 100% again, so the next crossing gets its own check.
+     */
+    val limitCheckedFor: String? = null,
+    /** The [allowancePeriod] the "You've used this month's AI" dialog was shown for: once per period. */
+    val usedUpPromptedFor: String? = null,
 ) {
     fun resolve(now: Long): AiAccess {
         if (ownKey) return AiAccess.Byok
@@ -114,6 +121,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val inUseElsewhere = booleanPreferencesKey("in_use_elsewhere")
         val offStripDismissed = booleanPreferencesKey("off_strip_dismissed")
         val offBannerDismissed = booleanPreferencesKey("off_banner_dismissed")
+        val limitCheckedFor = stringPreferencesKey("limit_checked_for")
+        val usedUpPromptedFor = stringPreferencesKey("used_up_prompted_for")
     }
 
     companion object {
@@ -145,6 +154,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 inUseElsewhere = p[K.inUseElsewhere] ?: false,
                 offStripDismissed = p[K.offStripDismissed] ?: false,
                 offBannerDismissed = p[K.offBannerDismissed] ?: false,
+                limitCheckedFor = p[K.limitCheckedFor],
+                usedUpPromptedFor = p[K.usedUpPromptedFor],
             )
         }
 
@@ -189,6 +200,8 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
             if (s.inUseElsewhere) p[K.inUseElsewhere] = true else p.remove(K.inUseElsewhere)
             if (s.offStripDismissed) p[K.offStripDismissed] = true else p.remove(K.offStripDismissed)
             if (s.offBannerDismissed) p[K.offBannerDismissed] = true else p.remove(K.offBannerDismissed)
+            if (s.limitCheckedFor != null) p[K.limitCheckedFor] = s.limitCheckedFor else p.remove(K.limitCheckedFor)
+            if (s.usedUpPromptedFor != null) p[K.usedUpPromptedFor] = s.usedUpPromptedFor else p.remove(K.usedUpPromptedFor)
         }
     }
 }

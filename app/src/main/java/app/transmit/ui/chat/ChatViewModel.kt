@@ -12,6 +12,7 @@ import app.transmit.access.AiAccess
 import app.transmit.access.forAccess
 import app.transmit.ui.access.TrialStarter
 import app.transmit.ui.access.TrialUi
+import app.transmit.ui.access.usedUpStrip
 import app.transmit.ai.CallCost
 import app.transmit.ai.ContextLine
 import app.transmit.ai.EffectiveChat
@@ -242,8 +243,12 @@ sealed interface Sheet {
     data object ChatInfo : Sheet
 }
 
-/** [budget]: a BYOK dollar budget is spent, so the banner shows a money icon; otherwise it's a plain notice. */
-data class ChatBanner(val text: String, val budget: Boolean = false)
+/**
+ * [budget]: a BYOK dollar budget is spent, so the banner shows a money icon; otherwise it's a plain notice. The next
+ * step follows the text: [upgrade] is "Upgrade to Plus", which opens the plans; [note] is a plain fact ("Resets
+ * Dec 3").
+ */
+data class ChatBanner(val text: String, val budget: Boolean = false, val upgrade: Boolean = false, val note: String? = null)
 
 /** An AI call that was blocked; [retry] runs it again past a BYOK budget ("Allow once"). */
 data class BudgetPrompt(val block: AiBlock, val retry: () -> Unit)
@@ -375,10 +380,14 @@ class ChatViewModel(
         viewModelScope.launch {
             c.translations.events.filter { it.threadId == threadId }.collect { e ->
                 banner.value = when (e) {
-                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> ChatBanner(e.block.message.resolve(c.context), budget = e.block is AiBlock.Budget)
+                    is app.transmit.ai.TranslationManager.Event.BudgetReached -> blockedBanner(e.block)
                     is app.transmit.ai.TranslationManager.Event.Failed -> ChatBanner(describe(e.error))
                 }
             }
+        }
+        // Whichever way "You've used this month's AI" was shown here, once is enough for this allowance period.
+        viewModelScope.launch {
+            budgetPrompt.filter { it?.block is AiBlock.AllowanceUsedUp }.collect { c.access.usedUpPromptShown() }
         }
         // Translations romanized as their bubbles come into view, a batch at a time.
         viewModelScope.launch {
@@ -785,6 +794,24 @@ class ChatViewModel(
 
     fun dismissOffStrip() {
         c.scope.launch { c.access.dismissOffStrip() }
+    }
+
+    /** "You've used this month's AI", due once per allowance period after a call ran it out (see [showUsedUpPrompt]). */
+    val usedUpPrompt = c.access.usedUpPrompt
+
+    /** Shows the used-up dialog that's due, unless another is open; showing it records it for the period. */
+    fun showUsedUpPrompt(block: AiBlock) {
+        if (budgetPrompt.value == null) budgetPrompt.value = BudgetPrompt(block) {}
+    }
+
+    /**
+     * The slim strip for automatic work that was blocked: a used-up month says what's next (Upgrade to Plus, or when it
+     * resets); anything else, why.
+     */
+    private fun blockedBanner(block: AiBlock): ChatBanner {
+        val strip = (block as? AiBlock.AllowanceUsedUp)?.let { usedUpStrip(it.access, canBuy) }
+            ?: return ChatBanner(block.message.resolve(c.context), budget = block is AiBlock.Budget)
+        return ChatBanner(strip.text.resolve(c.context), upgrade = strip.upgrade, note = strip.resets?.resolve(c.context))
     }
 
     /** "Start your free week" on the strip. If it can't start, the translation-is-off dialog says why and what else to do. */

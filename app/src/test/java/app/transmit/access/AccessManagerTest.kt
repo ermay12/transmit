@@ -175,19 +175,145 @@ class AccessManagerTest {
         assertEquals(AiAccess.Ended(EndReason.TRIAL_EXPIRED), m.current())
     }
 
+    /** A Standard subscription renewing at [ends], with [remaining] of its $4.50 left; [key] null when the key is kept. */
+    private fun sub(remaining: Double, ends: Long = periodEnd, key: String? = "sk-sub") =
+        Grant(Entitlement.Subscription(Tier.STANDARD, ends), key, "subhash", 4.5, remaining, purchaseToken = "tok")
+
+    private val periodEnd = System.currentTimeMillis() + 20 * day
+    private val keyLimit = AiException("OpenRouter: Key limit exceeded (total limit)", AiException.Kind.KEY_LIMIT, httpStatus = 403)
+
     @Test
     fun aUsedUpSubscriptionAsksTheBackendOnceForARenewal() = runBlocking {
         val m = manager()
-        m.applyGrant(subGrant(remaining = 0.0), activate = true)
-        backend.refresh = AccessResult.Granted(subGrant(remaining = 4.5).copy(key = null))
+        m.applyGrant(sub(0.0), activate = true)
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
         assertFalse(m.allowanceUsedUp())
         assertEquals(1, backend.refreshes)
         assertEquals("sk-sub", m.managedKey())
+        assertEquals(0, m.allowanceNow()!!.percent)
+    }
 
-        m.setBaseline { it.copy(remainingUsd = 0.0) }
-        // Within a few minutes it doesn't ask again.
-        assertTrue(m.allowanceUsedUp())
+    /**
+     * The device test: a refresh had just run, so the throttle would have skipped the check. A call that takes the
+     * allowance to 100% asks the Worker at once anyway, once; every blocked call after that asks nothing.
+     */
+    @Test
+    fun runningOutAsksTheWorkerOnceAtOncePastTheThrottle() = runBlocking {
+        val m = manager()
+        m.applyGrant(sub(0.5), activate = true)
+        // OpenRouter's figure lags, so the Worker keeps reporting the 50 cents the last calls have spent.
+        backend.refresh = AccessResult.Granted(sub(0.5, key = null))
+        assertTrue(m.refresh(force = true) is RefreshResult.Answered)
+        // An ordinary refresh now is skipped, and says so.
+        assertEquals(RefreshResult.Skipped, m.refresh())
         assertEquals(1, backend.refreshes)
+
+        spent.value = 0.5
+        m.afterManagedCall()
+        withTimeout(5_000) { m.usedUpPrompt.first { it != null } }
+        assertEquals(2, backend.refreshes)
+        // No change, so it stays used up: what OpenRouter reported covers calls up to a few minutes ago only.
+        assertTrue(m.allowanceNow()!!.usedUp)
+        repeat(3) { assertTrue(m.allowanceUsedUp()) }
+        m.afterManagedCall()
+        assertTrue(m.onManagedError(keyLimit) is AiBlock.AllowanceUsedUp)
+        delay(200)
+        assertEquals(2, backend.refreshes)
+
+        // Below 100% again (a correction), then out again: that's a new time, with its own check.
+        check = AllowanceCheck.Reading(2.0, System.currentTimeMillis())
+        m.reconcile()
+        withTimeout(5_000) { m.allowance.first { it?.usedUp == false } }
+        delay(200)
+        check = AllowanceCheck.UsedUp
+        m.reconcile()
+        withTimeout(5_000) { while (backend.refreshes < 3) delay(20) }
+        delay(200)
+        assertEquals(3, backend.refreshes)
+    }
+
+    /** The Worker reports a new period or a higher limit: no longer used up, with no dialog. */
+    @Test
+    fun aRenewalOrAHigherLimitFoundWhenItRunsOutClearsItSilently() = runBlocking {
+        val m = manager()
+        m.applyGrant(sub(0.5), activate = true)
+        // A higher limit in the same period (OpenRouter's lag is covered, so it's real room).
+        backend.refresh = AccessResult.Granted(sub(4.5, key = null))
+        spent.value = 0.5
+        m.afterManagedCall()
+        withTimeout(5_000) { m.allowance.first { it?.usedUp == false } }
+        assertEquals(1, backend.refreshes)
+        assertFalse(m.allowanceUsedUp())
+        delay(200)
+        assertNull(m.usedUpPrompt.value)
+
+        // A 403 in a period that has renewed meanwhile: no block, so the call runs again.
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
+        assertNull(m.onManagedError(keyLimit))
+        assertEquals(2, backend.refreshes)
+        assertFalse(m.allowanceNow()!!.usedUp)
+        delay(200)
+        assertNull(m.usedUpPrompt.value)
+    }
+
+    /** What a refresh did: skipped (throttled or nothing to ask), answered (and whether it renewed), or failed. */
+    @Test
+    fun aRefreshTellsSkippedFromNoChange() = runBlocking {
+        val m = manager()
+        assertEquals(RefreshResult.Skipped, m.refresh(force = true))
+        m.applyGrant(sub(0.0), activate = true)
+        backend.refresh = AccessResult.Granted(sub(0.0, key = null))
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
+        // Within the throttle: skipped, which is not the same as "asked, and nothing changed".
+        assertEquals(RefreshResult.Skipped, m.refresh())
+        assertEquals(1, backend.refreshes)
+        backend.refresh = AccessResult.Granted(sub(4.5, key = null))
+        assertEquals(RefreshResult.Answered(renewed = true), m.refresh(force = true))
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
+        assertEquals(RefreshResult.Answered(renewed = true), m.refresh(force = true))
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.NETWORK))
+        assertEquals(RefreshResult.Failed(AccessError(AccessErrorCode.NETWORK)), m.refresh(force = true))
+    }
+
+    /** The dialog for a run-out month: once per allowance period, remembered across restarts, never for a free week. */
+    @Test
+    fun theUsedUpDialogShowsOncePerPeriodAcrossRestarts() = runBlocking {
+        val file = java.io.File(tmp.root, "prompt.preferences_pb")
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val m = manager(file, first)
+        m.applyGrant(sub(0.2), activate = true)
+        backend.refresh = AccessResult.Granted(sub(0.2, key = null))
+        assertNull(m.usedUpPrompt.value)
+        spent.value = 0.2
+        m.afterManagedCall()
+        val due = withTimeout(5_000) { m.usedUpPrompt.first { it != null } }!!
+        assertEquals(AiAccess.Subscribed(Tier.STANDARD, periodEnd), due.access)
+        m.usedUpPromptShown()
+        withTimeout(5_000) { m.usedUpPrompt.first { it == null } }
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+
+        // After a restart: not shown again, and the blocked calls don't ask the Worker again either.
+        val again = manager(file)
+        withTimeout(5_000) { again.allowance.first { it?.usedUp == true } }
+        assertTrue(again.allowanceUsedUp())
+        again.afterManagedCall()
+        delay(300)
+        assertNull(again.usedUpPrompt.value)
+        assertEquals(1, backend.refreshes)
+
+        // A new period that runs out too: shown again.
+        backend.refresh = AccessResult.Granted(sub(0.2, ends = periodEnd + 30 * day, key = null))
+        again.applyGrant(sub(0.2, ends = periodEnd + 30 * day, key = null), activate = false)
+        again.afterManagedCall()
+        withTimeout(5_000) { again.usedUpPrompt.first { it != null } }
+
+        // A free week that runs out ends instead (the plans open); no month-used dialog.
+        val trial = manager()
+        trial.applyGrant(trialGrant(0.0), activate = true)
+        trial.afterManagedCall()
+        assertEquals(AiAccess.Ended(EndReason.TRIAL_USED_UP), trial.current())
+        delay(200)
+        assertNull(trial.usedUpPrompt.value)
     }
 
     @Test
@@ -206,7 +332,7 @@ class AccessManagerTest {
         val m = manager()
         m.applyGrant(subGrant(), activate = true)
         backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
-        assertNull(m.refresh(force = true))
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
         assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
     }
 
@@ -318,7 +444,7 @@ class AccessManagerTest {
         assertTrue(a.inUseElsewhere)
         assertEquals(AiBlock.InUseElsewhere, app.transmit.ai.AiGate.check(a, false, { false }, { app.transmit.ai.BudgetStatus.Ok }))
         // The daily refresh leaves it alone too.
-        assertNull(m.refresh(force = true))
+        assertEquals(RefreshResult.Skipped, m.refresh(force = true))
         assertEquals(0, backend.refreshes)
 
         // "Use it here" restores with the old hash, so the Worker rotates the key to this device.
@@ -356,13 +482,13 @@ class AccessManagerTest {
         m.applyGrant(subGrant(), activate = true)
         check = AllowanceCheck.Reading(3.0, System.currentTimeMillis())
         backend.refresh = AccessResult.Granted(subGrant().copy(key = null))
-        assertNull(m.refresh(force = true))
+        assertTrue(m.refresh(force = true) is RefreshResult.Answered)
         assertEquals(1, backend.refreshes)
 
         check = AllowanceCheck.KeyRejected
         backend.onPlay = true
         foreground = false
-        assertNull(m.refresh(force = true))
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
         assertEquals(1, backend.refreshes)
         assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
         assertEquals(1, inUseElsewhereNotices)
@@ -376,13 +502,13 @@ class AccessManagerTest {
         check = AllowanceCheck.Unavailable
         backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
         foreground = false
-        assertNull(m.refresh(force = true))
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
         assertEquals(1, backend.refreshes)
         assertEquals("sk-sub", m.managedKey())
         assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
         assertEquals(1, inUseElsewhereNotices)
         // Marked: later refreshes leave it alone until "Use it here".
-        assertNull(m.refresh(force = true))
+        assertEquals(RefreshResult.Skipped, m.refresh(force = true))
         assertEquals(1, backend.refreshes)
 
         // The same answer after a refused key, with Play unsure, in the foreground: marked, no notice.
@@ -429,7 +555,7 @@ class AccessManagerTest {
         m.applyGrant(subGrant(Tier.PLUS), activate = true)
         // What PlayAccessBackend answers when the old token is replaced and Play shows nothing newer yet.
         backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE, detail = "Replaced, and Play has no newer purchase"))
-        assertEquals(AccessErrorCode.SERVICE, m.refresh(force = true)?.code)
+        assertEquals(AccessErrorCode.SERVICE, (m.refresh(force = true) as RefreshResult.Failed).error.code)
         // Still Plus, never ended: a replaced token is a plan change, not a lapse.
         assertEquals(Tier.PLUS, (m.current() as AiAccess.Subscribed).tier)
         assertEquals(1, backend.refreshes)
