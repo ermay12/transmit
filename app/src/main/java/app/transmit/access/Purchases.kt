@@ -77,6 +77,10 @@ sealed interface PurchaseUi {
  * Buying through Play and getting the key for it. Every PURCHASED token goes into the [queue] and is sent to the
  * Worker right away; one that can't be sent yet ([AccessError.retryable]) waits for [scheduleRetry]'s background job
  * and for the next launch. PENDING purchases wait for Play's next update.
+ *
+ * A purchase, upgrade or switch makes one Worker call: the new token, whose answer is the whole plan. Nothing else
+ * asks while Play's sheet is open or the token is on its way ([flowOpen]), and a token the Worker has answered for is
+ * not sent again because Play's own list still shows it unacknowledged for a while.
  */
 class Purchases(
     private val store: Storefront,
@@ -84,10 +88,13 @@ class Purchases(
     private val queue: PurchaseQueue,
     private val scope: CoroutineScope,
     /**
-     * Play's purchase sheet has closed, whatever its outcome, or it didn't open: the plan may have changed (see
-     * [PlanRefresher], [RefreshTrigger.PURCHASE_FLOW]). Called once what the sheet returned has been handled.
+     * Play's purchase sheet has closed, whatever its outcome, or it didn't open; called once what it returned has been
+     * handled. [sent]: its purchase went to the Worker, whose answer is the plan as it is now (or whose failure the
+     * background retry takes over), so there's nothing more to ask. Otherwise the plan may have changed unseen (see
+     * [PlanRefresher], [RefreshTrigger.PURCHASE_FLOW]).
      */
-    private val onFlowReturned: () -> Unit = {},
+    private val onFlowReturned: (sent: Boolean) -> Unit = {},
+    private val clock: () -> Long = System::currentTimeMillis,
     /** Schedules a background delivery with backoff, once a network is available. */
     private val scheduleRetry: () -> Unit,
 ) {
@@ -96,8 +103,18 @@ class Purchases(
     private val delivering = Mutex()
     /** What Play's sheet was last opened for, so its outcome can say what happened. */
     @Volatile private var launched: PurchasePlan? = null
+    /** When Play's sheet was opened, until what it returned has been handled. */
+    @Volatile private var flowSince: Long? = null
+    /** Tokens the Worker has answered for in this run: Play lists them as unacknowledged for a while yet. */
+    private val delivered: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     val available get() = store.available
+
+    /**
+     * Play's sheet is open, or what it returned is being sent: a plan refresh now would race the new token with the
+     * old one (`replaced`, then `busy`). Bounded, in case Play never answers.
+     */
+    val flowOpen: Boolean get() = flowSince?.let { clock() - it < FLOW_MAX_MS } == true
 
     /** Tokens still waiting for the Worker. */
     fun hasQueued() = queue.all().isNotEmpty()
@@ -128,12 +145,14 @@ class Purchases(
         _state.value = PurchaseUi.Working
         val plan = planFor(tier)
         launched = plan
+        flowSince = clock()
         val result = store.launch(activity, tier, plan)
         if (result != LaunchResult.LAUNCHED) {
             launched = null
+            flowSince = null
             _state.value = PurchaseUi.Idle
             // Nothing to buy may mean the app's view is out of date (a switch that has already happened, say).
-            onFlowReturned()
+            onFlowReturned(false)
         }
         return result
     }
@@ -143,20 +162,27 @@ class Purchases(
     }
 
     private suspend fun onUpdate(u: PurchaseUpdate) {
-        handle(u)
-        onFlowReturned()
+        try {
+            onFlowReturned(handle(u))
+        } finally {
+            // Only now: a screen that opened meanwhile (Done goes back to Settings) found the flow still open.
+            flowSince = null
+        }
     }
 
-    private suspend fun handle(u: PurchaseUpdate) {
+    /** Returns whether a purchase from the sheet went to the Worker. */
+    private suspend fun handle(u: PurchaseUpdate): Boolean {
         when (u) {
             is PurchaseUpdate.Purchases -> {
                 val bought = u.purchases.filter { it.purchased && it.tier != null }
-                bought.forEach { queue.add(PlayPurchase(it.productId, it.purchaseToken)) }
+                // One the Worker already answered for (a launch's sync got there first) isn't sent again.
+                bought.filter { it.purchaseToken !in delivered }.forEach { queue.add(PlayPurchase(it.productId, it.purchaseToken)) }
                 when {
                     bought.isNotEmpty() -> {
                         _state.value = PurchaseUi.Working
                         val error = deliver()
                         _state.value = outcome(error, takeLaunched())
+                        return true
                     }
                     u.purchases.isNotEmpty() -> _state.value = PurchaseUi.Pending
                     else -> _state.value = PurchaseUi.Idle
@@ -177,6 +203,7 @@ class Purchases(
                 _state.value = PurchaseUi.Failed(null, planChange = takeLaunched().isPlanChange)
             }
         }
+        return false
     }
 
     private fun takeLaunched(): PurchasePlan? = launched.also { launched = null }
@@ -210,10 +237,14 @@ class Purchases(
         return if (fresh.isEmpty()) null else deliver(only = fresh)
     }
 
-    /** Queues Play's PURCHASED Transmit purchases the Worker hasn't acknowledged; returns the tokens newly queued. */
+    /**
+     * Queues Play's PURCHASED Transmit purchases the Worker hasn't acknowledged; returns the tokens newly queued. Play
+     * still lists a purchase as unacknowledged for a while after the Worker acknowledged it: one the Worker has
+     * answered for in this run is done.
+     */
     private suspend fun queueUnacknowledged(): Set<String> {
         val before = queue.all().mapTo(HashSet()) { it.purchaseToken }
-        store.purchases()?.filter { it.purchased && it.tier != null && !it.acknowledged }
+        store.purchases()?.filter { it.purchased && it.tier != null && !it.acknowledged && it.purchaseToken !in delivered }
             ?.forEach { queue.add(PlayPurchase(it.productId, it.purchaseToken)) }
         return queue.all().mapTo(HashSet()) { it.purchaseToken } - before
     }
@@ -230,6 +261,7 @@ class Purchases(
             val next = queue.all().firstOrNull { it.purchaseToken !in tried && (only == null || it.purchaseToken in only) } ?: break
             tried += next.purchaseToken
             val error = access.activatePurchase(next)
+            if (error == null) delivered += next.purchaseToken
             if (error == null || !error.retryable) queue.remove(next.purchaseToken)
             if (error != null) {
                 Log.w(TAG, "Purchase delivery: ${error.code} ${error.detail}")
@@ -243,5 +275,7 @@ class Purchases(
 
     private companion object {
         const val TAG = "Purchases"
+        /** Longer than anyone spends in Play's sheet; past it, a sheet that never answered no longer holds refreshes. */
+        const val FLOW_MAX_MS = 15 * 60_000L
     }
 }

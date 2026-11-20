@@ -96,11 +96,12 @@ class AppContainer(val context: Context) {
     /** Play's purchase sheet, and getting every purchase's key from the Worker. */
     val purchases = Purchases(
         accessServices.store, access, PurchaseQueue(secrets), scope,
-        onFlowReturned = { planRefresh.request(RefreshTrigger.PURCHASE_FLOW) },
+        // A purchase the Worker answered for brings the plan with it; otherwise the plan may have changed unseen.
+        onFlowReturned = { sent -> if (sent) planRefresh.upToDate() else planRefresh.request(RefreshTrigger.PURCHASE_FLOW) },
     ) { AccessWork.scheduleDelivery(context) }
     /**
      * Keeps the plan current while the app stays open: the Plans and Settings screens ask when they show, and a
-     * purchase flow asks when it returns.
+     * purchase flow that sent nothing to the Worker asks when it returns.
      */
     val planRefresh: PlanRefresher = PlanRefresher.forPlan(scope, purchases, access)
     /** Play Integrity for the trial; warmed when a screen that can start it opens. */

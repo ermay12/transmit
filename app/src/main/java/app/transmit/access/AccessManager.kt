@@ -142,6 +142,10 @@ class AccessManager(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, null)
 
+    /**
+     * Serializes everything that sends the subscription's token to the Worker: a refresh never races a purchase or a
+     * restore with the token or key hash it held before (which would answer `replaced`, `busy` or `key_mismatch`).
+     */
     private val refreshLock = Mutex()
     private var lastRefreshAt = 0L
     /** One check at a time when the allowance runs out. */
@@ -217,21 +221,22 @@ class AccessManager(
     suspend fun startTrial(): AccessError? = handle(activate = true) { backend.startTrial() }
 
     /** For a purchase from Play Billing. Null on success: the mode is SUBSCRIBED. */
-    suspend fun activatePurchase(purchase: PlayPurchase): AccessError? {
+    suspend fun activatePurchase(purchase: PlayPurchase): AccessError? = refreshLock.withLock {
         val s = store.current()
         val hash = s.keyHash.takeIf { s.entitlement is Entitlement.Subscription }
-        return handle(activate = true) { backend.activatePurchase(purchase, hash) }
+        handle(activate = true) { backend.activatePurchase(purchase, hash) }
     }
 
     /** "Restore purchase". Null when the backend answered: SUBSCRIBED, or ENDED for a lapsed subscription. */
-    suspend fun restore(): AccessError? {
+    suspend fun restore(): AccessError? = refreshLock.withLock {
         val s = store.current()
         val hash = s.keyHash.takeIf { s.entitlement is Entitlement.Subscription }
-        return handle(activate = true) { backend.restore(hash) }
+        handle(activate = true) { backend.restore(hash) }
     }
 
     /**
-     * Re-checks the subscription with the backend, at most every few minutes unless [force]d.
+     * Re-checks the subscription with the backend, at most every few minutes unless [force]d. It waits for a purchase
+     * or restore that's being sent, then uses the token and key that came back.
      *
      * A refresh never takes the key from another device: it sends `"rotate": false`, and a `key_mismatch` marks
      * the subscription in use elsewhere (see [backgroundRefresh]). The key is also checked with OpenRouter first,

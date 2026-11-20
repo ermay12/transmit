@@ -39,6 +39,8 @@ class PurchasesTest {
     private val store = UpdatesStore()
     private var retriesScheduled = 0
     private val flowsReturned = java.util.concurrent.atomic.AtomicInteger()
+    /** For each sheet that returned: whether its purchase went to the Worker. */
+    private val sentFlags = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
     private lateinit var access: AccessManager
     private lateinit var queue: PurchaseQueue
     private lateinit var purchases: Purchases
@@ -51,7 +53,7 @@ class PurchasesTest {
             vault, backend, { AllowanceCheck.Unavailable }, { kotlinx.coroutines.flow.flowOf(0.0) }, scope,
         )
         queue = PurchaseQueue(vault)
-        purchases = Purchases(store, access, queue, scope, onFlowReturned = { flowsReturned.incrementAndGet() }) { retriesScheduled++ }
+        purchases = Purchases(store, access, queue, scope, onFlowReturned = { sent -> sentFlags += sent; flowsReturned.incrementAndGet() }) { retriesScheduled++ }
     }
 
     @After fun tearDown() { scope.cancel() }
@@ -131,16 +133,20 @@ class PurchasesTest {
         assertEquals(1, queue.all().size)
     }
 
-    /** Every way Play's sheet can come back asks for a plan refresh, once what it returned has been handled. */
+    /**
+     * Every way Play's sheet can come back is reported once what it returned has been handled. Only a purchase that
+     * went to the Worker needs no refresh after it: the Worker's answer is the plan.
+     */
     @Test
-    fun everyPurchaseFlowAsksForARefreshWhateverItsOutcome() = runBlocking {
+    fun everyPurchaseFlowAsksForARefreshUnlessItsPurchaseWentToTheWorker() = runBlocking {
         suspend fun returned(n: Int) = withTimeout(5_000) { while (flowsReturned.get() < n) kotlinx.coroutines.delay(10) }
 
-        // Bought: only once the Worker has answered, so the refresh sees the new plan.
+        // Bought: reported once the Worker has answered, as sent.
         backend.results["t1"] = ArrayDeque(listOf(AccessResult.Granted(grant("t1"))))
         emit(PurchaseUpdate.Purchases(listOf(bought("t1"))))
         returned(1)
         assertEquals(PurchaseUi.Done(Tier.STANDARD), purchases.state.value)
+        assertEquals(listOf(true), sentFlags.toList())
 
         emit(PurchaseUpdate.Canceled)
         returned(2)
@@ -157,6 +163,19 @@ class PurchasesTest {
         store.launchResult = LaunchResult.UNAVAILABLE
         assertEquals(LaunchResult.UNAVAILABLE, purchases.buy(Activity(), Tier.PLUS))
         assertEquals(6, flowsReturned.get())
+        assertEquals(listOf(true, false, false, false, false, false), sentFlags.toList())
+    }
+
+    /** Play still lists a purchase as unacknowledged for a while after the Worker acknowledged it: it isn't sent again. */
+    @Test
+    fun aPurchaseTheWorkerAnsweredForIsntSentAgainWhilePlayCatchesUp() = runBlocking {
+        backend.results["t1"] = ArrayDeque(listOf(AccessResult.Granted(grant("t1"))))
+        store.owned = listOf(bought("t1"))
+        emit(PurchaseUpdate.Purchases(listOf(bought("t1"))))
+        withTimeout(5_000) { purchases.state.first { it is PurchaseUi.Done } }
+        assertNull(purchases.sync())
+        assertNull(purchases.syncNew())
+        assertEquals(listOf("t1"), backend.sent)
     }
 
     /** A declined card on a first purchase says nothing was charged; an upgrade or a switch, that the change didn't happen. */
