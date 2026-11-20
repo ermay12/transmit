@@ -110,8 +110,10 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
      */
     fun buy(activity: Activity, tier: Tier) {
         problem.value = null
+        // A subscriber's purchase is always a change of plan: an upgrade, or a switch to Transmit.
+        val planChange = access.value is AiAccess.Subscribed
         viewModelScope.launch {
-            problem.value = AccessText.launchProblem(c.purchases.buy(activity, tier))
+            problem.value = AccessText.launchProblem(c.purchases.buy(activity, tier), planChange)
         }
     }
 

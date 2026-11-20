@@ -262,8 +262,10 @@
     <string name="plan_switch_starts">Starts %1$s</string>
     <!-- While a switch is set there's no way back to Plus before it happens (Google documents no replacement mode for undoing it), so the note says what's possible instead. -->
     <string name="plan_switch_pending_note">Switching to Transmit on %1$s. Changed your mind? You can upgrade back to Plus anytime after the switch.</string>
-    <!-- Any error from Google Play's sheet, whatever its code. -->
+    <!-- Any error from Google Play's sheet for an upgrade or a switch, whatever its code. -->
     <string name="billing_failed">Google Play couldn\'t make that change. Please try again later.</string>
+    <!-- Any error from Google Play's sheet for a new subscription (a declined card, say), whatever its code. -->
+    <string name="purchase_declined">Your purchase didn\'t go through. You haven\'t been charged.</string>
     <string name="purchase_working">Setting up your plan…</string>
     <string name="purchase_pending">Your payment is being processed. Translation starts as soon as Google Play confirms it.</string>
     <string name="purchase_done">%1$s is ready</string>

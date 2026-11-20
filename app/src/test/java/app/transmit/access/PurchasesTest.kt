@@ -20,6 +20,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import app.transmit.TestStrings
+import app.transmit.ui.access.AccessText
 
 /** Getting each Play purchase to the Worker: what is queued, retried, dropped, and when the AI starts. */
 class PurchasesTest {
@@ -157,6 +159,36 @@ class PurchasesTest {
         assertEquals(6, flowsReturned.get())
     }
 
+    /** A declined card on a first purchase says nothing was charged; an upgrade or a switch, that the change didn't happen. */
+    @Test
+    fun aRefusalFromPlaySaysWhetherAPurchaseOrAChangeDidntHappen() = runBlocking {
+        suspend fun refused(tier: Tier): PurchaseUi.Failed {
+            assertEquals(LaunchResult.LAUNCHED, purchases.buy(Activity(), tier))
+            emit(PurchaseUpdate.Failed(BILLING_ERROR, "Declined by always denied test instrument"))
+            val failed = withTimeout(5_000) { purchases.state.first { it is PurchaseUi.Failed } } as PurchaseUi.Failed
+            purchases.resetState()
+            return failed
+        }
+        val declined = "Your purchase didn't go through. You haven't been charged."
+        val change = "Google Play couldn't make that change. Please try again later."
+
+        // A first subscription (the device test's ENDED → Subscribe with a declining card).
+        val first = refused(Tier.STANDARD)
+        assertEquals(PurchaseUi.Failed(null, planChange = false), first)
+        assertEquals(declined, TestStrings.text(AccessText.purchaseProblem(first)))
+        assertEquals(declined, TestStrings.text(AccessText.launchProblem(LaunchResult.FAILED)!!))
+
+        // Transmit → Plus.
+        access.applyGrant(grant("std-1"), activate = true)
+        store.owned = listOf(bought("std-1", acknowledged = true))
+        val upgrade = refused(Tier.PLUS)
+        assertEquals(PurchaseUi.Failed(null, planChange = true), upgrade)
+        assertEquals(change, TestStrings.text(AccessText.purchaseProblem(upgrade)))
+        assertEquals(change, TestStrings.text(AccessText.launchProblem(LaunchResult.FAILED, planChange = true)!!))
+        // The Worker's own failure on a new purchase keeps its wording (it may yet be charged, then refunded).
+        assertEquals("The purchase didn't go through.", TestStrings.text(AccessText.purchaseProblem(PurchaseUi.Failed(AccessError(AccessErrorCode.SERVICE)))))
+    }
+
     /** A refresh sends what Play has that isn't queued yet, and leaves a token that just failed to its retry job. */
     @Test
     fun aRefreshSendsOnlyPurchasesNotAlreadyWaiting() = runBlocking {
@@ -196,6 +228,11 @@ class PurchasesTest {
         assertFalse(AccessWork.reminderDue(AiAccess.Trial(now + 3 * day), now))
         assertFalse(AccessWork.reminderDue(AiAccess.Subscribed(Tier.STANDARD, null), now))
         assertFalse(AccessWork.reminderDue(AiAccess.Trial(now - 1), now))
+    }
+
+    private companion object {
+        /** BillingResponseCode.ERROR, which a declined test card returns. */
+        const val BILLING_ERROR = 6
     }
 
     private class DeliveryBackend : AccessBackend {

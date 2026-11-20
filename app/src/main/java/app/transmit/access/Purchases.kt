@@ -67,8 +67,8 @@ sealed interface PurchaseUi {
     data class SwitchSet(val at: Long?) : PurchaseUi
     /**
      * Buying or changing the plan didn't work. [error] is the Worker's, or null when Google Play itself refused or
-     * failed (its sheet's error, which the user may not even have seen explained). [planChange]: it was a switch to
-     * Transmit, not a purchase.
+     * failed (its sheet's error, which the user may not even have seen explained). [planChange]: it was an upgrade or
+     * a switch to Transmit, not a new purchase.
      */
     data class Failed(val error: AccessError?, val planChange: Boolean = false) : PurchaseUi
 }
@@ -181,7 +181,8 @@ class Purchases(
 
     private fun takeLaunched(): PurchasePlan? = launched.also { launched = null }
 
-    private val PurchasePlan?.isPlanChange get() = this is PurchasePlan.Downgrade
+    /** An upgrade or a switch to Transmit, rather than a new subscription. */
+    private val PurchasePlan?.isPlanChange get() = this is PurchasePlan.Change
 
     /** What the plans screen says once the Worker has the new token. */
     private suspend fun outcome(error: AccessError?, plan: PurchasePlan?): PurchaseUi {

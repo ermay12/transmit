@@ -133,23 +133,28 @@ object AccessText {
         else -> UiText.res(R.string.restore_failed)
     }
 
-    /** What the plans screen says when Play's sheet didn't open; null when it did. */
+    /**
+     * What the plans screen says when Play's sheet didn't open; null when it did. [planChange]: it was to open for an
+     * upgrade or a switch, not a new subscription.
+     */
     @StringRes
-    fun launchProblem(result: LaunchResult): Int? = when (result) {
+    fun launchProblem(result: LaunchResult, planChange: Boolean = false): Int? = when (result) {
         LaunchResult.LAUNCHED -> null
         LaunchResult.ALREADY_OWNED -> R.string.purchase_already_owned
         LaunchResult.UNAVAILABLE -> R.string.purchase_play_unavailable
-        LaunchResult.FAILED -> R.string.billing_failed
+        LaunchResult.FAILED -> if (planChange) R.string.billing_failed else R.string.purchase_declined
     }
 
     /**
      * What the plans screen says when buying or changing the plan didn't work. Never silence: any error from Google
-     * Play gets the same calm sentence, whatever its code.
+     * Play gets a calm sentence, whatever its code: for a new subscription, that nothing was charged; for an upgrade
+     * or a switch, that the change didn't happen.
      */
     @StringRes
     fun purchaseProblem(failed: PurchaseUi.Failed): Int = when {
         failed.error?.retryable == true -> R.string.purchase_retrying
-        failed.error == null || failed.planChange -> R.string.billing_failed
+        failed.planChange -> R.string.billing_failed
+        failed.error == null -> R.string.purchase_declined
         else -> R.string.purchase_failed
     }
 
