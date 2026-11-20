@@ -31,7 +31,8 @@ export interface PurchaseLineItem {
   expiryTime?: string;
   /** Not set on an item the user doesn't own yet (the one a DEFERRED change switches to). */
   latestSuccessfulOrderId?: string;
-  autoRenewingPlan?: { autoRenewEnabled?: boolean };
+  /** On the plan billed now, with its price; the leftover item of a DEFERRED change can keep an empty one. */
+  autoRenewingPlan?: { autoRenewEnabled?: boolean; recurringPrice?: { currencyCode?: string; units?: string; nanos?: number } };
   offerDetails?: { basePlanId?: string; offerId?: string };
   /** On the current item while a DEFERRED change is pending: the product that replaces it at expiryTime. */
   deferredItemReplacement?: { productId?: string };

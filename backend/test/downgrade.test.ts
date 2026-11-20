@@ -23,6 +23,24 @@ async function buyPlus(world: FakeWorld): Promise<{ hash: string; plusEnds: numb
   return { hash: r.body.keyHash as string, plusEnds };
 }
 
+type Plan = "transmit_plus" | "transmit_monthly";
+
+/**
+ * A shape Play can show after the renewal of a DEFERRED switch: both items with the same expiryTime and
+ * the same order. Transmit carries the auto-renewing plan with its price; the leftover Plus item keeps an
+ * empty one. `first` is the item Google lists first.
+ */
+function tieAfterRenewal(world: FakeWorld, token: string, first: Plan): void {
+  const p = world.purchases.get(token)!;
+  const monthly = p.lineItems!.find((it) => it.productId === "transmit_monthly")!;
+  const plus = p.lineItems!.find((it) => it.productId === "transmit_plus")!;
+  plus.expiryTime = monthly.expiryTime;
+  plus.autoRenewingPlan = {};
+  monthly.autoRenewingPlan = { autoRenewEnabled: true, recurringPrice: { currencyCode: "USD", units: "5", nanos: 990_000_000 } };
+  expect(plus.latestSuccessfulOrderId).toBe(monthly.latestSuccessfulOrderId);
+  p.lineItems = first === "transmit_plus" ? [plus, monthly] : [monthly, plus];
+}
+
 async function row(token: string) {
   const { keyedHash, dataKeys } = await import("../src/crypto");
   const keys = await dataKeys(env.DATA_SECRET);
@@ -163,6 +181,61 @@ describe("switch to Transmit (DEFERRED)", () => {
     expect(r.body).toMatchObject({ productId: "transmit_monthly", newKey: false, allowanceRenewed: true, remainingUsd: 4.5, allowanceUsd: 4.5 });
     expect(world.keys.get(hash)!.limit).toBe(10.5); // usage 6 + 4.50
   });
+
+  it.each<Plan>(["transmit_plus", "transmit_monthly"])(
+    "the job credits $4.50 when both items share the expiry and the order after the renewal (%s listed first)",
+    async (first) => {
+      const world = new FakeWorld();
+      const { hash, plusEnds } = await buyPlus(world);
+      world.now += 10 * DAY;
+      world.deferredSwitch(A, B);
+      await call(world, "/v1/subscription", { purchaseToken: B, keyHash: hash });
+      world.spend(hash, 5);
+
+      world.now = plusEnds + 10 * 60_000;
+      world.completeDeferred(B, "GPA.2222-2222-2222-22222..0", world.now + 30 * DAY);
+      tieAfterRenewal(world, B, first);
+      expect((await cron(world)).outcomes).toEqual(["active:renewed"]);
+      expect(world.keys.get(hash)).toMatchObject({ limit: 9.5, disabled: false }); // usage 5 + 4.50
+      expect(await row(B)).toMatchObject({ product_id: "transmit_monthly", allowance_usd: 4.5, pending_product_id: null });
+
+      const r = await call(world, "/v1/subscription", { purchaseToken: B, productId: "transmit_monthly", keyHash: hash, rotate: false });
+      expect(r.body).toMatchObject({ productId: "transmit_monthly", allowanceUsd: 4.5, remainingUsd: 4.5, allowanceRenewed: false, autoRenewing: true });
+      expect(r.body).not.toHaveProperty("pendingProductId");
+    },
+  );
+
+  it.each<Plan>(["transmit_plus", "transmit_monthly"])(
+    "a new token first sent after the renewal, with both items tied, is Transmit at $4.50 and acknowledged as Transmit (%s listed first)",
+    async (first) => {
+      const world = new FakeWorld();
+      const { hash, plusEnds } = await buyPlus(world);
+      world.spend(hash, 6);
+      world.now = plusEnds - HOUR;
+      world.deferredSwitch(A, B);
+      world.now = plusEnds + 10 * 60_000;
+      world.completeDeferred(B, "GPA.2222-2222-2222-22222..0", world.now + 30 * DAY);
+      tieAfterRenewal(world, B, first);
+
+      const seen = world.calls.length;
+      const r = await call(world, "/v1/subscription", { purchaseToken: B, keyHash: hash });
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({
+        productId: "transmit_monthly",
+        newKey: false,
+        allowanceUsd: 4.5,
+        remainingUsd: 4.5,
+        allowanceRenewed: true,
+        periodEndsAt: iso(world.now + 30 * DAY),
+      });
+      expect(r.body).not.toHaveProperty("pendingProductId");
+      expect(world.keys.get(hash)!.limit).toBe(10.5); // usage 6 + 4.50
+      const acks = world.calls.slice(seen).filter((c) => c.url.includes(":acknowledge"));
+      expect(acks).toHaveLength(1);
+      expect(acks[0]!.url).toContain("/subscriptions/transmit_monthly/tokens/");
+      expect(await row(B)).toMatchObject({ product_id: "transmit_monthly", allowance_usd: 4.5, acknowledged: 1 });
+    },
+  );
 
   it("turns the key off if the new token never arrives", async () => {
     const world = new FakeWorld();

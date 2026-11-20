@@ -210,7 +210,11 @@ smaller budget, for CPU. Rate limits and the shared Google token went live on
 2026-11-19 (version `a5d97641`): the `/privacy` and `/` pages, invocation logs
 off, rate limits keyed by a daily network hash, and the 90-day subscription
 retention with migration `0004`. Later on 2026-11-19 (version `fabd25d9`): a
-refund with revoke is stored as `refunded`, not `expired` (no migration). Not done yet:
+refund with revoke is stored as `refunded`, not `expired` (no migration). Then
+(version `f633abc6`): when a DEFERRED switch's purchase lists both items with
+the same expiry and order after the renewal, the Worker takes the item with the
+billed plan (`autoRenewingPlan` with a price: Transmit), in either order, not
+the first listed (no migration). Not done yet:
 
 - **No real trial or purchase tested end to end.** That needs a Play-installed
   build (internal testing track) on a Pixel, and a license-tester purchase

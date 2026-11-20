@@ -48,7 +48,7 @@ export interface Purchase {
   orderId: string | null;
   linkedPurchaseToken: string | null;
   acknowledged: boolean;
-  /** Every line item's product, for the productId check and the acknowledgement. */
+  /** Every line item's product: acknowledgement fallbacks, tried after productId (see ackCandidates). */
   productIds: string[];
   /** The current item's deferredItemReplacement: a DEFERRED change to this product is scheduled. */
   deferredTo: string | null;
@@ -67,7 +67,29 @@ function itemEnd(item: PurchaseLineItem | undefined): number {
   return Number.isFinite(t) ? t : -Infinity;
 }
 
-export function normalizePurchase(raw: SubscriptionPurchaseV2): Purchase {
+/** 2: the item carries a billed plan (a recurringPrice, or renewal on); 1: some other autoRenewingPlan field; 0: an empty or no autoRenewingPlan. */
+function planWeight(item: PurchaseLineItem): number {
+  const plan = item.autoRenewingPlan;
+  if (plan?.recurringPrice || plan?.autoRenewEnabled === true) return 2;
+  return plan && Object.values(plan).some((v) => v !== undefined && v !== null) ? 1 : 0;
+}
+
+/** Between two items that end in the same period: > 0 if `a` is more likely the plan billed now, 0 if nothing tells them apart. */
+function compareTied(a: PurchaseLineItem, b: PurchaseLineItem): number {
+  const weight = planWeight(a) - planWeight(b);
+  if (weight) return weight;
+  // An item that replaced one of an older purchase is the newer plan.
+  const replaced = Number(Boolean(a.itemReplacement)) - Number(Boolean(b.itemReplacement));
+  if (replaced) return replaced;
+  return itemEnd(a) > itemEnd(b) ? 1 : itemEnd(a) < itemEnd(b) ? -1 : 0;
+}
+
+/**
+ * The current line item: the plan that gives AI now. The only place an item is chosen: the
+ * Purchase's product (so the allowance and the first acknowledgement product), base plan, expiry,
+ * order, pending change and replacement mode all come from this one item.
+ */
+export function currentItem(items: PurchaseLineItem[]): PurchaseLineItem | undefined {
   // The current item is the one that runs longest. Transmit's subscriptions have one item, except
   // after a DEFERRED plan change (Plus -> Transmit): until the renewal, the old item is current (it has
   // the expiryTime and a deferredItemReplacement) and the new item has no expiryTime; from the
@@ -75,12 +97,23 @@ export function normalizePurchase(raw: SubscriptionPurchaseV2): Purchase {
   // Google marks the item that hasn't started three ways (no expiryTime, no latestSuccessfulOrderId,
   // named by the other item's deferredItemReplacement); skip it on any of them, so the old plan's
   // allowance can't drop early.
-  const items = raw.lineItems ?? [];
   const targets = new Set(items.map((it) => it.deferredItemReplacement?.productId).filter(Boolean));
   const started = items.filter((it) => !targets.has(it.productId) && it.latestSuccessfulOrderId);
   const pool = started.length ? started : items;
-  let item = pool[0];
-  for (const it of pool) if (itemEnd(it) > itemEnd(item)) item = it;
+  // After the renewal Google can also list both items with the same expiryTime and order: Transmit,
+  // with the auto-renewing plan and its price, and the leftover Plus item, with an empty one. Among
+  // items ending in the same period, prefer the billed plan, then the item that replaced another, then
+  // the later end, and only then the first listed (crediting Plus's $9.00 for a $5.99 order would be wrong).
+  const latest = Math.max(...pool.map(itemEnd));
+  const tied = pool.filter((it) => itemEnd(it) >= latest - SAME_PERIOD_SLACK_MS);
+  let item = tied[0];
+  for (const it of tied) if (compareTied(it, item!) > 0) item = it;
+  return item;
+}
+
+export function normalizePurchase(raw: SubscriptionPurchaseV2): Purchase {
+  const items = raw.lineItems ?? [];
+  const item = currentItem(items);
   const expiry = itemEnd(item);
   const googleState = raw.subscriptionState ?? "SUBSCRIPTION_STATE_UNSPECIFIED";
   const deferredTo = item?.deferredItemReplacement?.productId || null;
