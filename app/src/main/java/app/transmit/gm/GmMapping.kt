@@ -47,6 +47,13 @@ object GmMapping {
      */
     fun readUpTo(conv: Conversation, latestMs: Long?): Long = maxOf(conv.lastMessageTimestamp / 1000, latestMs ?: Long.MIN_VALUE)
 
+    /**
+     * Whether [conv]'s read state covers a received message at [timestampMs] that is new to the cache: the
+     * conversation is read, and the message is no newer than its latest one (at [latestMs], when known).
+     */
+    fun readByConversation(conv: Conversation, timestampMs: Long, latestMs: Long?) =
+        !conv.unread && timestampMs <= readUpTo(conv, latestMs)
+
     fun messageEntity(msg: GmMessage, read: Boolean) = GmMessageEntity(
         messageId = msg.messageID,
         threadId = threadId(msg.conversationID),

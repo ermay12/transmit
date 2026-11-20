@@ -58,7 +58,7 @@ class GmBridgeReadSyncTest {
             .build(),
     )
 
-    private fun received(id: String, ms: Long, text: String = "Message $id") = GmEvent.MessageUpdate(
+    private fun received(id: String, ms: Long, text: String = "Message $id", isOld: Boolean = false) = GmEvent.MessageUpdate(
         GmMessage.newBuilder()
             .setMessageID(id)
             .setConversationID(CONV)
@@ -67,7 +67,7 @@ class GmBridgeReadSyncTest {
             .setMessageStatus(MessageStatus.newBuilder().setStatus(MessageStatusType.INCOMING_COMPLETE))
             .addMessageInfo(MessageInfo.newBuilder().setMessageContent(MessageContent.newBuilder().setContent(text)))
             .build(),
-        isOld = false,
+        isOld = isOld,
     )
 
     /** What the conversation's notification would show: its unread received messages, oldest first. */
@@ -143,6 +143,44 @@ class GmBridgeReadSyncTest {
 
         assertEquals(listOf("m1", "m2"), stacked())
         assertEquals(emptyList<Long>(), readElsewhere)
+    }
+
+    @Test
+    fun aMessageReplayedAfterTheReadIsStillUnread() = runTest {
+        val bridge = bridge()
+        bridge.handle(received("m0", 1_000))
+        bridge.handle(conversation(unread = false, lastMs = 1_000, latestId = "m0"))
+        // Ana texted while the connection was down; the phone replays it on reconnecting, before the conversation.
+        bridge.handle(received("m1", 2_000, isOld = true))
+
+        assertEquals(listOf("m1"), stacked())
+        // A replay doesn't alert: it joins the next notification.
+        assertEquals(listOf("gm0"), incoming)
+    }
+
+    @Test
+    fun aReplayedMessageTheReadCoversIsRead() = runTest {
+        val bridge = bridge()
+        bridge.handle(conversation(unread = false, lastMs = 2_000, latestId = "m1"))
+        bridge.handle(received("m0", 1_000, isOld = true))
+        bridge.handle(received("m1", 2_000, isOld = true))
+        assertEquals(emptyList<String>(), stacked())
+    }
+
+    @Test
+    fun aReplayedMessageInAnUnreadConversationIsUnread() = runTest {
+        val bridge = bridge()
+        bridge.handle(conversation(unread = true, lastMs = 2_000, latestId = "m1"))
+        bridge.handle(received("m1", 2_000, isOld = true))
+        assertEquals(listOf("m1"), stacked())
+        assertEquals(emptyList<String>(), incoming)
+    }
+
+    @Test
+    fun aReplayedMessageWithNoConversationKnownIsRead() = runTest {
+        val bridge = bridge()
+        bridge.handle(received("m1", 2_000, isOld = true))
+        assertEquals(emptyList<String>(), stacked())
     }
 
     private companion object {
