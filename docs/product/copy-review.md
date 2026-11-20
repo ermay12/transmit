@@ -383,3 +383,22 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | AI errors (toasts, chat notices, explanation sheet) | `ai_in_use_elsewhere` | Your subscription is in use on another device. |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_budget_reached` | Monthly AI budget reached (%1$s of %2$s). |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_chat_budget_reached` | This chat's AI budget is used up (%1$s of %2$s). |
+
+## beta8: search in a chat
+
+New in beta8 (docs/product/chat-extras.md, section 1); needs review. The chat's Info icon becomes a ⋮ menu. Its "Chat settings" was the Info icon's spoken label, now shown as a menu item. The other strings are new.
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Chat top bar: the ⋮ button (accessibility) | `chat_more_options` | More options |
+| Chat top bar: ⋮ menu | `chat_search` | Search |
+| Chat top bar: ⋮ menu | `chat_settings` | Chat settings |
+| Chat search bar: the field, empty | `search_hint` | Search this chat |
+| Chat search bar: the back arrow (accessibility) | `search_close` | Close search |
+| Chat search bar: the ✕ in the field (accessibility) | `search_clear` | Clear |
+| Chat search bar: which match, of how many | `search_count` | %1$d of %2$d (shown as "3 of 12") |
+| Chat search bar: the up arrow (accessibility) | `search_older` | Older match |
+| Chat search bar: the down arrow (accessibility) | `search_newer` | Newer match |
+| Chat search bar: under the field, nothing matches | `search_no_matches` | No matches |
+| Chat search bar: under the field, past the oldest match, while older messages load from the phone | `search_looking_back` | Looking further back… |
+| Chat search bar: under the field, nothing older matched | `search_no_more` | No more matches |

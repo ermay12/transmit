@@ -283,4 +283,22 @@
     <string name="notify_plan_channel_description">When your free week or subscription is ending or has ended</string>
     <string name="notify_trial_ends_tomorrow">Your free week ends tomorrow</string>
     <string name="notify_in_use_elsewhere_body">Open Transmit to use it on this phone.</string>
+
+    <!-- A chat's top bar: the ⋮ menu, and searching the chat. -->
+    <string name="chat_more_options">More options</string>
+    <string name="chat_search">Search</string>
+    <string name="chat_settings">Chat settings</string>
+    <string name="search_hint">Search this chat</string>
+    <!-- The back arrow that closes the search bar (for accessibility). -->
+    <string name="search_close">Close search</string>
+    <string name="search_clear">Clear</string>
+    <!-- Which match is shown, of how many: "3 of 12". -->
+    <string name="search_count">%1$d of %2$d</string>
+    <!-- The up and down arrows (for accessibility). -->
+    <string name="search_older">Older match</string>
+    <string name="search_newer">Newer match</string>
+    <string name="search_no_matches">No matches</string>
+    <!-- Past the oldest match, older messages are being fetched from the phone. -->
+    <string name="search_looking_back">Looking further back…</string>
+    <string name="search_no_more">No more matches</string>
 </resources>
