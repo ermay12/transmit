@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
 class AiService(
     private val settings: SettingsRepository,
     private val secrets: SecretStore,
+    /** Answers calls made with a managed key in place of OpenRouter; null for OpenRouter (`AccessServices.managedAi`). */
+    private val managedOverride: (key: String) -> AiClient? = { null },
 ) {
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -56,7 +58,7 @@ class AiService(
 
     /** OpenRouter with Transmit's managed key, for trial and subscription users. */
     fun managedClient(key: String): AiClient =
-        clients.getOrPut("MANAGED:${key.hashCode()}") { OpenAiCompatClient(ProviderType.OPENROUTER, key, OPENROUTER_URL, http) }
+        clients.getOrPut("MANAGED:${key.hashCode()}") { managedOverride(key) ?: OpenAiCompatClient(ProviderType.OPENROUTER, key, OPENROUTER_URL, http) }
 
     /** Validates a key by listing models; returns how many usable models it can see. */
     suspend fun testKey(provider: ProviderType, key: String): Int {

@@ -106,7 +106,7 @@ class AppContainer(val context: Context) {
     val planRefresh: PlanRefresher = PlanRefresher.forPlan(scope, purchases, access)
     /** Play Integrity for the trial; warmed when a screen that can start it opens. */
     val trialCheck = accessServices.attestation
-    val ai = AiService(settings, secrets)
+    val ai = AiService(settings, secrets, accessServices.managedAi)
     val policy = ChatPolicy(dao, messaging, contacts)
     val budget = BudgetManager(dao, policy)
     val tutor = Tutor(ai, settings, budget, dao, access)

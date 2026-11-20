@@ -55,6 +55,11 @@ import kotlinx.coroutines.launch
 object AccessBuild {
     private var fake: FakeAccessBackend? = null
 
+    /**
+     * The fake's dummy key never reaches OpenRouter, which refuses it and so would end the trial: its AI calls and its
+     * allowance checks are answered here ([FakeManagedAi]), with either backend, since a fake mode can be set over
+     * the live Worker too.
+     */
     fun services(context: Context, vault: KeyVault, scope: CoroutineScope): AccessServices {
         val f = FakeAccessBackend(context, vault).also { fake = it }
         if (f.backendChoice == DebugBackend.WORKER) {
@@ -62,11 +67,13 @@ object AccessBuild {
             val store = PlayBilling(context, available = true)
             val integrity = PlayIntegrity(context, scope)
             val backend = PlayAccessBackend(WorkerApi(), store, integrity, { PlayAccessBackend.androidId(context) }, checkInstall = false)
-            return AccessServices(backend, OpenRouterAllowance(), store, integrity)
+            val openRouter = OpenRouterAllowance()
+            val allowance = AllowanceSource { key -> if (key == FakeAccessBackend.DUMMY_KEY) f.read(key) else openRouter.read(key) }
+            return AccessServices(backend, allowance, store, integrity, FakeManagedAi::forKey)
         }
         return AccessServices(f, f, FakeStorefront(f), object : TrialAttestation {
             override suspend fun token(requestHash: String) = "debug-token"
-        })
+        }, FakeManagedAi::forKey)
     }
 
     fun fake(context: Context): FakeAccessBackend = fake ?: FakeAccessBackend(context, context.app.container.secrets)
@@ -208,7 +215,7 @@ enum class FakeTrialOutcome(val label: String, val code: AccessErrorCode?) {
 
 /**
  * Pretends to be the Worker and Play. The managed key is the user's own OpenRouter key when one is saved, so managed
- * calls can run for real on a debug build; otherwise a dummy that OpenRouter rejects.
+ * calls can run for real on a debug build; otherwise [DUMMY_KEY], whose calls [FakeManagedAi] answers.
  */
 class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessBackend, AllowanceSource {
     private val prefs = context.getSharedPreferences("debug_access", Context.MODE_PRIVATE)
@@ -261,7 +268,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         get() = prefs.getString("purchased", null)?.let { v -> Tier.entries.firstOrNull { it.name == v } }
         set(v) = prefs.edit().putString("purchased", v?.name).apply()
 
-    private fun key() = vault.get(ProviderType.OPENROUTER.secretName) ?: "sk-or-v1-debug-fake"
+    private fun key() = vault.get(ProviderType.OPENROUTER.secretName) ?: DUMMY_KEY
 
     private fun remaining(allowance: Double) = allowance * (1 - allowancePercent / 100.0)
 
@@ -401,12 +408,14 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         access.afterManagedCall()
     }
 
-    private companion object {
-        const val HOUR = 3_600_000L
-        const val DAY = 24 * HOUR
-        const val TRIAL_USD = 0.5
-        const val STANDARD_USD = 4.5
-        const val PLUS_USD = 9.0
+    companion object {
+        /** The managed key without a saved OpenRouter key: OpenRouter would refuse it, so it never goes there. */
+        const val DUMMY_KEY = "sk-or-v1-debug-fake"
+        private const val HOUR = 3_600_000L
+        private const val DAY = 24 * HOUR
+        private const val TRIAL_USD = 0.5
+        private const val STANDARD_USD = 4.5
+        private const val PLUS_USD = 9.0
     }
 }
 

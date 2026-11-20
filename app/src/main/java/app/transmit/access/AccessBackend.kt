@@ -1,5 +1,7 @@
 package app.transmit.access
 
+import app.transmit.ai.AiClient
+
 /**
  * Transmit's backend and Google Play, as the app needs them: everything that hands out, renews or takes back a
  * managed key. The release implementation talks to the Worker in `backend/API.md` (Play Integrity for the trial,
@@ -217,4 +219,6 @@ data class AccessServices(
     val allowance: AllowanceSource,
     val store: Storefront,
     val attestation: TrialAttestation,
+    /** What answers AI calls made with a managed key in place of OpenRouter: null for OpenRouter (all but debug builds). */
+    val managedAi: (key: String) -> AiClient? = { null },
 )
