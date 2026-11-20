@@ -8,7 +8,7 @@ Every section on the App content page must be done before a closed or production
 
 [Google's steps](https://support.google.com/googleplay/android-developer/answer/9859655): enter an email for IARC, pick a category, answer the questionnaire, then submit. The questions are shown in the console and their wording changes from time to time. Answer what you see, using the facts below.
 
-- **Email:** [CONTACT EMAIL]. IARC sends the certificate there.
+- **Email:** ermay12@gmail.com. IARC sends the certificate there.
 - **Category:** "All other app types" / "Utility, Productivity, Communication, or Other", whichever your console shows. Not Game, not Social networking: Transmit has no public feed or profiles, only the user's own SMS and RCS chats.
 
 | Topic | Answer | Why |
@@ -31,7 +31,7 @@ Expected result: the lowest age ratings (ESRB Everyone, PEGI 3 or similar), with
 | Could the store listing unintentionally appeal to children? | **No** | Plain screenshots, no cartoon characters or games. |
 | Store presence | "Not designed for children" (implied) | |
 
-**Your call:** language learners include teenagers. 13+ is possible, since Google Messages itself is for 13+, and the privacy policy already says "not directed at children under 13". But the teen age bands draw extra scrutiny for apps with AI and paid features. I recommend 18+ for 1.0. You can widen it later.
+**Decided: 18+** (`docs/product/release-1.0.md`, Play compliance). The reasoning: language learners include teenagers. 13+ is possible, since Google Messages itself is for 13+, and the privacy policy already says "not directed at children under 13". But the teen age bands draw extra scrutiny for apps with AI and paid features. I recommend 18+ for 1.0. You can widen it later.
 
 ## 3. Ads
 
@@ -70,6 +70,8 @@ The free week may also fail for a reviewer:
    - **A video** of the whole flow (unlisted YouTube): pairing, translated chats, Check my translation, Explain, and the Plans screen. You need a video for the foreground service declaration anyway (section 7).
 
 ### Draft "Instructions" text (English, as required)
+
+Superseded by the demo-mode text in [App access instructions for reviewers (final, from beta4)](#app-access-instructions-for-reviewers-final-from-beta4), which needs no pairing, key or video. The `[REVIEW KEY]` and `[VIDEO URL]` placeholders below only matter if you fall back to this draft.
 
 > Transmit is a client for Google Messages, like Messages for Web. It has no login of its own.
 >
@@ -157,7 +159,7 @@ These aren't form answers, but reviewers check them, and the forms above assume 
 4. **Optional: a way to report AI output.**
    - The [AI-Generated Content policy](https://support.google.com/googleplay/android-developer/answer/13985936) requires in-app reporting of offensive AI output for apps that "generate content using AI".
    - Its [scope page](https://support.google.com/googleplay/android-developer/answer/14094294) excludes "Productivity apps that use AI to improve an existing feature, such as email apps with AI-suggested email drafts". Transmit's translations and tutor arguably fit that, so this is optional.
-   - Cheap insurance: a "Report translation" action in the long-press sheet (`ui/chat/Sheets.kt:163-167`, next to Explain and Redo). It could open an email to [CONTACT EMAIL] with the AI output filled in.
+   - Cheap insurance: a "Report translation" action in the long-press sheet (`ui/chat/Sheets.kt:163-167`, next to Explain and Redo). It could open an email to ermay12@gmail.com with the AI output filled in.
 
 ## 9. Risks to know about before submitting
 

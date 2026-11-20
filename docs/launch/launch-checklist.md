@@ -1,6 +1,6 @@
 # Launch checklist: from now to production
 
-Ordered steps to get Transmit 1.0 onto Google Play production. As of 2026-11-18:
+Ordered steps to get Transmit 1.0 onto Google Play production. Step 1's decisions, the privacy policy's details (step 3) and the OpenRouter settings (step 4) were updated on 2026-11-19. The rest is as of 2026-11-18:
 
 - Branch `play-launch` is 48 commits ahead of `main`, at versionName `1.0.0-beta3` and versionCode 72.
 - The Worker is deployed. Both subscriptions are active in Play Console, and a first bundle has been uploaded.
@@ -12,17 +12,24 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
 
 ## 1. Decisions only you can make (you)
 
-- [ ] **Legal name, contact email, postal address and country** for the privacy policy, and the store listing's public email. Also decide whether the email is a dedicated address (recommended).
-- [ ] **Developer name** on the listing. It mustn't suggest a tie to Google ([Impersonation policy](https://support.google.com/googleplay/android-developer/answer/9888374)).
-- [ ] **Trader status** ([Trader status declaration](https://support.google.com/googleplay/android-developer/answer/17594752)). Selling subscriptions for profit points to "trader".
-  - Existing accounts must declare by **February 1, 2027**, at Manage account → Account details → About you. Declaring falsely can get the account removed.
-  - Traders on personal accounts get their **phone number and address shown publicly**, everywhere from **March 1, 2027**. Traders also give a **terms of service link for each app**, so Transmit would need a terms page.
-  - Separately, once a personal account sells, Google Play already shows its address publicly. Both apply account-wide, so your other apps' listings show them too.
-  - Options: an LLC, or a business or virtual-office address (no PO boxes). Your call.
-- [ ] **Target audience:** 18+ (recommended) or 13+ (`content-rating-and-declarations.md` §2).
+- [x] **Legal name, contact email, postal address and country** for the privacy policy, and the store listing's public email. Decided 2026-11-19, and approved by the developer for publishing on the privacy page and the listing:
+  - Eric Maynard, 7320 Austin St APT 5H, Forest Hills, NY 11375, United States.
+  - Public email: ermay12@gmail.com (the existing address, not a dedicated one). It also takes data deletion requests.
+  - Filled into `privacy-policy.md`, `store-listing.md` and `content-rating-and-declarations.md` (step 3).
+- [x] **Developer name** on the listing: Transmit goes on the existing Play developer account, shared with LinguaRead, under its current developer name (2026-11-19). It mustn't suggest a tie to Google ([Impersonation policy](https://support.google.com/googleplay/android-developer/answer/9888374)).
+- [x] **Trader status** ([Trader status declaration](https://support.google.com/googleplay/android-developer/answer/17594752)). Decided 2026-11-19: the account declares as a **trader**, with the address above shown publicly. No LLC.
+  - Existing accounts must declare by **February 1, 2027**, at Manage account → Account details → About you. Declaring falsely can get the account removed. Submitting it is step 4.
+  - Traders on personal accounts get their **phone number and address shown publicly**, everywhere from **March 1, 2027**. Both apply account-wide, so LinguaRead's listing shows them too.
+  - Separately, once a personal account sells, Google Play already shows its address publicly.
+- [ ] **Still open from the trader decision:**
+  - the public **phone number** (traders must give one, and Play publishes it);
+  - a **terms of service page** for Transmit, since traders give a terms link for each app.
+- [x] **Target audience:** 18+ (`docs/product/release-1.0.md`, Play compliance; `content-rating-and-declarations.md` §2).
 - [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
 - [ ] **Deletion turnaround:** the draft promises 30 days.
-- [ ] **App name:** "Transmit: Learn by Texting" is recommended. Check the name against existing "Transmit" apps and marks first (`store-listing.md`).
+- [x] **App name:** the Play title is **"Transmit: Learn by Texting"** (2026-11-19). The in-app name stays "Transmit" (`app_name`). Still worth doing before production: the trademark and Play search for existing "Transmit" apps and marks (`store-listing.md`), which isn't recorded as done.
+- [x] **Short description:** "Text friends in a language you're learning. Two-way translation and an AI tutor." (80 characters, 2026-11-19; `store-listing.md`).
+- [x] **App copy:** everything in `docs/product/copy-review.md` was approved by the developer on 2026-11-19.
 - [x] **Sender names in AI context:** replaced with neutral labels (`docs/product/release-1.0.md`). `data-safety.md` and the privacy policy assume that app change (step 2.5).
 
 ## 2. App and Worker changes before the closed test (code)
@@ -58,13 +65,13 @@ Play needs "an active, publicly accessible and non-geofenced URL (no PDFs)" ([Us
 
 Either way:
 
-- [ ] Fill the placeholders and the effective date in `privacy-policy.md`, redeploy the Worker, and open the URL in a private window to check it.
+- [x] Fill the placeholders and the effective date in `privacy-policy.md`, redeploy the Worker, and check the URL. Done 2026-11-19: effective date November 19, 2026, deployed as version `e6b36645`. The live page shows the name, address and email, with no placeholders left.
 - [ ] Put the URL in Play Console (App content → Privacy policy) and in the app (step 2.1).
 
 ## 4. Account and service checks (you)
 
 - [ ] **OpenRouter** (account and the Transmit Customers workspace):
-  - Input & Output Logging is **off**, and "OpenRouter use of inputs/outputs" is **off**. The privacy policy says so.
+  - [x] Input & Output Logging is **off**, and "OpenRouter use of inputs/outputs" is **off**. Confirmed by the developer on 2026-11-19. The privacy policy says so (section 3).
   - The workspace guardrail still enforces ZDR on every model group, with safety retention off and only Gemma 4 31B allowed.
   - Decide on the $100/day workspace budget.
   - Recommended: swap the account-wide management key for a workspace-scoped one (`backend/README.md`, Secrets).

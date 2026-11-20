@@ -48,8 +48,9 @@ describe("pages", () => {
     expect(page).toContain("<title>Transmit privacy policy</title>");
     expect(page).toContain('<h2 id="7-your-choices-and-rights">7. Your choices and rights</h2>');
     expect(page).toContain('<div class="table"><table>');
-    // Placeholders stay visible until the developer fills them in; drafting notes don't show.
-    expect(page).toContain("<mark>[LEGAL NAME]</mark>");
+    // The developer's details are filled in (a placeholder would show highlighted); drafting notes don't show.
+    expect(page).not.toContain("<mark>");
+    expect(page).toContain('<a href="mailto:ermay12@gmail.com">ermay12@gmail.com</a>');
     expect(page).not.toContain("<!--");
     expect(page).not.toMatch(/<script|<link|src=/);
   });

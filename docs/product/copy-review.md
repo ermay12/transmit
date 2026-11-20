@@ -1,3 +1,5 @@
+**Approved by the developer on 2026-11-19: all copy in this file, as it stands at 1.0.0-beta6 (3e29e19).** Copy changed after that needs a new review.
+
 Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4), the 1.0.0-beta5 plan changes: no Keep Plus, one calm message for any Google Play error, and plans whose renewal is off (added on top of 5a55df4), and the 1.0.0-beta6 changes: Google Play's refusal of a new subscription says nothing was charged, and a chat's strip for a used-up month carries the next step (added on top of 59bc079).
 
 The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.workers.dev/privacy. Where it follows a disclosure, the two read as one paragraph, the link last. The demo's sample messages are in `app/src/main/java/app/transmit/demo/DemoChats.kt`, not in strings.xml, since they're content rather than copy.

@@ -14,21 +14,34 @@ Draft text for Play Console → Grow users → Store presence → **Main store l
   - Google Messages is named in the description only as what Transmit works with, next to a plain "not made, endorsed or supported by Google";
   - no Google or Google Messages logos, icons or colours anywhere, including screenshots.
 - **[Subscriptions policy](https://support.google.com/googleplay/android-developer/answer/9900533):** disclose "the frequency of your billing cycle, the automatic renewal terms" and how to cancel. The description says plans renew monthly until cancelled, and that the free week doesn't convert to a paid plan.
-- Prices are left out of the text: they differ by country and Play shows them. The plan allowance estimates ("around 3,000 translations a month") are left out too, because product hasn't signed off on them yet.
+- Prices are left out of the text: they differ by country and Play shows them. The plan allowance estimates ("around 3,000 translations a month") were left out too, while they were unapproved. The developer approved them with the rest of the app copy on 2026-11-19 (`docs/product/copy-review.md`), so they can be added if you want them here.
 
 ## App name (30 characters max)
 
 | Option | Characters | Notes |
 | --- | --- | --- |
-| **Transmit: Learn by Texting** | 26 | Recommended. Says the benefit, with one keyword-like phrase. |
+| **Transmit: Learn by Texting** | 26 | **Chosen.** Says the benefit, with one keyword-like phrase. |
 | Transmit: Texting for Learners | 30 | At the limit. |
 | Transmit | 8 | Safest, but tells a searcher nothing. |
 
-Check that the in-app name stays "Transmit" (`app_name`). A different store name is fine.
+**Decision (developer, 2026-11-19):** the Play title is **Transmit: Learn by Texting**. The in-app name stays "Transmit" (`app_name`); a different store name is fine.
 
-A naming risk to check yourself: Panic Inc. sells a well-known file-transfer app called Transmit. Their old US registrations for TRANSMIT appear cancelled in third-party trademark databases, but that isn't legal advice, and common-law rights can remain. Search USPTO TSDR (and EUIPO if you sell in the EU), and look for apps called "Transmit" on Play, before you commit to the name.
+A naming risk to check yourself: Panic Inc. sells a well-known file-transfer app called Transmit. Their old US registrations for TRANSMIT appear cancelled in third-party trademark databases, but that isn't legal advice, and common-law rights can remain. The title is chosen, but this search isn't recorded as done: search USPTO TSDR (and EUIPO if you sell in the EU), and look for apps called "Transmit" on Play, before the production release.
 
 ## Short description (80 characters max)
+
+**Chosen (developer, 2026-11-19):**
+
+```text
+Text friends in a language you're learning. Two-way translation and an AI tutor.
+```
+
+- 80 characters (checked by script), exactly at the limit, so paste it as is.
+- It's benefit-led, and has no brand names, promotions or "free". It doesn't name Google Messages, so it can't be read as implying a Google relationship.
+- "Two-way" is accurate: incoming texts are translated into the practice language, and replies into the language the user speaks.
+- It came from the developer's longer idea (109 characters), cut to fit. "Secretly" was dropped: it risks a reviewer reading the app as deceptive.
+
+Options considered before the decision:
 
 | # | Text | Characters |
 | --- | --- | --- |
@@ -36,13 +49,11 @@ A naming risk to check yourself: Panic Inc. sells a well-known file-transfer app
 | 2 | Practice a language in your real chats: translations, corrections, explanations. | 80 |
 | 3 | Your texts, translated into the language you're practicing. Reply with help. | 76 |
 
-- I recommend **option 1**: it's clear and benefit-led, and avoids brand names and promotions.
-- A fourth option, "Learn a language by texting. AI translation and a tutor. Try a free week." (73 characters), works too. But promotional wording in metadata draws reviewer attention, so keep "free week" for the full description and the screenshots.
-- None of the options names Google Messages, so the short description can't be read as implying a Google relationship.
+- "Learn a language by texting. AI translation and a tutor. Try a free week." (73 characters) was also considered. Promotional wording in metadata draws reviewer attention, so "free week" stays in the full description and the screenshots.
 
 ## Full description (4,000 characters max)
 
-This draft is 3,367 characters (checked by script; the bullets are "•"). Paste it as plain text.
+This draft is 3,464 characters (checked by script on 2026-11-19; the bullets are "•"). Paste it as plain text.
 
 Before pasting:
 
@@ -55,7 +66,7 @@ Transmit turns your everyday texts into language practice.
 
 Messages from friends arrive translated into the language you're practicing, so you read them in that language first. Reply in your practice language and Transmit prepares the version your friend receives in your own language. Not sure how to say something? Write it in your own language and Transmit shows you how to say it.
 
-Transmit works with Google Messages on your phone, the same way Messages for Web does. Your texts keep going through Google Messages, and nothing changes for the people you text.
+Transmit works with Google Messages on your phone, the same way Messages for Web does. Your texts keep going through Google Messages, and nothing changes for the people you text. They don't need Transmit: your messages reach them as ordinary texts, in the language you speak.
 
 What you can do
 • Read every chat in your practice language. New messages are translated as they arrive, and you can tap any message to see the original.
@@ -91,6 +102,7 @@ Good to know
 
 Fact checks behind the claims:
 
+- "They don't need Transmit: your messages reach them as ordinary texts, in the language you speak": `ChatViewModel.send` (`ui/chat/ChatViewModel.kt:948`) sends only the native-language box through Google Messages, with nothing added. The practice-language version stays on the phone (`storeSelf`). Onboarding says the same (`onboarding_practice_body`, `pair_intro`).
 - "translated as they arrive", "tap any message to see the original", Check my translation, Explain, pinyin and romaji, verification codes, smart links, SMS, MMS and RCS: `README.md` Features.
 - "never sent for translation" for codes: `ai/TranslationManager.kt:78`.
 - "Pick a language per chat": the per-chat settings in `ChatSettingsEntity`.
@@ -108,9 +120,13 @@ Fact checks behind the claims:
 
 ## Store settings: contact details
 
-- **Email (required, shown publicly):** [CONTACT EMAIL]. Use an address you're happy to publish, and one that can receive data deletion requests.
+Decided by the developer on 2026-11-19: Transmit is published from the existing Play developer account (a personal account, shared with LinguaRead), which will declare as a **trader**. No LLC. The developer approved publishing the name, address and email below.
+
+- **Developer name:** the existing account's developer name, the one LinguaRead is published under (unchanged). It mustn't suggest a tie to Google (Impersonation policy).
+- **Email (required, shown publicly):** ermay12@gmail.com. It's also the privacy policy's contact for data deletion requests.
+- **Address (shown publicly for traders):** Eric Maynard, 7320 Austin St APT 5H, Forest Hills, NY 11375, United States. It comes from the developer account, not from this listing, and shows on every app of the account, LinguaRead included.
 - **Website (optional):** the privacy policy page, or https://github.com/ermay12/transmit once it's public.
-- **Phone (optional):** leave it empty unless you declare trader status. Then Play publishes it anyway (see `launch-checklist.md`).
+- **Phone:** traders must give one, and Play publishes it (see `launch-checklist.md`). Not chosen yet.
 - **Privacy policy URL:** required. See `launch-checklist.md`, step 3.
 
 ## Graphics

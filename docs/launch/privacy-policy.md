@@ -2,8 +2,10 @@
 This file is the privacy policy page. The Worker serves it at https://transmit.ermay12.workers.dev/privacy:
 backend/scripts/build-pages.mjs renders it to HTML when the Worker is built, so editing this file and redeploying the
 Worker updates the page (backend/README.md, "Privacy policy page").
-Before publishing: fill every [BRACKETED] placeholder (the page shows them highlighted), set the effective date, and
-re-check the facts against the build you ship. Comments like this one don't show on the page.
+The developer's name, address and email, the country and the effective date were filled in on 2026-11-19, with the
+developer's approval to publish them. A new [BRACKETED] placeholder would show on the page, highlighted. When the policy
+changes, set a new effective date, and re-check the facts against the build you ship. Comments like this one don't
+show on the page.
 Facts were taken from the code on branch play-launch at 189aed3 (2026-11-18). The server parts (IP addresses, logs,
 retention) were re-checked on 2026-11-19 against the Worker after its privacy changes, and the AI context labels
 against the app change that replaces contact names with "Me", "Them" and "Person 1, 2, …". See
@@ -12,9 +14,9 @@ docs/launch/data-safety.md for the code references behind each statement.
 
 # Transmit privacy policy
 
-**Effective date:** [EFFECTIVE DATE]
+**Effective date:** November 19, 2026
 
-Transmit is an Android app for language learners. It shows your Google Messages chats with AI translation and a tutor. It's made by [LEGAL NAME], an individual developer ("I", "me"). This policy explains what Transmit does with your data, in plain language. If anything is unclear, write to me at [CONTACT EMAIL].
+Transmit is an Android app for language learners. It shows your Google Messages chats with AI translation and a tutor. It's made by Eric Maynard, an individual developer ("I", "me"). This policy explains what Transmit does with your data, in plain language. If anything is unclear, write to me at ermay12@gmail.com.
 
 ## The short version
 
@@ -102,6 +104,8 @@ OpenRouter facts checked 2026-11-19 against:
 - https://openrouter.ai/privacy (last updated August 31, 2026): collects IP addresses and log files; doesn't use
   inputs or outputs for model training.
 Re-check these pages before publishing and whenever OpenRouter announces a policy change.
+The account settings behind "I haven't turned on" were confirmed by the developer on 2026-11-19: prompt logging (Input &
+Output Logging) is off, and "OpenRouter use of inputs/outputs" is off.
 -->
 
 **With your own API key:** your phone sends the request straight to the provider you chose: Anthropic, OpenAI, Google (Gemini API), OpenRouter, or the OpenAI-compatible service at the address you entered. That provider handles it under your account with them, and under their terms and privacy policy, including whether they store it or train on it. I never see these requests. Your key is stored encrypted on your phone and sent only to that provider.
@@ -169,7 +173,7 @@ The server deletes this record, and the subscription's AI key, 90 days after the
 - **Choose your provider.** Use your own API key in **Settings → Advanced**.
 - **Contacts and notifications** are optional. You can turn either permission off in Android's settings.
 - **Delete data on your phone.** Unpair, clear Transmit's storage, or uninstall.
-- **Delete data on Transmit's server.** Subscription records are deleted automatically 90 days after the subscription ends or is refunded. To have yours deleted sooner, email [CONTACT EMAIL] with your Google Play order number (it starts with "GPA." and is in your Google Play receipt). I'll delete your subscription record and its AI key within 30 days. If the subscription is still active, the app will set it up again the next time it checks, so cancel it in Google Play first if you want it gone for good.
+- **Delete data on Transmit's server.** Subscription records are deleted automatically 90 days after the subscription ends or is refunded. To have yours deleted sooner, email ermay12@gmail.com with your Google Play order number (it starts with "GPA." and is in your Google Play receipt). I'll delete your subscription record and its AI key within 30 days. If the subscription is still active, the app will set it up again the next time it checks, so cancel it in Google Play first if you want it gone for good.
   - Free-week records can't be matched to you, because they only hold a keyed hash of an identifier on your phone. I keep them to prevent abuse of the free week.
 
 If you are in the European Economic Area, the United Kingdom or another region with similar laws, you can also ask to access or correct your data, object to how it's used, or complain to your local data protection authority. I handle the data above to provide the app you asked for (translation, the free week, your subscription), and for my legitimate interest in preventing abuse and keeping the service secure.
@@ -184,7 +188,7 @@ Every connection Transmit makes uses HTTPS. On your phone, secrets are encrypted
 
 ## 10. Where data is processed
 
-I'm based in [COUNTRY]. Cloudflare, OpenRouter and the model hosts it uses, and Google may process the data described here in the United States and in other countries.
+I'm based in the United States. Cloudflare, OpenRouter and the model hosts it uses, and Google may process the data described here in the United States and in other countries.
 
 ## 11. Open source
 
@@ -196,6 +200,8 @@ If this policy changes, I'll post the new version on this page with a new effect
 
 ## 13. Contact
 
-[LEGAL NAME]\
-[ADDRESS]\
-[CONTACT EMAIL]
+Eric Maynard\
+7320 Austin St APT 5H\
+Forest Hills, NY 11375\
+United States\
+ermay12@gmail.com
