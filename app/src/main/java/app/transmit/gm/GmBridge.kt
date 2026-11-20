@@ -2,8 +2,9 @@ package app.transmit.gm
 
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import app.transmit.data.ContactsRepository
-import app.transmit.data.SecretStore
+import app.transmit.data.KeyVault
 import app.transmit.data.db.GmConversationEntity
 import app.transmit.data.db.GmDao
 import app.transmit.data.db.GmMessageEntity
@@ -66,7 +67,7 @@ class NotConnectedException : GmException("Not connected to Google Messages")
  * cache (Room) of conversations and messages that the rest of the app reads.
  */
 class GmBridge(
-    private val secrets: SecretStore,
+    private val secrets: KeyVault,
     private val gmDao: GmDao,
     private val dao: TransmitDao,
     private val contacts: ContactsRepository,
@@ -297,7 +298,8 @@ class GmBridge(
 
     // ---- events ----------------------------------------------------------------------------------
 
-    private suspend fun handle(e: GmEvent) {
+    @VisibleForTesting
+    internal suspend fun handle(e: GmEvent) {
         when (e) {
             is GmEvent.Paired -> {
                 pairingJob?.cancel()
