@@ -134,8 +134,8 @@ Decided by the developer on 2026-11-19: Transmit is published from the existing 
 Made on 2026-11-20 and kept in [`store-assets/`](store-assets/README.md), which lists every file with its size and what to review.
 
 - **App icon:** [`store-assets/icon-512.png`](store-assets/icon-512.png), 512 × 512 32-bit PNG, rendered from the adaptive launcher icon (`ic_launcher_foreground` on `ic_bg`) as a full square; Play adds the mask and shadow. It must have no badges or "new" dots (the Metadata policy bans a "new message dot indicator when there are no new messages"). It mustn't look like the Google Messages icon (no blue speech bubble): the icon is two speech bubbles on blue, so this is on the review list in the README.
-- **Feature graphic:** [`store-assets/feature-graphic-1024x500.png`](store-assets/feature-graphic-1024x500.png), 1024 × 500 PNG without alpha: the icon, the name "Transmit", the line "Learn a language by texting", and chat bubbles in Spanish and English at the edges. The icon, name and line are in the middle, so a crop of the edges loses only the bubbles. No Google marks, no "free", no prices.
-- **Phone screenshots:** seven, 1080 × 1920 PNGs, in [`store-assets/screenshots/captioned/`](store-assets/screenshots/captioned/) (captions on the brand colour; upload these) and [`store-assets/screenshots/raw/`](store-assets/screenshots/raw/). They come from the reviewer demo's sample chats on the emulator, with made-up names and no numbers or photos.
+- **Feature graphic:** [`store-assets/feature-graphic-1024x500.png`](store-assets/feature-graphic-1024x500.png), 1024 × 500 PNG without alpha: the icon, the name "Transmit", the line "Practice any language while texting your friends" (the short description, since 2026-11-20), and chat bubbles in Spanish and English at the edges. The icon, name and line are in the middle, so a crop of the edges loses only the bubbles. No Google marks, no "free", no prices.
+- **Phone screenshots:** seven, 1080 × 1920 PNGs, in [`store-assets/screenshots/captioned/`](store-assets/screenshots/captioned/) (captions on the brand colour; upload these) and [`store-assets/screenshots/raw/`](store-assets/screenshots/raw/). They come from the reviewer demo's sample chats on the emulator, with made-up names and no numbers or photos. Since the 2026-11-20 retake, every translation, romanization, correction and explanation in them is real output of the managed model (`google/gemma-4-31b-it`, effort Auto), not text written for the shots.
 
 ## Screenshot captions
 
@@ -147,10 +147,10 @@ Made on 2026-11-20 and kept in [`store-assets/`](store-assets/README.md), which 
 | 4 | The Check my translation sheet with a diff | Check my translation: corrections and a natural version | 55 |
 | 5 | The Explain sheet | Explain: grammar, idioms and slang, phrase by phrase | 52 |
 | 6 | A Chinese or Japanese chat with pinyin or romaji under the characters | Pinyin and romaji, the way you like to read | 43 |
-| 7 | Onboarding step 2 ("Connect your messages") | Works with Google Messages on your phone | 40 |
+| 7 | The inbox (Home), with made-up contacts and a few chats | Practice in the chats you already have | 38 |
 | 8 | Onboarding step 3, or the Plans screen | Start with a free week. No card needed. | 39 |
 
-- Caption 7 names Google Messages factually. Keep the screenshot free of Google's logo and the Messages icon.
+- Caption 7 was "Works with Google Messages on your phone" (40), over onboarding step 2, until 2026-11-20. That screen was half empty, so product swapped it for the inbox and a caption that names no brand. Keep every screenshot free of Google's logo and the Messages icon.
 - Caption 8 is promotional. Play's price and promotion ban names the title, icon and developer name, not screenshots, but drop this one if a reviewer objects. **It was dropped from the 2026-11-20 set**, which uses captions 1 to 7.
-- Files: caption *n* is `store-assets/screenshots/captioned/0n-*.png`. Caption 6 has a dark version (`06-romaji-dark.png`, the one in the set) and a light one (`06-romaji-light.png`).
+- Files: caption *n* is `store-assets/screenshots/captioned/0n-*.png`. Caption 6 is the light theme only (`06-romaji.png`); the dark version was dropped on 2026-11-20.
 - Screenshots of the Plans screen will show the prices of the account they were taken on.
