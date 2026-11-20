@@ -64,16 +64,13 @@ class TranslationManager(
     /** Problems hit by automatic translation, surfaced as unobtrusive banners. */
     val events: SharedFlow<Event> = _events
 
-    fun isTranslatable(m: Message): Boolean {
-        if (m.body.isBlank() || Reactions.parse(m.body) != null) return false
-        return m.body.replace(URL, " ").any { it.isLetter() }
-    }
+    fun isTranslatable(m: Message): Boolean = translatable(m)
 
     /**
      * Automatic translation skips verification codes: they're needed at once rather than after a round trip,
      * and they shouldn't reach the AI provider. A tap still translates one.
      */
-    fun isAutoTranslatable(m: Message): Boolean = isTranslatable(m) && Otp.find(m.body) == null
+    fun isAutoTranslatable(m: Message): Boolean = autoTranslatable(m)
 
     /**
      * Whether a translation of [m] is still on its way, so a notification may wait for it. False once it failed or
@@ -83,11 +80,9 @@ class TranslationManager(
         isAutoTranslatable(m) && m.key !in _failed.value && access.access.value?.canUseAi == true
 
     /** The messages automatic translation covers: the newest few translatable ones. */
-    fun autoCandidates(messages: List<Message>, s: AppSettings): List<Message> = messages
-        .filter { isAutoTranslatable(it) && (!it.outgoing || s.translateOutgoing) }
-        .sortedByDescending { it.date }
-        .take(s.backfillCount)
+    fun autoCandidates(messages: List<Message>, s: AppSettings): List<Message> = newestForAuto(messages, s)
 
+    /** Opening a chat, and switching its auto-translate on, both translate its newest messages this way. */
     suspend fun autoTranslate(threadId: Long, messages: List<Message>) {
         val s = aiSettings()
         val eff = policy.effective(threadId, s)
@@ -229,13 +224,11 @@ class TranslationManager(
         refresh: Boolean = false,
     ) {
         if (candidates.isEmpty()) return
-        if (auto && !aiAvailable()) {
-            // Shown in the original at once, rather than waiting for a translation that won't come.
-            _failed.update { it + candidates.map { m -> m.key } }
-            return
-        }
-        val existing = if (refresh) emptySet() else dao.translations(candidates.map { it.key }, lang.code).map { it.msgKey }.toSet()
-        val todo = candidates.filter { it.key !in existing && inFlight.add("${it.key}|${lang.code}") }
+        val ai = !auto || aiAvailable()
+        val existing = if (refresh || !ai) emptySet() else dao.translations(candidates.map { it.key }, lang.code).map { it.msgKey }.toSet()
+        val todo = toRequest(candidates, lang.code, ai, existing, inFlight)
+        // Without AI, shown in the original at once, rather than waiting for a translation that won't come.
+        if (!ai) _failed.update { it + candidates.map { m -> m.key } }
         if (todo.isEmpty()) return
         _pending.update { it + todo.map { m -> m.key } }
         val saved = mutableSetOf<String>()
@@ -295,7 +288,31 @@ class TranslationManager(
     private suspend fun recipients(threadId: Long, messages: List<Message>): List<String> =
         messages.firstOrNull { it.recipients.isNotEmpty() }?.recipients ?: repo.recipientsForThread(threadId)
 
-    private companion object {
-        val URL = Regex("https?://\\S+|www\\.\\S+")
+    internal companion object {
+        private val URL = Regex("https?://\\S+|www\\.\\S+")
+
+        fun translatable(m: Message): Boolean {
+            if (m.body.isBlank() || Reactions.parse(m.body) != null) return false
+            return m.body.replace(URL, " ").any { it.isLetter() }
+        }
+
+        fun autoTranslatable(m: Message): Boolean = translatable(m) && Otp.find(m.body) == null
+
+        /**
+         * The newest [AppSettings.backfillCount] auto-translatable messages ("Translate on open", fixed for managed
+         * AI), sent ones only with [AppSettings.translateOutgoing].
+         */
+        fun newestForAuto(messages: List<Message>, s: AppSettings): List<Message> = messages
+            .filter { autoTranslatable(it) && (!it.outgoing || s.translateOutgoing) }
+            .sortedByDescending { it.date }
+            .take(s.backfillCount)
+
+        /**
+         * Which of [candidates] go to the AI: none without [ai]. Otherwise each with no [lang] translation yet
+         * ([translated]) and none on its way: picked ones join [inFlight] in the same step, so work that overlaps (a
+         * chat opening as its auto-translate is switched on) never asks twice.
+         */
+        fun toRequest(candidates: List<Message>, lang: String, ai: Boolean, translated: Set<String>, inFlight: MutableSet<String>): List<Message> =
+            if (!ai) emptyList() else candidates.filter { it.key !in translated && inFlight.add("${it.key}|$lang") }
     }
 }

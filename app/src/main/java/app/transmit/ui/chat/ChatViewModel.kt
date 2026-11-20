@@ -1033,10 +1033,13 @@ class ChatViewModel(
         viewModelScope.launch { c.settings.setScriptDisplay(r, value) }
     }
 
+    /**
+     * The top bar's switch, which shows its own state. Switching on translates the newest messages as opening the
+     * chat does: the change reaches [chat], whose collector calls [autoTranslate].
+     */
     fun toggleAutoTranslate() {
         val now = chat.value?.autoTranslate ?: return
         setAutoTranslate(!now)
-        toast(if (now) "Auto-translate off for this chat" else "Auto-translate on")
     }
 
     fun deleteConversation(onDone: () -> Unit) {

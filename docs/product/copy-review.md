@@ -411,3 +411,13 @@ New in beta8 (docs/product/chat-extras.md, section 1); needs review. The chat's 
 | --- | --- | --- |
 | Notifications: the summary notification that bundles two or more chats (its title) | `notify_summary_chats` | %1$d chats |
 | Notifications: a reply sent from a notification, when the notification-content setting is Hidden | `notify_reply_hidden` | Reply sent |
+
+## beta8: translate toggle
+
+**Needs review (beta8, 2026-11-20):** three new strings for the chat's auto-translate switch, which replaces the flag circle in the top bar (see `chat-extras.md`, section 3). Sighted users never see "On" or "Off": the switch shows its own state, and TalkBack reads them after the label ("Auto-translate, on"). The two toasts the old flag showed, "Auto-translate on" and "Auto-translate off for this chat", are gone. They were never string resources.
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Chat: top bar, the switch's long-press tooltip and TalkBack label (new in beta8) | `chat_auto_translate` | Auto-translate |
+| Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_on` | On |
+| Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_off` | Off |

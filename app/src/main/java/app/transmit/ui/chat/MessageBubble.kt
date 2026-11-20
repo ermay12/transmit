@@ -1,7 +1,12 @@
 package app.transmit.ui.chat
 
 import android.text.format.Formatter
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
@@ -124,6 +129,8 @@ private val BubbleMax = 280.dp
 /** How far a bubble is swiped to reply when let go; it drags with resistance beyond. */
 private val SwipeToReply = 64.dp
 private val SwipeMax = 88.dp
+/** A translation's arrival: a short crossfade. */
+private const val ARRIVAL_MS = 260
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -418,8 +425,31 @@ private fun BubbleBody(
     }
 }
 
+/** What a bubble's text shows: the message as it shows now, and how it marks the chat search's matches. */
+private data class ShownText(val item: MessageUi, val mark: SearchMark?)
+
+/**
+ * A translation that arrives fades in over what was there (the placeholder bars, or the original) as the bubble
+ * resizes. The bars fade in the same way when auto-translate is switched on. A tap between original and translation
+ * still switches at once. Each text fades with its own search highlights: the one going as it was, the one coming
+ * with the search's.
+ */
 @Composable
 private fun BubbleText(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, search: SearchMark?, onLink: (SmartEntity) -> Unit) {
+    AnimatedContent(
+        targetState = ShownText(item, search),
+        transitionSpec = { fadeIn(tween(ARRIVAL_MS)) togetherWith fadeOut(tween(ARRIVAL_MS)) using SizeTransform(clip = true) },
+        label = "translation",
+        contentKey = { (it.item.awaiting && !it.item.showOriginal) to (it.item.translation != null) },
+    ) { shown ->
+        // Links are found in the text on screen; the text fading out has none.
+        val text = shown.item
+        BubbleTextContent(text, color, target, if (text.displayText == item.displayText) links else emptyList(), shown.mark, onLink)
+    }
+}
+
+@Composable
+private fun BubbleTextContent(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, search: SearchMark?, onLink: (SmartEntity) -> Unit) {
     val m = item.message
     val tr = item.translation
     // A message awaiting its translation is drawn as placeholder bars until tapped.
