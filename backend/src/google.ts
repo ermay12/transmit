@@ -72,6 +72,9 @@ export interface VoidedPurchase {
   voidedSource?: number;
 }
 
+/** Google's voided-purchases API looks back at most 30 days (startTime); kept a day short of that. */
+export const VOIDED_MAX_LOOKBACK_MS = 29 * 86_400_000;
+
 export interface IntegrityPayload {
   requestDetails?: { requestPackageName?: string; requestHash?: string; timestampMillis?: string | number };
   appIntegrity?: { appRecognitionVerdict?: string; packageName?: string };

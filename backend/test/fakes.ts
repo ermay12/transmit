@@ -183,10 +183,16 @@ export class FakeWorld {
     }
     if (pub === `${PUBLISHER}/purchases/voidedpurchases` && method === "GET") {
       if (url.searchParams.get("type") !== "1") return res(400, { error: { message: "type must be 1" } });
+      // Filters on voidedTimeMillis like Google (entries without one always match); the page token carries the window.
       const size = Number(url.searchParams.get("maxResults") ?? 1000);
-      const start = Number(url.searchParams.get("token") ?? 0);
-      const items = this.voided.slice(start, start + size);
-      const next = start + size < this.voided.length ? String(start + size) : undefined;
+      const [offset, from, to] = (url.searchParams.get("token") ?? `0|${url.searchParams.get("startTime") ?? ""}|${url.searchParams.get("endTime") ?? ""}`).split("|");
+      const start = Number(offset);
+      const matching = this.voided.filter((v) => {
+        const t = Number(v.voidedTimeMillis ?? NaN);
+        return !Number.isFinite(t) || ((!from || t >= Number(from)) && (!to || t <= Number(to)));
+      });
+      const items = matching.slice(start, start + size);
+      const next = start + size < matching.length ? `${start + size}|${from}|${to}` : undefined;
       return res(200, { voidedPurchases: items, ...(next ? { tokenPagination: { nextPageToken: next } } : {}) });
     }
     return res(404, { error: { message: `unexpected Google call ${method} ${url.pathname}` } });
@@ -350,6 +356,19 @@ export class FakeWorld {
 
   setState(token: string, state: string): void {
     this.purchases.get(token)!.subscriptionState = state;
+  }
+
+  /**
+   * Play Console's refund with "Remove entitlement" (or the API's revoke), as seen on a device: the
+   * order is voided and the purchase ends at once, EXPIRED with developerInitiatedCancellation.
+   */
+  refundAndRevoke(token: string, orderId?: string): void {
+    const p = this.purchases.get(token)!;
+    const item = p.lineItems![0]!;
+    p.subscriptionState = "SUBSCRIPTION_STATE_EXPIRED";
+    p.canceledStateContext = { developerInitiatedCancellation: {} };
+    item.expiryTime = new Date(this.now + 500).toISOString();
+    this.voided.push({ purchaseToken: token, orderId: orderId ?? item.latestSuccessfulOrderId, voidedTimeMillis: String(this.now), voidedSource: 1, voidedReason: 0 });
   }
 
   /** Registers a good Integrity verdict for `androidId` under `token`; `tweak` can break parts of it. */

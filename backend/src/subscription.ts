@@ -9,7 +9,7 @@ import { planAllowance } from "./config";
 import type { Ctx } from "./context";
 import { encrypt, keyedHash } from "./crypto";
 import { firstRow, getSubscription, Lease, putSubscription, subscriptionStmt, type SubscriptionRow, trialStmt, type TrialRow } from "./db";
-import type { PurchaseLineItem, SubscriptionPurchaseV2 } from "./google";
+import { type PurchaseLineItem, type SubscriptionPurchaseV2, VOIDED_MAX_LOOKBACK_MS } from "./google";
 import { ApiError, json, log, optionalBoolean, optionalString, readJson, requiredString } from "./http";
 import { isoSeconds, type KeyInfo, money } from "./openrouter";
 import { adoptSharedToken, readSharedToken, shareTokenWrites } from "./shared-token";
@@ -120,9 +120,10 @@ export function normalizePurchase(raw: SubscriptionPurchaseV2): Purchase {
 /** Our view of a purchase: its simplified state and whether it gets AI right now. */
 export function assess(p: Purchase | null, voidedOrders: string[], now: number): { state: SubState; entitled: boolean } {
   if (!p) return { state: "expired", entitled: false };
+  // Before "expired": a purchase whose last order was refunded and that then ended stays refunded.
+  if (p.orderId && voidedOrders.includes(p.orderId)) return { state: "refunded", entitled: false };
   const state = GOOGLE_STATES[p.googleState] ?? "expired";
   if (state === "expired" || state === "canceled_pending") return { state, entitled: false };
-  if (p.orderId && voidedOrders.includes(p.orderId)) return { state: "refunded", entitled: false };
   const entitled = state === "active" || state === "grace" || (state === "canceled" && p.expiryTime > now);
   return { state, entitled };
 }
@@ -157,6 +158,41 @@ export function nextCheckAt(state: SubState, expiry: number, now: number, ackPen
 
 export function splitOrders(s: string | null | undefined): string[] {
   return (s ?? "").split(" ").filter(Boolean);
+}
+
+/**
+ * Play's refund with revoke ("Remove entitlement", or the API's revoke) voids an order and ends the
+ * purchase at once, and subscriptionsv2 then shows only SUBSCRIPTION_STATE_EXPIRED (with
+ * developerInitiatedCancellation, as for a plain cancel). The order's voidedTimeMillis is within a
+ * second of the purchase's new expiryTime (a license-tester refund, 2026-11-19), so a refund this
+ * close to the end is what ended the purchase.
+ */
+export const REFUND_WINDOW_MS = 24 * HOUR;
+/** When the app is the first to see a purchase end, the job looks for the refund this much later, in case Google lists it late. */
+export const REFUND_LOOK_DELAY_MS = 10 * MIN;
+/** Voided purchases read by that look (one page). If the refund isn't on it, the daily refund scan still finds it. */
+const REFUND_LOOK_SIZE = 100;
+
+/** Whether Google has ended the purchase for good (or no longer knows it): nothing can renew it. */
+function isOver(p: Purchase | null): boolean {
+  return !p || p.googleState === "SUBSCRIPTION_STATE_EXPIRED";
+}
+
+/** A refund the Worker recorded stays the reason after Google ends the purchase. */
+function endState(row: SubscriptionRow, state: SubState): SubState {
+  return state === "expired" && row.state === "refunded" ? "refunded" : state;
+}
+
+/**
+ * Orders of this purchase that Google voided around its end (`end`, Google's expiryTime): a refund
+ * with revoke. One Google call.
+ */
+async function refundsAtEnd(ctx: Ctx, purchaseToken: string, end: number, now: number): Promise<string[]> {
+  const startTime = Math.max(now - VOIDED_MAX_LOOKBACK_MS, end - REFUND_WINDOW_MS);
+  const endTime = Math.min(now, end + REFUND_WINDOW_MS);
+  if (endTime <= startTime) return [];
+  const { items } = await ctx.google.listVoided({ startTime, endTime, maxResults: REFUND_LOOK_SIZE });
+  return [...new Set(items.filter((v) => v.purchaseToken === purchaseToken && v.orderId).map((v) => v.orderId!))];
 }
 
 /**
@@ -298,10 +334,7 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
   if (lookup.kind === "invalid") throw invalid("token_unknown", "Google does not recognize this purchase token.");
   const row = a.row;
   if (row?.replaced_by) throw notActive("replaced");
-  if (lookup.kind === "gone") {
-    if (row) await lapse(ctx, lease, row, null, "expired", a.now);
-    throw notActive("expired");
-  }
+  if (lookup.kind === "gone") throw notActive(row ? await lapse(ctx, lease, row, null, "expired", a.now) : "expired");
 
   const p = normalizePurchase(lookup.purchase);
   const allowance = planAllowance(ctx.config, p.productId, p.basePlanId);
@@ -320,9 +353,9 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
   }
   const { state, entitled } = assess(p, voided, a.now);
   if (!entitled) {
-    if (row) await lapse(ctx, lease, row, p, state, a.now);
-    log("subscription_not_active", { state });
-    throw notActive(state);
+    const recorded = row ? await lapse(ctx, lease, row, p, state, a.now) : state;
+    log("subscription_not_active", { state: recorded });
+    throw notActive(recorded);
   }
 
   const statements: D1PreparedStatement[] = [];
@@ -494,17 +527,25 @@ async function rotateKey(ctx: Ctx, oldHash: string, newOrder: boolean, allowance
   return newKey(ctx, remaining, tokenHash, [oldHash]);
 }
 
-/** The purchase gives no AI now: disable its key and record the state. */
-async function lapse(ctx: Ctx, lease: Lease, row: SubscriptionRow, p: Purchase | null, state: SubState, now: number): Promise<void> {
+/** The purchase gives no AI now: disable its key and record the state. Returns the state recorded. */
+async function lapse(ctx: Ctx, lease: Lease, row: SubscriptionRow, p: Purchase | null, assessed: SubState, now: number): Promise<SubState> {
   if (row.key_hash && !row.key_disabled) await ctx.openrouter.updateKey(row.key_hash, { disabled: true });
   const expiry = p?.expiryTime || row.expiry_time;
+  const over = isOver(p);
+  const state = over ? endState(row, assessed) : assessed;
+  let checkAt: number | null;
+  if (!over) checkAt = nextCheckAt(state, expiry, now, false);
+  else if (state !== "expired" || !p) checkAt = null;
+  // Google just ended it: the job looks for a refund that ended it (refunded, not expired) once,
+  // shortly; a look already scheduled stays.
+  else checkAt = row.state === "expired" ? row.next_check_at : now + REFUND_LOOK_DELAY_MS;
   const write = putSubscription(ctx.db, {
     ...row,
     state,
     expiry_time: expiry,
     auto_renewing: p ? (p.autoRenewing ? 1 : 0) : 0,
     key_disabled: row.key_hash ? 1 : 0,
-    next_check_at: nextCheckAt(state, expiry, now, false),
+    next_check_at: checkAt,
     pending_product_id: null,
     pending_base_plan_id: null,
     updated_at: now,
@@ -512,21 +553,35 @@ async function lapse(ctx: Ctx, lease: Lease, row: SubscriptionRow, p: Purchase |
   });
   await lease.finish([write]);
   log("subscription_lapsed", { state, key: row.key_hash?.slice(0, 12) ?? null });
+  return state;
 }
 
 /**
  * The scheduled job's re-check of one stored purchase. Never rotates keys (only the app can
  * receive a new one); it credits renewals, disables lapsed purchases and retries acknowledgements.
  * Returns a conditional write, so a concurrent request from the app wins.
- * Costs at most 4 subrequests (Google get, OpenRouter get + update or update, acknowledge).
+ * Costs at most 4 subrequests (Google get, OpenRouter get + update or update, acknowledge; for a
+ * purchase Google ended: Google get, voided purchases, OpenRouter update).
  */
 export async function recheck(ctx: Ctx, row: SubscriptionRow, purchaseToken: string, now: number): Promise<{ stmt: D1PreparedStatement; outcome: string }> {
   const lookup = await ctx.google.getSubscription(purchaseToken);
   const p = lookup.kind === "found" ? normalizePurchase(lookup.purchase) : null;
-  const voided = splitOrders(row.voided_orders);
+  let voided = splitOrders(row.voided_orders);
   if (replacedBeforeLinked(p, row, voided)) return recheckReplaced(ctx, row, now);
-  const { state, entitled } = assess(p, voided, now);
-  const next: SubscriptionRow = { ...row, state, checked_at: now, updated_at: now };
+  const assessed = assess(p, voided, now);
+  const { entitled } = assessed;
+  const over = isOver(p);
+  let state = over ? endState(row, assessed.state) : assessed.state;
+  if (over && p && state === "expired") {
+    // Google ended it: was it a refund with revoke? (Before any write, so an error just retries the row in an hour.)
+    const refunds = await refundsAtEnd(ctx, purchaseToken, p.expiryTime || row.expiry_time, now);
+    if (refunds.length) {
+      voided = [...new Set([...voided, ...refunds])];
+      state = "refunded";
+      log("refund_found_at_end", { key: row.key_hash?.slice(0, 12) ?? null });
+    }
+  }
+  const next: SubscriptionRow = { ...row, state, voided_orders: voided.join(" "), checked_at: now, updated_at: now };
   if (p) {
     next.expiry_time = p.expiryTime || row.expiry_time;
     next.auto_renewing = p.autoRenewing ? 1 : 0;
@@ -568,7 +623,8 @@ export async function recheck(ctx: Ctx, row: SubscriptionRow, purchaseToken: str
     outcome = "disabled";
   }
 
-  next.next_check_at = nextCheckAt(state, next.expiry_time, now, entitled && !next.acknowledged);
+  // Nothing can renew a purchase Google ended: final (the daily refund scan still records later refunds).
+  next.next_check_at = over ? null : nextCheckAt(state, next.expiry_time, now, entitled && !next.acknowledged);
   return { stmt: putSubscription(ctx.db, next, row.updated_at), outcome: `${state}:${outcome}` };
 }
 

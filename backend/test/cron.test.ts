@@ -190,6 +190,101 @@ describe("scheduled job", () => {
   });
 });
 
+describe("refund with revoke", () => {
+  const row = () =>
+    env.DB.prepare("SELECT state, voided_orders, key_disabled, next_check_at, ended_at FROM subscriptions").first<Record<string, unknown>>();
+  const voidedCalls = (world: FakeWorld) => world.count("GET", "voidedpurchases");
+
+  it("is recorded as refunded when the app sees the purchase end first (the device test)", async () => {
+    const world = new FakeWorld();
+    await cron(world); // the daily refund scan has just run: it doesn't come into this
+    const hash = await buy(world, "t1", { orderId: "GPA.3354" });
+    // Play renews (the Worker doesn't see it), then the first order is refunded with revoke.
+    world.renew("t1", "GPA.3354..0", world.now + 30 * DAY);
+    world.refundAndRevoke("t1", "GPA.3354");
+    world.now += 10_000;
+    const first = await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash, rotate: false });
+    expect(first.body).toMatchObject({ error: "purchase_not_active", state: "expired" });
+    expect(world.keys.get(hash)!.disabled).toBe(true);
+    const ended = world.now;
+    expect(await row()).toMatchObject({ state: "expired", next_check_at: ended + 10 * 60_000, ended_at: ended });
+
+    // The job's next run looks the purchase up in Google's voided purchases, once.
+    world.now += 10 * 60_000;
+    const before = voidedCalls(world);
+    expect((await cron(world)).outcomes).toEqual(["refunded:unchanged"]);
+    expect(voidedCalls(world) - before).toBe(1);
+    const look = world.calls.filter((c) => c.url.includes("voidedpurchases")).at(-1)!;
+    expect(Number(new URL(look.url).searchParams.get("startTime"))).toBe(ended - 10_000 + 500 - DAY);
+    expect(await row()).toEqual({ state: "refunded", voided_orders: "GPA.3354", key_disabled: 1, next_check_at: null, ended_at: ended });
+
+    // From then on the app gets refunded; the key stays off, and the daily scan changes nothing.
+    const again = await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash, rotate: false });
+    expect(again.body).toMatchObject({ error: "purchase_not_active", state: "refunded" });
+    world.now += DAY;
+    expect(await cron(world)).toMatchObject({ refundsApplied: 0, subscriptionsChecked: 0 });
+    expect(await row()).toMatchObject({ state: "refunded", ended_at: ended });
+    expect(world.keys.get(hash)!.disabled).toBe(true);
+
+    // Retention still counts from the end.
+    world.now = ended + 90 * DAY;
+    expect((await cron(world)).subscriptionsDeleted).toBe(1);
+    expect(world.keys.has(hash)).toBe(false);
+  });
+
+  it("is recorded as refunded when the job sees the purchase end first", async () => {
+    const world = new FakeWorld();
+    await cron(world);
+    const hash = await buy(world, "t1", { expiry: world.now + 3_600_000 });
+    world.now += 30 * 60_000;
+    world.refundAndRevoke("t1");
+    world.now += 40 * 60_000; // past the period end: the job's renewal check
+    expect((await cron(world)).outcomes).toEqual(["refunded:disabled"]);
+    expect(world.keys.get(hash)!.disabled).toBe(true);
+    expect(await row()).toMatchObject({ state: "refunded", voided_orders: "GPA.0000-0000-0000-00001", next_check_at: null });
+  });
+
+  it("is recorded as refunded by the daily scan if Google lists the refund late, and stays so", async () => {
+    const world = new FakeWorld();
+    await cron(world);
+    const hash = await buy(world, "t1", { orderId: "GPA.9" });
+    world.now += 30 * DAY;
+    world.renew("t1", "GPA.9..0", world.now + 30 * DAY);
+    expect((await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash })).body.allowanceRenewed).toBe(true);
+    world.refundAndRevoke("t1", "GPA.9"); // the older order, not the one the Worker credited
+    const listed = world.voided.pop()!; // not listed yet
+    await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash });
+    world.now += 10 * 60_000;
+    expect((await cron(world)).outcomes).toEqual(["expired:unchanged"]);
+    expect(await row()).toMatchObject({ state: "expired", next_check_at: null });
+
+    world.voided.push(listed);
+    world.now += DAY;
+    expect((await cron(world)).refundsApplied).toBe(1);
+    expect(await row()).toMatchObject({ state: "refunded", voided_orders: "GPA.9", next_check_at: null });
+    world.now += 3_600_000;
+    expect((await cron(world)).subscriptionsChecked).toBe(0);
+    expect((await call(world, "/v1/subscription", { purchaseToken: "t1", keyHash: hash })).body).toMatchObject({ state: "refunded" });
+  });
+
+  it("doesn't take an older refund for the end of a purchase that ran out", async () => {
+    const world = new FakeWorld();
+    await cron(world);
+    const hash = await buy(world, "t1", { orderId: "GPA.1" });
+    world.voided = [{ purchaseToken: "t1", orderId: "GPA.1", voidedTimeMillis: String(world.now) }]; // refunded, not revoked
+    world.now += DAY + 60_000;
+    expect((await cron(world)).refundsApplied).toBe(1);
+    world.now += 30 * DAY;
+    world.renew("t1", "GPA.1..0", world.now + 20 * DAY);
+    expect((await cron(world)).outcomes).toEqual(["active:renewed"]);
+    world.now += 20 * DAY + 10 * 60_000;
+    world.setState("t1", "SUBSCRIPTION_STATE_EXPIRED");
+    expect((await cron(world)).outcomes).toEqual(["expired:disabled"]);
+    expect(await row()).toMatchObject({ state: "expired", voided_orders: "GPA.1", key_disabled: 1, next_check_at: null });
+    expect(world.keys.get(hash)!.disabled).toBe(true);
+  });
+});
+
 describe("retention", () => {
   const RETENTION = 90 * DAY;
   const subs = () => env.DB.prepare("SELECT COUNT(*) AS n FROM subscriptions").first<number>("n");
@@ -227,9 +322,13 @@ describe("retention", () => {
     world.now += 3_600_000;
     expect((await cron(world)).refundsApplied).toBe(1);
     const refunded = world.now;
-    world.now += 30 * DAY; // the period's end: the job re-checks it and Google says expired
+    world.now += 30 * DAY; // the period's end: the job re-checks it, Google says expired, and it stays refunded
     await cron(world);
-    expect(await env.DB.prepare("SELECT state, ended_at FROM subscriptions").first()).toEqual({ state: "expired", ended_at: refunded });
+    expect(await env.DB.prepare("SELECT state, ended_at, next_check_at FROM subscriptions").first()).toEqual({
+      state: "refunded",
+      ended_at: refunded,
+      next_check_at: null,
+    });
 
     world.now = refunded + RETENTION - 60_000;
     expect((await cron(world)).subscriptionsDeleted).toBe(0);

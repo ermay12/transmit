@@ -281,8 +281,14 @@ subscription recovers (for example `on_hold` → paid).
 `state` values in `purchase_not_active`: `pending` (payment not completed yet),
 `on_hold` (payment failed after the grace period), `paused`, `expired`,
 `canceled_pending` (a pending purchase was canceled), `refunded` (the current
-order was refunded or charged back), `replaced` (this token was superseded by an
+order was refunded or charged back, or a refund ended the purchase: Play's
+refund with "Remove entitlement", or a revoke), `replaced` (this token was superseded by an
 upgrade, a switch to Transmit, a resubscribe or a cancelled switch; use the newer token).
+A refund that ends the purchase shows in Google's purchase record only as
+expired, so the first answer after it can be `expired`. The Worker then finds
+the refund in Google's voided purchases, at its next job run (within about 20
+minutes) or at the latest at the daily refund scan, and answers `refunded` from
+then on. Both are ENDED to the app, and the key is off either way.
 `replaced` is the one `purchase_not_active` that does not turn the key off: Play
 ends the old token the moment the user changes plan, and the period moves to
 the new token. The key keeps working until the app sends the new token (or, if

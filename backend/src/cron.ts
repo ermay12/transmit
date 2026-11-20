@@ -15,10 +15,10 @@
 import type { Ctx } from "./context";
 import { decrypt, keyedHash } from "./crypto";
 import { putSubscription, type SubscriptionRow, utcDay } from "./db";
-import type { VoidedPurchase } from "./google";
+import { VOIDED_MAX_LOOKBACK_MS, type VoidedPurchase } from "./google";
 import { log } from "./http";
 import { adoptSharedToken, SHARED_TOKEN_ROW, shareTokenWrites } from "./shared-token";
-import { nextCheckAt, recheck, splitOrders, type SubState } from "./subscription";
+import { nextCheckAt, recheck, REFUND_WINDOW_MS, splitOrders, type SubState } from "./subscription";
 
 /** Counts subrequests. The fetch wrapper charges network calls; D1 calls are charged explicitly. */
 export class Budget {
@@ -78,8 +78,6 @@ const DAY = 86_400_000;
 export const SUBSCRIPTION_RETENTION_MS = 90 * DAY;
 /** Ended rows read per run. Rows without a key cost no subrequest; the rest wait for budget. */
 const PURGE_BATCH = 20;
-/** Google's voided-purchases API looks back at most 30 days. */
-const VOIDED_MAX_LOOKBACK = 29 * DAY;
 const VOIDED_OVERLAP = DAY;
 /** Small enough that one page's tokens fit D1's 100 bound parameters. */
 const VOIDED_PAGE_SIZE = 50;
@@ -208,7 +206,7 @@ async function scanVoidedPages(
   let page = state.page;
   if (!page) {
     if (state.lastEnd !== undefined && now - state.lastEnd < ctx.config.voidedCheckIntervalMs) return;
-    const startTime = Math.max(now - VOIDED_MAX_LOOKBACK, (state.lastEnd ?? 0) - VOIDED_OVERLAP);
+    const startTime = Math.max(now - VOIDED_MAX_LOOKBACK_MS, (state.lastEnd ?? 0) - VOIDED_OVERLAP);
     page = { startTime, endTime: now };
   }
 
@@ -251,11 +249,11 @@ async function applyRefunds(
   report: CronReport,
   touched: Touched,
 ): Promise<boolean> {
-  const byHash = new Map<string, string[]>();
+  const byHash = new Map<string, VoidedPurchase[]>();
   for (const v of items) {
     if (!v.purchaseToken || !v.orderId) continue;
     const h = await keyedHash(ctx.keys, "purchase", v.purchaseToken);
-    byHash.set(h, [...(byHash.get(h) ?? []), v.orderId]);
+    byHash.set(h, [...(byHash.get(h) ?? []), v]);
   }
   if (byHash.size === 0) return true;
   const hashes = [...byHash.keys()];
@@ -269,11 +267,17 @@ async function applyRefunds(
     const seen = touched.get(stored.token_hash);
     const row = seen?.next ?? stored;
     const voided = splitOrders(row.voided_orders);
-    const fresh = (byHash.get(row.token_hash) ?? []).filter((o) => !voided.includes(o));
+    const freshItems = (byHash.get(row.token_hash) ?? []).filter((v) => !voided.includes(v.orderId!));
+    const fresh = [...new Set(freshItems.map((v) => v.orderId!))];
     if (fresh.length === 0) continue;
     const hitsCurrent = row.order_id !== null && fresh.includes(row.order_id) && !row.replaced_by;
+    // A purchase Google already ended (a refund with revoke ends it at once and shows only as EXPIRED):
+    // a refund around its end is what ended it, whichever order it was.
+    const ended = row.state === "expired";
+    const endedByRefund =
+      ended && freshItems.some((v) => Math.abs(Number(v.voidedTimeMillis) - row.expiry_time) <= REFUND_WINDOW_MS);
     const next: SubscriptionRow = { ...row, voided_orders: [...voided, ...fresh].join(" "), updated_at: now };
-    if (hitsCurrent) {
+    if (hitsCurrent || endedByRefund) {
       if (row.key_hash && !row.key_disabled) {
         if (!budget.allows(1)) return false;
         await ctx.openrouter.updateKey(row.key_hash, { disabled: true });
@@ -281,7 +285,8 @@ async function applyRefunds(
       }
       const state: SubState = "refunded";
       next.state = state;
-      next.next_check_at = nextCheckAt(state, row.expiry_time, now, false);
+      // An ended purchase can't renew, so there is nothing left to check.
+      next.next_check_at = ended ? null : nextCheckAt(state, row.expiry_time, now, false);
       report.refundsApplied++;
       log("refund_applied", { key: row.key_hash?.slice(0, 12) ?? null });
     }

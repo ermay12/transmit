@@ -176,7 +176,10 @@ If `npm install` fails with "Cannot read properties of null (reading
   [Privacy](#privacy-ip-addresses-and-logs)).
 - **The job** runs every 10 minutes (minutes 3, 13, …, 53). Each run handles what fits in
   `CRON_SUBREQUEST_BUDGET` (one or two purchases) and leaves the rest for the
-  next run. The refund scan runs once a day. Retention goes last: up to 20
+  next run. The refund scan runs once a day. When Google ends a purchase
+  (expired), the job also looks it up in the voided purchases once, so a refund
+  with revoke is recorded as `refunded`, not `expired` (if the app saw the end
+  first, the job looks 10 minutes later). Retention goes last: up to 20
   ended subscriptions a run, each with a key costing one subrequest (about 8 a
   run when nothing else is due). `cron_done` reports what a run did
   (`subscriptionsDeleted` among it) and how many subrequests it used.
@@ -206,7 +209,8 @@ smaller budget, for CPU. Rate limits and the shared Google token went live on
 2026-11-18 with migration `0003` (see API.md, "Switch to Transmit"). On
 2026-11-19 (version `a5d97641`): the `/privacy` and `/` pages, invocation logs
 off, rate limits keyed by a daily network hash, and the 90-day subscription
-retention with migration `0004`. Not done yet:
+retention with migration `0004`. Later on 2026-11-19 (version `fabd25d9`): a
+refund with revoke is stored as `refunded`, not `expired` (no migration). Not done yet:
 
 - **No real trial or purchase tested end to end.** That needs a Play-installed
   build (internal testing track) on a Pixel, and a license-tester purchase
