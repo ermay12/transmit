@@ -8,7 +8,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 
-/** Word-level diff (character-level for scripts without spaces) used to highlight corrections. */
+/**
+ * Word-level diff (character-level for scripts without spaces) used to highlight corrections. Punctuation is a token of
+ * its own, so an added full stop marks just the full stop, not the word before it.
+ */
 object Diff {
     enum class Op { SAME, ADD, DEL }
     data class Piece(val text: String, val op: Op)
@@ -24,10 +27,16 @@ object Diff {
         s.codePoints().anyMatch { Character.UnicodeScript.of(it) in unspacedScripts } ||
             (s.length >= 12 && s.count { it == ' ' } < s.length / 12)
 
+    /**
+     * Spaces, words, and each punctuation mark or symbol on its own. A word keeps the apostrophes and hyphens inside it
+     * ("c'est", "don't", "well-known"), so those read as one word.
+     */
+    private val wordTokens = Regex("\\s+|[\\p{L}\\p{M}\\p{N}]+(?:['’\\-][\\p{L}\\p{M}\\p{N}]+)*|[^\\s\\p{L}\\p{M}\\p{N}]")
+
     fun tokens(s: String, charLevel: Boolean = charLevel(s)): List<String> = when {
         s.isEmpty() -> emptyList()
         charLevel -> s.codePoints().toArray().map { String(Character.toChars(it)) }
-        else -> Regex("\\s+|[^\\s]+").findAll(s).map { it.value }.toList()
+        else -> wordTokens.findAll(s).map { it.value }.toList()
     }
 
     fun diff(before: String, after: String): List<Piece> {
@@ -61,13 +70,33 @@ object Diff {
         return out
     }
 
-    /** Inline rendering: removed text struck through, added text bold in [add]. */
+    /** Between a removal and an addition that touch, so "~~para~~de" doesn't read as one word ("parade"). */
+    const val GAP = "\u2009"
+
+    /**
+     * What's shown, in order: blank removals dropped, and [GAP] (unstyled) between a removal and an addition that would
+     * otherwise run together.
+     */
+    fun shown(pieces: List<Piece>): List<Piece> {
+        val out = mutableListOf<Piece>()
+        for (p in pieces) {
+            if (p.op == Op.DEL && p.text.isBlank()) continue
+            val prev = out.lastOrNull()
+            val touching = prev != null && prev.op != Op.SAME && p.op != Op.SAME && prev.op != p.op &&
+                !prev.text.last().isWhitespace() && !p.text.first().isWhitespace()
+            if (touching) out += Piece(GAP, Op.SAME)
+            out += p
+        }
+        return out
+    }
+
+    /** Inline rendering: removed text struck through, added text bold in [add], with a gap where the two meet. */
     fun annotated(before: String, after: String, add: Color, del: Color): AnnotatedString = buildAnnotatedString {
-        diff(before, after).forEach { p ->
+        shown(diff(before, after)).forEach { p ->
             when (p.op) {
                 Op.SAME -> append(p.text)
                 Op.ADD -> withStyle(SpanStyle(color = add, fontWeight = FontWeight.SemiBold)) { append(p.text) }
-                Op.DEL -> if (p.text.isNotBlank()) withStyle(SpanStyle(color = del, textDecoration = TextDecoration.LineThrough)) { append(p.text) }
+                Op.DEL -> withStyle(SpanStyle(color = del, textDecoration = TextDecoration.LineThrough)) { append(p.text) }
             }
         }
     }
