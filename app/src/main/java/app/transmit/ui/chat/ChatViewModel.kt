@@ -42,6 +42,7 @@ import app.transmit.messaging.OutgoingAttachment
 import app.transmit.messaging.PhoneNumbers
 import app.transmit.messaging.Reactions
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -65,6 +66,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 
@@ -328,7 +332,7 @@ class ChatViewModel(
         combine(c.dao.translationsForThread(threadId), chat) { list, eff ->
             val lang = eff?.target?.code
             list.filter { it.lang == lang }.associateBy { it.msgKey }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Keys of incoming messages that automatic translation will cover and hasn't given up on. */
     private val expected: Flow<Set<String>> =
@@ -349,9 +353,18 @@ class ChatViewModel(
 
     private val views: Flow<Views> = combine(showOriginal, showRoman, script, c.translations.romanFailed, c.translations.conversions, ::Views)
 
+    /** The last list [items] gave, by key. */
+    private var shown: Map<String, MessageUi> = emptyMap()
+
+    /**
+     * Each message as its bubble shows it. One that looks as it did keeps the same instance, so its bubble isn't
+     * recomposed: switching auto-translate on, say, changes the few bubbles it translates, not every one in view.
+     */
     val items: StateFlow<List<MessageUi>> =
         combine(combine(raw, quoted, ::Pair), translations, c.translations.pending, views, expected) { (list, q), tr, pending, v, exp ->
-            build(list, q, tr, pending, v, exp)
+            val before = shown
+            build(list, q, tr, pending, v, exp).map { ui -> before[ui.key]?.takeIf { it == ui } ?: ui }
+                .also { now -> shown = now.associateBy { it.key } }
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Search within the chat: its cached messages and their stored translations, never the AI. */
@@ -380,7 +393,9 @@ class ChatViewModel(
         }
         viewModelScope.launch { for (request in reloads) load() }
         viewModelScope.launch { c.messaging.changes.debounce(150).collect { reload() } }
-        viewModelScope.launch {
+        // Off the main thread, as is the translating it starts: a switch of auto-translate lands here, and all the main
+        // thread is left with is showing the bubbles it changes.
+        viewModelScope.launch(Dispatchers.Default) {
             combine(c.settings.settings, c.dao.chatSettingsFlow(threadId), c.contacts.version) { s, _, _ -> s }.collect { s ->
                 val r = recipients.value
                 refreshPeople()
@@ -480,10 +495,11 @@ class ChatViewModel(
         groupPhoto.value = c.messaging.groupPhotoForThread(threadId)
     }
 
+    /** Picking the messages and asking for their translations happens off the main thread. */
     private fun autoTranslate() {
         val list = raw.value
         if (list.isEmpty()) return
-        viewModelScope.launch { c.translations.autoTranslate(threadId, list) }
+        viewModelScope.launch(Dispatchers.Default) { c.translations.autoTranslate(threadId, list) }
     }
 
     fun loadMore() {
@@ -1014,13 +1030,25 @@ class ChatViewModel(
 
     // ---- per-chat settings -----------------------------------------------------------------------
 
+    /** Chat-settings writes go one at a time, in the order they were asked for: of two quick switches, the last stays. */
+    private val chatWrites = Mutex()
+
     private fun updateChat(block: (ChatSettingsEntity) -> ChatSettingsEntity) {
-        viewModelScope.launch {
-            val cur = c.dao.chatSettings(threadId) ?: ChatSettingsEntity(threadId)
-            c.dao.upsertChatSettings(block(cur))
+        // Undispatched, so each write queues for the lock as it's asked for; the database work is off the main thread.
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            chatWrites.withLock {
+                withContext(Dispatchers.IO) {
+                    val cur = c.dao.chatSettings(threadId) ?: ChatSettingsEntity(threadId)
+                    c.dao.upsertChatSettings(block(cur))
+                }
+            }
         }
     }
 
+    /**
+     * The top bar's switch, which shows its own state. Switching on translates the newest messages as opening the
+     * chat does: the change reaches [chat], whose collector calls [autoTranslate].
+     */
     fun setAutoTranslate(value: Boolean?) = updateChat { it.copy(autoTranslate = value) }
     fun setChatLanguage(code: String?) = updateChat { it.copy(targetLang = code) }
     fun setChatBudget(usd: Double?) = updateChat { it.copy(monthlyBudgetUsd = usd) }
@@ -1031,15 +1059,6 @@ class ChatViewModel(
     /** For every chat in the languages written with [r]. */
     fun setScriptDisplay(r: Romanization, value: ScriptDisplay) {
         viewModelScope.launch { c.settings.setScriptDisplay(r, value) }
-    }
-
-    /**
-     * The top bar's switch, which shows its own state. Switching on translates the newest messages as opening the
-     * chat does: the change reaches [chat], whose collector calls [autoTranslate].
-     */
-    fun toggleAutoTranslate() {
-        val now = chat.value?.autoTranslate ?: return
-        setAutoTranslate(!now)
     }
 
     fun deleteConversation(onDone: () -> Unit) {

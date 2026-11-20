@@ -174,7 +174,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 flag = target?.flag ?: "🌐",
                 onBack = onBack,
                 onInfo = { vm.sheet.value = Sheet.ChatInfo },
-                onToggleTranslate = { if (translationOff) vm.offerTranslation() else vm.toggleAutoTranslate() },
+                onToggleTranslate = { on -> if (translationOff) vm.offerTranslation() else vm.setAutoTranslate(on) },
                 demo = vm.demo,
                 onSearch = vm.search::open,
             )
@@ -442,7 +442,7 @@ private fun ChatTopBar(
     flag: String,
     onBack: () -> Unit,
     onInfo: () -> Unit,
-    onToggleTranslate: () -> Unit,
+    onToggleTranslate: (on: Boolean) -> Unit,
     /** A sample chat: labelled Demo, and its made-up people can't be called. */
     demo: Boolean = false,
     onSearch: () -> Unit = {},
@@ -481,7 +481,7 @@ private fun ChatTopBar(
             }
             // Auto-translate switch: its thumb carries the practice-language flag.
             TranslateToggle(
-                on = autoTranslate, flag = flag, available = !translationOff, onClick = onToggleTranslate,
+                on = autoTranslate, flag = flag, available = !translationOff, onCheckedChange = onToggleTranslate,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
             if (!demo && people.size == 1 && !PhoneNumbers.isShortCodeOrAlpha(people[0].address)) {
