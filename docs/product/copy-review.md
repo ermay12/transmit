@@ -383,3 +383,13 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | AI errors (toasts, chat notices, explanation sheet) | `ai_in_use_elsewhere` | Your subscription is in use on another device. |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_budget_reached` | Monthly AI budget reached (%1$s of %2$s). |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_chat_budget_reached` | This chat's AI budget is used up (%1$s of %2$s). |
+
+## beta8: translate toggle
+
+**Needs review (beta8, 2026-11-20):** three new strings for the chat's auto-translate switch, which replaces the flag circle in the top bar (see `chat-extras.md`, section 3). Sighted users never see "On" or "Off": the switch shows its own state, and TalkBack reads them after the label ("Auto-translate, on"). The two toasts the old flag showed, "Auto-translate on" and "Auto-translate off for this chat", are gone. They were never string resources.
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Chat: top bar, the switch's long-press tooltip and TalkBack label (new in beta8) | `chat_auto_translate` | Auto-translate |
+| Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_on` | On |
+| Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_off` | Off |
