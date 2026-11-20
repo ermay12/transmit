@@ -354,6 +354,18 @@ class ChatViewModel(
             build(list, q, tr, pending, v, exp)
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Search within the chat: its cached messages and their stored translations, never the AI. */
+    val search = ChatSearch(
+        scope = viewModelScope,
+        // With beforeMs set, only what's cached: nothing is fetched from the phone.
+        cached = { c.messaging.messages(threadId, Int.MAX_VALUE, beforeMs = Long.MAX_VALUE) },
+        translations = translations,
+        script = script,
+        changes = c.messaging.changes,
+        requestOlder = { c.messaging.requestOlder(threadId) },
+        reveal = ::loadThrough,
+    )
+
     init {
         viewModelScope.launch {
             val r = c.messaging.recipientsForThread(threadId)
@@ -478,6 +490,13 @@ class ChatViewModel(
         // Only once the page asked for is in: flinging past the top asks many times, and so does the empty list.
         if (raw.value.size < limit) return
         limit += PAGE
+        reload()
+    }
+
+    /** Loads at least the newest [count] messages into the list, so search can show a match further back. */
+    private fun loadThrough(count: Int) {
+        if (count <= limit) return
+        limit = count
         reload()
     }
 

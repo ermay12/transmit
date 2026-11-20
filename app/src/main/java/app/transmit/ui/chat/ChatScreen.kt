@@ -118,6 +118,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
     val trial by vm.trial.state.collectAsStateWithLifecycle()
     val offStrip by vm.offStrip.collectAsStateWithLifecycle()
     val translationOff by vm.translationOff.collectAsStateWithLifecycle()
+    val search by vm.search.state.collectAsStateWithLifecycle()
     // Model, cost and dollar budgets are for people paying for their own AI.
     val aiDetails = access?.showsAiDetails == true
     var viewing by remember { mutableStateOf<Attachment?>(null) }
@@ -158,10 +159,12 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
             .distinctUntilChanged()
             .collect { last -> if (last >= listState.layoutInfo.totalItemsCount - 10) vm.loadMore() }
     }
+    SearchScroll(search, items, listState)
 
     Scaffold(
         topBar = {
-            ChatTopBar(
+            if (search.open) ChatSearchBar(search, vm.search)
+            else ChatTopBar(
                 people = recipients.map { people[it] ?: ContactInfo(it, null, null, null) },
                 groupPhoto = groupPhoto,
                 customName = chat?.overrides?.name,
@@ -172,6 +175,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 onInfo = { vm.sheet.value = Sheet.ChatInfo },
                 onToggleTranslate = { if (translationOff) vm.offerTranslation() else vm.toggleAutoTranslate() },
                 demo = vm.demo,
+                onSearch = vm.search::open,
             )
         },
     ) { padding ->
@@ -194,7 +198,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                         list.forEach { item ->
                             item(item.key, contentType = "message") {
                                 MessageBubble(
-                                    item = item,
+                                    item = item.revealing(search.current),
                                     group = group,
                                     sender = item.message.sender?.let { people[it] ?: ContactInfo(it, null, null, null) },
                                     target = target,
@@ -213,11 +217,12 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                                         openLink(context, link, all, item, from)
                                     },
                                     onCopyCode = { SmartActions.copyCode(context, it) },
-                                    onRomanize = { vm.romanizeOnSight(item.key) },
+                                    onRomanize = { vm.search.afterSearch(item.key) { vm.romanizeOnSight(item.key) } },
                                     onReply = if (item.message.replyable) ({ vm.replyTo(item) }) else null,
                                     quoteAuthor = item.quote?.let { quoteAuthor(it, people) },
                                     onQuote = vm::showQuoted,
                                     highlighted = item.key == highlighted,
+                                    search = search.markFor(item.key),
                                 )
                             }
                             if (item.newDay) {
@@ -436,6 +441,7 @@ private fun ChatTopBar(
     onToggleTranslate: () -> Unit,
     /** A sample chat: labelled Demo, and its made-up people can't be called. */
     demo: Boolean = false,
+    onSearch: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val title = chatTitle(people, customName)
@@ -486,7 +492,7 @@ private fun ChatTopBar(
                     Icon(Icons.Default.Call, "Call")
                 }
             }
-            IconButton(onClick = onInfo) { Icon(Icons.Outlined.Info, "Chat settings") }
+            ChatOverflowMenu(onSearch = onSearch, onSettings = onInfo)
         }
     }
 }

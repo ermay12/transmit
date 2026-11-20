@@ -1,5 +1,12 @@
 package app.transmit.ui.chat
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withLink
 import app.transmit.data.ScriptDisplay
 import app.transmit.data.db.TranslationEntity
 import app.transmit.data.db.TranslationOrigin
@@ -232,6 +239,39 @@ class ChatSearchTest {
         val b = bubble()
         assertSame(b, b.revealing(SearchHit("g2", 1, true, false)))
         assertSame(b, b.revealing(null))
+    }
+
+    // ---- highlighting -----------------------------------------------------------------------------
+
+    @Test
+    fun highlightsKeepLinksAndInlineContent() {
+        val link = TextLinkStyles(SpanStyle(color = Color.White))
+        val content = buildAnnotatedString {
+            pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold)); append("Plans"); pop()
+            append('\n')
+            append("Dinner at ")
+            withLink(LinkAnnotation.Clickable("Date", link) {}) { append("7 on Friday") }
+            append("  ")
+            pushStringAnnotation("androidx.compose.foundation.text.inlineContent", "flag"); append("·"); pop()
+        }
+        val item = MessageUi(
+            message = message("g1", "Dinner at 7 on Friday", 1).copy(subject = "Plans"), reactions = emptyList(), translation = null,
+            showOriginal = false, firstInRun = true, lastInRun = true, newDay = false, translatable = true, awaiting = false,
+        )
+        assertSame(content, highlightBubble(content, item, null))
+        assertSame(content, highlightBubble(content, item, SearchMark("tacos", current = true)))
+        val marked = highlightBubble(content, item, SearchMark("FRIDAY", current = true))
+        assertEquals(content.text, marked.text)
+        val highlight = marked.spanStyles.single { it.item.background != Color.Unspecified }
+        assertEquals("Friday", marked.text.substring(highlight.start, highlight.end))
+        // The link still works, in the highlight's colour; the subject's style and the marker stay.
+        val links = marked.getLinkAnnotations(0, marked.length)
+        assertEquals("7 on Friday", marked.text.substring(links.single().start, links.single().end))
+        assertEquals(Color.Unspecified, links.single().item.styles?.style?.color)
+        assertTrue(marked.spanStyles.any { it.item.fontWeight == FontWeight.SemiBold && it.start == 0 && it.end == 5 })
+        assertEquals("flag", marked.getStringAnnotations(0, marked.length).single().item)
+        // The subject isn't searched: only the message text is.
+        assertSame(content, highlightBubble(content, item, SearchMark("plans", current = false)))
     }
 
     // ---- the search itself ------------------------------------------------------------------------

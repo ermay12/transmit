@@ -152,6 +152,8 @@ fun MessageBubble(
     onQuote: (Quote) -> Unit,
     /** Just scrolled to from a quote: the row lights up for a moment. */
     highlighted: Boolean = false,
+    /** A match of the chat's search: its text is highlighted. */
+    search: SearchMark? = null,
 ) {
     val m = item.message
     val out = m.outgoing
@@ -215,7 +217,7 @@ fun MessageBubble(
                                 },
                             ),
                     ) {
-                        BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink)
+                        BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink, search)
                     }
                     if (item.reactions.isNotEmpty()) {
                         Row(
@@ -377,6 +379,7 @@ private fun BubbleBody(
     onAttachment: (Attachment) -> Unit,
     onLongPress: () -> Unit,
     onLink: (SmartEntity, List<SmartEntity>) -> Unit,
+    search: SearchMark?,
 ) {
     val m = item.message
     val out = m.outgoing
@@ -409,14 +412,14 @@ private fun BubbleBody(
             Text(text.trim(), fontSize = 40.sp, lineHeight = 46.sp, modifier = Modifier.padding(horizontal = 4.dp))
         } else if (text.isNotBlank() || !m.subject.isNullOrBlank()) {
             Box(Modifier.background(bg, RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                BubbleText(item, fg, target, links) { onLink(it, links) }
+                BubbleText(item, fg, target, links, search) { onLink(it, links) }
             }
         }
     }
 }
 
 @Composable
-private fun BubbleText(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, onLink: (SmartEntity) -> Unit) {
+private fun BubbleText(item: MessageUi, color: Color, target: Language, links: List<SmartEntity>, search: SearchMark?, onLink: (SmartEntity) -> Unit) {
     val m = item.message
     val tr = item.translation
     // A message awaiting its translation is drawn as placeholder bars until tapped.
@@ -431,7 +434,9 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language, links: L
     }
     val textColor = if (hidden) Color.Transparent else color
     val currentOnLink by rememberUpdatedState(onLink)
-    val content = remember(item.displayText, m.subject, marker, hidden, color, links) {
+    // Text hidden while its translation is on its way shows no matches either.
+    val mark = search.takeUnless { hidden }
+    val content = remember(item.displayText, m.subject, marker, hidden, color, links, mark) {
         buildAnnotatedString {
             m.subject?.takeIf { it.isNotBlank() }?.let {
                 pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold)); append(it); pop()
@@ -442,7 +447,7 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language, links: L
                 append("  ")
                 appendInlineContent(marker, "·")
             }
-        }
+        }.let { highlightBubble(it, item, mark) }
     }
     val inline = mapOf(
         "flag" to InlineTextContent(Placeholder(13.sp, 13.sp, PlaceholderVerticalAlign.TextCenter)) {
@@ -471,7 +476,7 @@ private fun BubbleText(item: MessageUi, color: Color, target: Language, links: L
         val subtext = item.subtext
         if (!hidden && subtext != null) {
             Text(
-                subtext, color = color.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium,
+                highlightMatches(AnnotatedString(subtext), subtext, 0, mark), color = color.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 2.dp),
             )
         } else if (!hidden && item.subtextPending) {
