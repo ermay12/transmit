@@ -169,10 +169,18 @@ class PlayAccessBackendTest {
         assertEquals("sh", second.s("keyHash"))
         assertEquals("false", second.s("rotate"))
 
-        // Nothing newer on Play: give up rather than loop.
+        // Nothing newer on Play: give up rather than loop, and say so (the app ends it once the key is refused too).
         store.owned = listOf(OwnedPurchase("transmit_monthly", "old", purchased = true, acknowledged = true))
         reply(402, """{"error":"purchase_not_active","state":"replaced"}""")
-        assertEquals(AccessErrorCode.SERVICE, (backend().refresh("old", "sh") as AccessResult.Failed).error.code)
+        val none = (backend().refresh("old", "sh") as AccessResult.Failed).error
+        assertEquals(AccessErrorCode.TOKEN_REPLACED, none.code)
+        assertFalse(none.retryable)
+        // Play can't be asked: a service problem, for later.
+        store.owned = null
+        reply(402, """{"error":"purchase_not_active","state":"replaced"}""")
+        val unknown = (backend().refresh("old", "sh") as AccessResult.Failed).error
+        assertEquals(AccessErrorCode.SERVICE, unknown.code)
+        assertTrue(unknown.retryable)
     }
 
     @Test
@@ -205,18 +213,6 @@ class PlayAccessBackendTest {
         assertEquals("ok", PlayAccessBackend.restorable(listOf(held, ok, pending))?.purchaseToken)
         assertEquals("held", PlayAccessBackend.restorable(listOf(held, pending))?.purchaseToken)
         assertNull(PlayAccessBackend.restorable(listOf(OwnedPurchase("other_app_sub", "x", purchased = true, acknowledged = true))))
-    }
-
-    @Test
-    fun playSaysWhetherTheSubscriptionIsPaidUp() = runBlocking {
-        store.owned = listOf(OwnedPurchase("transmit_monthly", "t", purchased = true, acknowledged = true))
-        assertEquals(true, backend().activeOnPlay())
-        store.owned = listOf(OwnedPurchase("transmit_monthly", "t", purchased = true, acknowledged = true, suspended = true))
-        assertEquals(false, backend().activeOnPlay())
-        store.owned = emptyList()
-        assertEquals(false, backend().activeOnPlay())
-        store.owned = null
-        assertNull(backend().activeOnPlay())
     }
 
     @Test

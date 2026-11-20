@@ -135,12 +135,12 @@ object AccessText {
 
     /**
      * What the plans screen says when Play's sheet didn't open; null when it did. [planChange]: it was to open for an
-     * upgrade or a switch, not a new subscription.
+     * upgrade or a switch, not a new subscription. "Already owned" runs a restore instead, whose outcome
+     * [alreadyOwnedProblem] words.
      */
     @StringRes
     fun launchProblem(result: LaunchResult, planChange: Boolean = false): Int? = when (result) {
-        LaunchResult.LAUNCHED -> null
-        LaunchResult.ALREADY_OWNED -> R.string.purchase_already_owned
+        LaunchResult.LAUNCHED, LaunchResult.ALREADY_OWNED -> null
         LaunchResult.UNAVAILABLE -> R.string.purchase_play_unavailable
         LaunchResult.FAILED -> if (planChange) R.string.billing_failed else R.string.purchase_declined
     }
@@ -156,6 +156,19 @@ object AccessText {
         failed.planChange -> R.string.billing_failed
         failed.error == null -> R.string.purchase_declined
         else -> R.string.purchase_failed
+    }
+
+    /**
+     * Play said the plan is already owned, but restoring found no subscription that gives AI. Usually Play's list is
+     * out of date (a subscription that ended moments ago): a calm "still updating". A payment problem or no connection
+     * says so instead.
+     */
+    @StringRes
+    fun alreadyOwnedProblem(failed: PurchaseUi.OwnedNotFound): Int = when (failed.error?.code) {
+        AccessErrorCode.PAYMENT_PROBLEM -> R.string.restore_payment_problem
+        AccessErrorCode.PAYMENT_PENDING -> R.string.restore_pending
+        AccessErrorCode.NETWORK -> R.string.ai_no_connection
+        else -> R.string.purchase_play_updating
     }
 
     /** One name for the end of the free week, whether its days or its AI ran out. */

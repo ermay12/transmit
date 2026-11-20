@@ -113,13 +113,19 @@ class PlansViewModel(private val c: AppContainer) : ViewModel() {
         // A subscriber's purchase is always a change of plan: an upgrade, or a switch to Transmit.
         val planChange = access.value is AiAccess.Subscribed
         viewModelScope.launch {
-            problem.value = AccessText.launchProblem(c.purchases.buy(activity, tier), planChange)
+            // "Already owned" has its own outcome in [purchase] (a restore), which this mustn't overwrite.
+            AccessText.launchProblem(c.purchases.buy(activity, tier), planChange)?.let { problem.value = it }
         }
     }
 
     /** Buying or changing the plan didn't work: say so where the plans are. */
     fun failed(p: PurchaseUi.Failed) {
         problem.value = AccessText.purchaseProblem(p)
+    }
+
+    /** Play said the plan is owned, and the restore that followed found nothing that gives AI. */
+    fun ownedNotFound(p: PurchaseUi.OwnedNotFound) {
+        problem.value = AccessText.alreadyOwnedProblem(p)
     }
 
     /** "Restore purchase", and "Use it here" for a subscription another device has. */
@@ -184,6 +190,10 @@ fun PlansScreen(vm: PlansViewModel, onBack: () -> Unit, onOwnKey: () -> Unit) {
             }
             is PurchaseUi.Failed -> {
                 vm.failed(p)
+                vm.purchaseSeen()
+            }
+            is PurchaseUi.OwnedNotFound -> {
+                vm.ownedNotFound(p)
                 vm.purchaseSeen()
             }
             else -> Unit

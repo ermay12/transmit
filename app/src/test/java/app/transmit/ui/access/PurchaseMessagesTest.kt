@@ -41,7 +41,8 @@ class PurchaseMessagesTest {
         assertEquals(declined, TestStrings.text(AccessText.launchProblem(LaunchResult.FAILED)!!))
         assertEquals(calm, TestStrings.text(AccessText.launchProblem(LaunchResult.FAILED, planChange = true)!!))
         assertEquals("Google Play isn't available right now. Try again later.", TestStrings.text(AccessText.launchProblem(LaunchResult.UNAVAILABLE)!!))
-        assertEquals("You already have this plan. Manage it in Google Play.", TestStrings.text(AccessText.launchProblem(LaunchResult.ALREADY_OWNED)!!))
+        // "Already owned" restores instead; what that finds is what the screen says (see PurchasesTest).
+        assertNull(AccessText.launchProblem(LaunchResult.ALREADY_OWNED))
     }
 
     @Test

@@ -13,6 +13,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -41,12 +42,25 @@ class AccessManagerTest {
     private var check: AllowanceCheck = AllowanceCheck.Unavailable
     private var inUseElsewhereNotices = 0
 
-    /** A manager on a fresh store, or on [file] again to stand for a restart (with its own scope). */
-    private fun manager(file: java.io.File = java.io.File(tmp.root, "access${stores++}.preferences_pb"), scope: CoroutineScope = this.scope): AccessManager {
+    /**
+     * A manager on a fresh store, or on [file] again to stand for a restart (with its own scope). [lag] is how late
+     * OpenRouter's figures are; 0 where a test's readings are taken as of now.
+     */
+    private fun manager(
+        file: java.io.File = java.io.File(tmp.root, "access${stores++}.preferences_pb"),
+        scope: CoroutineScope = this.scope,
+        lag: Long = OpenRouterAllowance.LAG_MS,
+        clock: () -> Long = System::currentTimeMillis,
+        grace: Long = AccessManager.PERIOD_END_GRACE_MS,
+        retry: Long = AccessManager.PERIOD_END_RETRY_MS,
+    ): AccessManager {
         val store = AccessStore(PreferenceDataStoreFactory.create(scope = scope) { file }) {
             vault.has(ProviderType.OPENROUTER.secretName)
         }
-        return AccessManager(store, vault, backend, { check }, { spent }, scope, isForeground = { foreground }).also {
+        return AccessManager(
+            store, vault, backend, { check }, { spent }, scope, isForeground = { foreground }, clock = clock,
+            usageLagMs = lag, periodEndGraceMs = grace, periodEndRetryMs = retry,
+        ).also {
             it.listener = object : AccessListener {
                 override fun onEndedInBackground(reason: EndReason) {
                     backgroundEnds += reason
@@ -152,8 +166,11 @@ class AccessManagerTest {
 
     @Test
     fun keyLimitMeansUsedUpButOtherFailuresAreNeverAPaywall() = runBlocking {
-        val m = manager()
+        var now = System.currentTimeMillis()
+        val m = manager(clock = { now })
         m.applyGrant(subGrant(), activate = true)
+        // OpenRouter's 403 counts once it's newer than the Worker's last answer (see anOlderOpenRouterReading…).
+        now += OpenRouterAllowance.LAG_MS
         val sub = m.current()
         // Unfamiliar 4xx/5xx and refusals: a service problem, mode unchanged.
         for ((status, kind) in listOf(500 to AiException.Kind.OTHER, 402 to AiException.Kind.OTHER, 404 to AiException.Kind.BAD_REQUEST, 429 to AiException.Kind.RATE_LIMIT, 403 to AiException.Kind.AUTH)) {
@@ -199,7 +216,8 @@ class AccessManagerTest {
      */
     @Test
     fun runningOutAsksTheWorkerOnceAtOncePastTheThrottle() = runBlocking {
-        val m = manager()
+        // OpenRouter's readings here are as of now, with no lag, so each one is newer than the Worker's last answer.
+        val m = manager(lag = 0)
         m.applyGrant(sub(0.5), activate = true)
         // OpenRouter's figure lags, so the Worker keeps reporting the 50 cents the last calls have spent.
         backend.refresh = AccessResult.Granted(sub(0.5, key = null))
@@ -235,7 +253,8 @@ class AccessManagerTest {
     /** The Worker reports a new period or a higher limit: no longer used up, with no dialog. */
     @Test
     fun aRenewalOrAHigherLimitFoundWhenItRunsOutClearsItSilently() = runBlocking {
-        val m = manager()
+        var now = System.currentTimeMillis()
+        val m = manager(clock = { now })
         m.applyGrant(sub(0.5), activate = true)
         // A higher limit in the same period (OpenRouter's lag is covered, so it's real room).
         backend.refresh = AccessResult.Granted(sub(4.5, key = null))
@@ -247,7 +266,9 @@ class AccessManagerTest {
         delay(200)
         assertNull(m.usedUpPrompt.value)
 
-        // A 403 in a period that has renewed meanwhile: no block, so the call runs again.
+        // A 403 in a period that has renewed meanwhile (a while after the Worker last answered): no block, so the
+        // call runs again.
+        now += OpenRouterAllowance.LAG_MS + 60_000
         backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
         assertNull(m.onManagedError(keyLimit))
         assertEquals(2, backend.refreshes)
@@ -432,20 +453,21 @@ class AccessManagerTest {
         assertFalse(m.warningDismissed.value)
     }
 
+    /**
+     * Only the Worker says a key is another device's: a 401 asks it with `"rotate": false`, and its `key_mismatch`
+     * marks the subscription. The key isn't taken back without asking.
+     */
     @Test
     fun aKeyAnotherDeviceTookIsNotTakenBackWithoutAsking() = runBlocking {
         val m = manager()
         m.applyGrant(subGrant(), activate = true)
-        backend.onPlay = true
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
         assertEquals(AiBlock.InUseElsewhere, m.onManagedError(refused))
-        // No Worker call: with this device's stale keyHash, it would rotate the other device's key away.
-        assertEquals(0, backend.refreshes)
+        assertEquals(1, backend.refreshes)
+        assertEquals("subhash", backend.refreshedWith)
         val a = m.current() as AiAccess.Subscribed
         assertTrue(a.inUseElsewhere)
         assertEquals(AiBlock.InUseElsewhere, app.transmit.ai.AiGate.check(a, false, { false }, { app.transmit.ai.BudgetStatus.Ok }))
-        // The daily refresh leaves it alone too.
-        assertEquals(RefreshResult.Skipped, m.refresh(force = true))
-        assertEquals(0, backend.refreshes)
 
         // "Use it here" restores with the old hash, so the Worker rotates the key to this device.
         backend.restore = AccessResult.Granted(subGrant().copy(key = "sk-sub-2", keyHash = "subhash2"))
@@ -455,11 +477,60 @@ class AccessManagerTest {
         assertFalse((m.current() as AiAccess.Subscribed).inUseElsewhere)
     }
 
+    /**
+     * The beta6 device test: the subscription expired and the Worker turned its key off. Coming back, OpenRouter
+     * refuses the key; Play's cache still listed the subscription, which made the app say "in use on another device"
+     * without asking anyone. Now the Worker is asked, says it expired, and it's ended, with the plans to follow.
+     */
     @Test
-    fun aRefusedKeyThatPlayNoLongerListsAsksTheWorkerOnce() = runBlocking {
+    fun aLapsedSubscriptionShowsEndedNeverInUseElsewhere() = runBlocking {
         val m = manager()
         m.applyGrant(subGrant(), activate = true)
-        backend.onPlay = false
+        seen(m, "SUBSCRIBED")
+        check = AllowanceCheck.KeyRejected
+        backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        m.reconcile()
+        assertEquals(1, backend.refreshes)
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
+        assertEquals(EndReason.SUBSCRIPTION_ENDED, withTimeout(5_000) { m.pendingEnd.first { it != null } })
+        assertEquals(0, inUseElsewhereNotices)
+    }
+
+    /** The mark never stops a refresh: each asks the Worker again, so a subscription that has since lapsed ends. */
+    @Test
+    fun inUseElsewhereIsCheckedAgainOnEveryRefresh() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
+        foreground = false
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
+        assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
+        assertEquals(1, inUseElsewhereNotices)
+        // Asked again, and still on the other device: no second notice.
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
+        assertEquals(2, backend.refreshes)
+        assertEquals(1, inUseElsewhereNotices)
+
+        // The other device's subscription has since expired: ended, no longer "in use elsewhere".
+        backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
+
+        // Or it came back to this device's key: a 200 for `"rotate": false` means the key is this device's.
+        val other = manager()
+        other.applyGrant(subGrant(), activate = true)
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
+        other.refresh(force = true)
+        backend.refresh = AccessResult.Granted(subGrant().copy(key = null))
+        other.refresh(force = true)
+        assertFalse((other.current() as AiAccess.Subscribed).inUseElsewhere)
+        assertEquals("sk-sub", other.managedKey())
+    }
+
+    @Test
+    fun aRefusedKeyAsksTheWorkerWhichSaysItEnded() = runBlocking {
+        val m = manager()
+        m.applyGrant(subGrant(), activate = true)
         backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
         assertEquals(AiBlock.Ended(EndReason.SUBSCRIPTION_ENDED), m.onManagedError(refused))
         assertEquals(1, backend.refreshes)
@@ -470,55 +541,30 @@ class AccessManagerTest {
     fun aBurstOfRefusedCallsLooksIntoItOnce() = runBlocking {
         val m = manager()
         m.applyGrant(subGrant(), activate = true)
-        backend.onPlay = false
         backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.NETWORK))
         repeat(3) { assertNull(m.onManagedError(refused)) }
         assertEquals(1, backend.refreshes)
+        // A Worker that couldn't be asked marks nothing.
+        assertFalse((m.current() as AiAccess.Subscribed).inUseElsewhere)
     }
 
+    /**
+     * The daily refresh goes straight to the Worker: OpenRouter isn't read first (that read came just before the
+     * Worker changed the limit, and OpenRouter then answered with the old limit for a while).
+     */
     @Test
-    fun theDailyRefreshFirstChecksTheKeyStillWorks() = runBlocking {
-        val m = manager()
-        m.applyGrant(subGrant(), activate = true)
-        check = AllowanceCheck.Reading(3.0, System.currentTimeMillis())
+    fun aRefreshAsksTheWorkerWithoutReadingOpenRouterFirst() = runBlocking {
+        var reads = 0
+        val counting = AccessManager(
+            AccessStore(PreferenceDataStoreFactory.create(scope = scope) { java.io.File(tmp.root, "reads.preferences_pb") }) { false },
+            vault, backend, { reads++; AllowanceCheck.KeyRejected }, { spent }, scope,
+        )
+        counting.applyGrant(subGrant(), activate = true)
         backend.refresh = AccessResult.Granted(subGrant().copy(key = null))
-        assertTrue(m.refresh(force = true) is RefreshResult.Answered)
+        assertTrue(counting.refresh(force = true) is RefreshResult.Answered)
+        assertEquals(0, reads)
         assertEquals(1, backend.refreshes)
-
-        check = AllowanceCheck.KeyRejected
-        backend.onPlay = true
-        foreground = false
-        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
-        assertEquals(1, backend.refreshes)
-        assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
-        assertEquals(1, inUseElsewhereNotices)
-    }
-
-    @Test
-    fun aRefreshThatFindsTheKeyOnAnotherDeviceAsksInsteadOfTakingIt() = runBlocking {
-        val m = manager()
-        m.applyGrant(subGrant(), activate = true)
-        // OpenRouter still takes the key (or couldn't be asked), but the Worker says it's another device's now.
-        check = AllowanceCheck.Unavailable
-        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.KEY_IN_USE_ELSEWHERE))
-        foreground = false
-        assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
-        assertEquals(1, backend.refreshes)
-        assertEquals("sk-sub", m.managedKey())
-        assertTrue((m.current() as AiAccess.Subscribed).inUseElsewhere)
-        assertEquals(1, inUseElsewhereNotices)
-        // Marked: later refreshes leave it alone until "Use it here".
-        assertEquals(RefreshResult.Skipped, m.refresh(force = true))
-        assertEquals(1, backend.refreshes)
-
-        // The same answer after a refused key, with Play unsure, in the foreground: marked, no notice.
-        val other = manager()
-        other.applyGrant(subGrant(), activate = true)
-        backend.onPlay = false
-        foreground = true
-        assertEquals(AiBlock.InUseElsewhere, other.onManagedError(refused))
-        assertTrue((other.current() as AiAccess.Subscribed).inUseElsewhere)
-        assertEquals(1, inUseElsewhereNotices)
+        assertFalse((counting.current() as AiAccess.Subscribed).inUseElsewhere)
     }
 
     @Test
@@ -554,18 +600,163 @@ class AccessManagerTest {
         val m = manager()
         m.applyGrant(subGrant(Tier.PLUS), activate = true)
         // What PlayAccessBackend answers when the old token is replaced and Play shows nothing newer yet.
-        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE, detail = "Replaced, and Play has no newer purchase"))
-        assertEquals(AccessErrorCode.SERVICE, (m.refresh(force = true) as RefreshResult.Failed).error.code)
+        backend.refresh = AccessResult.Failed(AccessError(AccessErrorCode.TOKEN_REPLACED, detail = "Replaced, and Play has no newer purchase"))
+        assertEquals(AccessErrorCode.TOKEN_REPLACED, (m.refresh(force = true) as RefreshResult.Failed).error.code)
         // Still Plus, never ended: a replaced token is a plan change, not a lapse.
         assertEquals(Tier.PLUS, (m.current() as AiAccess.Subscribed).tier)
         assertEquals(1, backend.refreshes)
         assertEquals("sk-sub", m.managedKey())
         assertEquals("tok", m.purchaseToken())
+
+        // But once OpenRouter refuses the key too, nothing gives AI any more: ended.
+        assertEquals(AiBlock.Ended(EndReason.SUBSCRIPTION_ENDED), m.onManagedError(refused))
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), m.current())
+    }
+
+    // ---- the period's end, while the app is open (beta6: Home said "subscribed" for 10+ minutes after it lapsed) --
+
+    /** Runs [AccessManager.watchPeriodEnd] as the app does while in the foreground, until [block] is done. */
+    private suspend fun watching(m: AccessManager, busy: () -> Boolean = { false }, block: suspend () -> Unit) {
+        val job = scope.launch { m.watchPeriodEnd(busy) }
+        try {
+            block()
+        } finally {
+            job.cancelAndJoin()
+        }
+    }
+
+    private suspend fun refreshesReach(n: Int) = withTimeout(5_000) { while (backend.refreshes < n) delay(10) }
+
+    @Test
+    fun aLapseShowsShortlyAfterThePeriodEndsWhileTheAppIsOpen() = runBlocking {
+        val m = manager(grace = 150, retry = 300)
+        val ends = System.currentTimeMillis() + 200
+        m.applyGrant(sub(4.5, ends = ends), activate = true)
+        seen(m, "SUBSCRIBED")
+        backend.refresh = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        watching(m) {
+            refreshesReach(1)
+            // Not before the end plus the grace.
+            assertTrue(System.currentTimeMillis() >= ends + 150)
+            withTimeout(5_000) { m.access.first { it is AiAccess.Ended } }
+            assertEquals(EndReason.SUBSCRIPTION_ENDED, withTimeout(5_000) { m.pendingEnd.first { it != null } })
+            delay(600)
+            // Ended: nothing more to ask.
+            assertEquals(1, backend.refreshes)
+        }
+    }
+
+    @Test
+    fun aPeriodEndThatStillLooksActiveIsAskedAboutOnceMore() = runBlocking {
+        val m = manager(grace = 100, retry = 300)
+        val ends = System.currentTimeMillis() + 100
+        m.applyGrant(sub(4.5, ends = ends), activate = true)
+        // Play renews late: the Worker still reports the period that has just ended.
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = ends, key = null))
+        watching(m) {
+            refreshesReach(2)
+            delay(800)
+            // The check and one retry; after that the daily refresh takes over.
+            assertEquals(2, backend.refreshes)
+        }
+        // Back in the foreground later (the watch starts again): this period end has had its checks.
+        watching(m) {
+            delay(300)
+            assertEquals(2, backend.refreshes)
+        }
+    }
+
+    @Test
+    fun comingBackAfterThePeriodEndedAsksAtOnceAndARenewalStopsTheChecks() = runBlocking {
+        val m = manager(grace = 100, retry = 300)
+        m.applyGrant(sub(0.0, ends = System.currentTimeMillis() - 10 * 60_000), activate = true)
+        assertTrue(m.allowanceNow()!!.usedUp)
+        // The renewal came while the app was in the background: a new period, and the used-up state goes.
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd, key = null))
+        watching(m) {
+            refreshesReach(1)
+            withTimeout(5_000) { m.allowance.first { it?.usedUp == false } }
+            delay(600)
+            assertEquals(1, backend.refreshes)
+        }
+    }
+
+    @Test
+    fun theWatchWaitsWhilePlaysPurchaseSheetIsOpen() = runBlocking {
+        val m = manager(grace = 50, retry = 300)
+        m.applyGrant(sub(4.5, ends = System.currentTimeMillis() - 60_000), activate = true)
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd, key = null))
+        watching(m, busy = { true }) {
+            delay(300)
+            assertEquals(0, backend.refreshes)
+        }
+    }
+
+    // ---- the allowance never goes back in time (beta6: 85% after a renewal, 100% after the limit was raised) ------
+
+    @Test
+    fun anOlderOpenRouterReadingNeverOverwritesTheWorkersNewerAnswer() = runBlocking {
+        var now = System.currentTimeMillis()
+        val m = manager(clock = { now })
+        // 85% used.
+        m.applyGrant(sub(0.675), activate = true)
+        assertEquals(85, m.allowanceNow()!!.percent)
+        // A renewal from the Worker: a new period.
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
+        assertEquals(RefreshResult.Answered(renewed = true), m.refresh(force = true))
+        assertEquals(0, m.allowanceNow()!!.percent)
+
+        // Back to Home 17 s later: OpenRouter's /key still has the limit from before the renewal.
+        now += 17_000
+        check = AllowanceCheck.Reading(0.675, now - OpenRouterAllowance.LAG_MS)
+        m.reconcile()
+        assertEquals(0, m.allowanceNow()!!.percent)
+        // A 403 seen through that same old limit is ignored too: nothing blocked, and the Worker isn't asked again.
+        assertNull(m.onManagedError(keyLimit))
+        assertEquals(0, m.allowanceNow()!!.percent)
+        assertEquals(1, backend.refreshes)
+
+        // Once OpenRouter's figures are newer than the Worker's answer, they count.
+        now += OpenRouterAllowance.LAG_MS
+        check = AllowanceCheck.Reading(0.045, now - OpenRouterAllowance.LAG_MS)
+        m.reconcile()
+        assertEquals(99, m.allowanceNow()!!.percent)
+        // And an older one than that doesn't undo it.
+        check = AllowanceCheck.Reading(4.5, now - OpenRouterAllowance.LAG_MS - 60_000)
+        m.reconcile()
+        assertEquals(99, m.allowanceNow()!!.percent)
+    }
+
+    /** A relaunch whose newest reading has room clears the used-up state: no banner, no dialog, its own next check. */
+    @Test
+    fun aRelaunchClearsTheUsedUpStateOnceTheNewestFigureHasRoom() = runBlocking {
+        val file = java.io.File(tmp.root, "usedup.preferences_pb")
+        val first = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var now = System.currentTimeMillis()
+        val m = manager(file, first, clock = { now })
+        m.applyGrant(sub(0.2), activate = true)
+        backend.refresh = AccessResult.Granted(sub(0.2, key = null))
+        spent.value = 0.2
+        m.afterManagedCall()
+        withTimeout(5_000) { m.usedUpPrompt.first { it != null } }
+        first.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+
+        // The limit was raised meanwhile; minutes later the app is opened again and OpenRouter has caught up.
+        now += OpenRouterAllowance.LAG_MS + 60_000
+        val again = manager(file, clock = { now })
+        withTimeout(5_000) { again.allowance.first { it?.usedUp == true } }
+        check = AllowanceCheck.Reading(4.0, now - OpenRouterAllowance.LAG_MS)
+        again.reconcile()
+        withTimeout(5_000) { again.allowance.first { it?.usedUp == false } }
+        assertFalse(again.allowanceUsedUp())
+        delay(200)
+        assertNull(again.usedUpPrompt.value)
+        assertEquals(1, backend.refreshes)
     }
 
     @Test
     fun reconcilingNoticesAUsedUpOrRefusedTrialKey() = runBlocking {
-        val m = manager()
+        val m = manager(lag = 0)
         m.applyGrant(trialGrant(), activate = true)
         check = AllowanceCheck.Reading(0.2, System.currentTimeMillis())
         m.reconcile()
@@ -600,9 +791,9 @@ class AccessManagerTest {
     private class ScriptedBackend : AccessBackend {
         var trial: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
         var throwOnTrial = false
-        var refresh: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
-        var refreshes = 0
-        var onPlay: Boolean? = null
+        @Volatile var refresh: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
+        @Volatile var refreshes = 0
+        var refreshedWith: String? = null
         var restore: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
         var restoredWith: String? = null
         override suspend fun startTrial(): AccessResult = if (throwOnTrial) throw java.io.IOException("offline") else trial
@@ -611,8 +802,8 @@ class AccessManagerTest {
             restoredWith = currentKeyHash
             return restore
         }
-        override suspend fun activeOnPlay() = onPlay
         override suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult {
+            refreshedWith = keyHash
             refreshes++
             return refresh
         }

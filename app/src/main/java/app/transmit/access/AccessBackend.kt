@@ -29,12 +29,6 @@ interface AccessBackend {
      * [AccessErrorCode.KEY_IN_USE_ELSEWHERE] and changes nothing. Only [restore] takes the key.
      */
     suspend fun refresh(purchaseToken: String, keyHash: String?): AccessResult
-
-    /**
-     * Whether Google Play lists a Transmit subscription on this device's account that is paid up (not on hold or
-     * paused), without asking the Worker. Null when Play can't be asked.
-     */
-    suspend fun activeOnPlay(): Boolean? = null
 }
 
 /**
@@ -51,7 +45,9 @@ fun interface AllowanceSource {
 sealed interface AllowanceCheck {
     /**
      * [remainingUsd] as OpenRouter reported it, covering spending up to [at]. Because of OpenRouter's lag, [at] is a
-     * few minutes before the reading was taken; calls the app logged after [at] are added on top.
+     * few minutes before the reading was taken; calls the app logged after [at] are added on top. The key's limit in it
+     * counts as seen at [at] too: OpenRouter can answer `/key` with a limit from before a change made a minute earlier
+     * (seen on a device after a renewal), so a reading never overrules a newer answer from the Worker.
      */
     data class Reading(val remainingUsd: Double, val at: Long) : AllowanceCheck
 
@@ -148,6 +144,8 @@ enum class AccessErrorCode {
     BUSY,
     /** A background refresh found the subscription's key on another device (`key_mismatch`); nothing was changed. */
     KEY_IN_USE_ELSEWHERE,
+    /** The Worker says the purchase token was `replaced`, and Play lists no newer one to send instead. */
+    TOKEN_REPLACED,
     /** No connection to the backend. */
     NETWORK,
     /** The backend, Google or OpenRouter failed, or something unexpected came back. Try again later. */

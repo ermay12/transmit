@@ -71,6 +71,12 @@ sealed interface PurchaseUi {
      * a switch to Transmit, not a new purchase.
      */
     data class Failed(val error: AccessError?, val planChange: Boolean = false) : PurchaseUi
+
+    /**
+     * Google Play said this plan is already owned, and restoring found no subscription that gives AI: Play's list is
+     * probably out of date (it keeps showing a subscription for a while after it ended). [error] is the restore's.
+     */
+    data class OwnedNotFound(val error: AccessError?) : PurchaseUi
 }
 
 /**
@@ -149,12 +155,30 @@ class Purchases(
         val result = store.launch(activity, tier, plan)
         if (result != LaunchResult.LAUNCHED) {
             launched = null
+            val sent = if (result == LaunchResult.ALREADY_OWNED) {
+                restoreOwned()
+            } else {
+                _state.value = PurchaseUi.Idle
+                false
+            }
             flowSince = null
-            _state.value = PurchaseUi.Idle
             // Nothing to buy may mean the app's view is out of date (a switch that has already happened, say).
-            onFlowReturned(false)
+            onFlowReturned(sent)
         }
         return result
+    }
+
+    /**
+     * Google Play says the account already owns the plan (ITEM_ALREADY_OWNED, from its own list or its sheet). Play's
+     * list can say that for a while after a subscription has ended, so this runs "Restore purchase": Play's purchases,
+     * then the one that gives AI to the Worker. Found: the plan shows, with no error ([PurchaseUi.Idle]). Not found:
+     * [PurchaseUi.OwnedNotFound], and the plans screen says Play is still updating. Returns whether the Worker answered.
+     */
+    private suspend fun restoreOwned(): Boolean {
+        _state.value = PurchaseUi.Working
+        val error = access.restore()
+        _state.value = if (error == null && access.current() is AiAccess.Subscribed) PurchaseUi.Idle else PurchaseUi.OwnedNotFound(error)
+        return error == null
     }
 
     fun resetState() {
@@ -194,9 +218,7 @@ class Purchases(
             }
             PurchaseUpdate.AlreadyOwned -> {
                 takeLaunched()
-                // Most likely bought earlier and never delivered: look for it.
-                sync()
-                _state.value = PurchaseUi.Idle
+                return restoreOwned()
             }
             is PurchaseUpdate.Failed -> {
                 Log.w(TAG, "Purchase failed: ${u.responseCode} ${u.message}")

@@ -208,6 +208,66 @@ class PurchasesTest {
         assertEquals("The purchase didn't go through.", TestStrings.text(AccessText.purchaseProblem(PurchaseUi.Failed(AccessError(AccessErrorCode.SERVICE)))))
     }
 
+    /**
+     * The beta6 device test: the subscription had ended, but Play's cache still listed it, so Subscribe said "You
+     * already have this plan". Now "already owned" restores: an active subscription found shows as the plan, with no
+     * error and no notice.
+     */
+    @Test
+    fun alreadyOwnedRestoresAndAnActiveSubscriptionShowsWithNoError() = runBlocking {
+        access.applyGrant(grant("old"), activate = true)
+        access.markEnded(EndReason.SUBSCRIPTION_ENDED)
+        store.launchResult = LaunchResult.ALREADY_OWNED
+        backend.restore = AccessResult.Granted(grant("bought-elsewhere"))
+        assertEquals(LaunchResult.ALREADY_OWNED, purchases.buy(Activity(), Tier.STANDARD))
+        assertEquals(1, backend.restores)
+        assertEquals(PurchaseUi.Idle, purchases.state.value)
+        assertEquals(Tier.STANDARD, (access.current() as AiAccess.Subscribed).tier)
+        assertEquals("bought-elsewhere", access.purchaseToken())
+        assertNull(AccessText.launchProblem(LaunchResult.ALREADY_OWNED))
+        // The restore's answer is the plan: no refresh after it.
+        assertEquals(listOf(true), sentFlags.toList())
+    }
+
+    @Test
+    fun alreadyOwnedWithNothingActiveSaysPlayIsStillUpdating() = runBlocking {
+        access.applyGrant(grant("old"), activate = true)
+        access.markEnded(EndReason.SUBSCRIPTION_ENDED)
+        // Play's sheet itself answers ITEM_ALREADY_OWNED; the Worker says the purchase it lists has expired.
+        backend.restore = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        emit(PurchaseUpdate.AlreadyOwned)
+        val failed = withTimeout(5_000) { purchases.state.first { it is PurchaseUi.OwnedNotFound } } as PurchaseUi.OwnedNotFound
+        assertEquals(
+            "Google Play is still updating your subscription. Please try again in a few minutes.",
+            TestStrings.text(AccessText.alreadyOwnedProblem(failed)),
+        )
+        assertEquals(AiAccess.Ended(EndReason.SUBSCRIPTION_ENDED), access.current())
+        purchases.resetState()
+
+        // Play's own list says it's owned (the sheet never opens), and Play lists nothing that restores.
+        store.launchResult = LaunchResult.ALREADY_OWNED
+        backend.restore = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        purchases.buy(Activity(), Tier.STANDARD)
+        assertEquals(PurchaseUi.OwnedNotFound(AccessError(AccessErrorCode.NO_PURCHASE)), purchases.state.value)
+        assertEquals(2, backend.restores)
+        // A subscription on hold is owned for real: the payment is what to fix.
+        assertEquals(
+            "There's a problem with your payment. Fix it in Google Play.",
+            TestStrings.text(AccessText.alreadyOwnedProblem(PurchaseUi.OwnedNotFound(AccessError(AccessErrorCode.PAYMENT_PROBLEM)))),
+        )
+    }
+
+    /** A free week that's running isn't ended by an old subscription Play still lists. */
+    @Test
+    fun alreadyOwnedDuringTheFreeWeekLeavesItRunning() = runBlocking {
+        access.applyGrant(Grant(Entitlement.Trial(System.currentTimeMillis() + 3 * 86_400_000L), "sk-trial", "th", 0.5, 0.4), activate = true)
+        store.launchResult = LaunchResult.ALREADY_OWNED
+        backend.restore = AccessResult.Ended(EndReason.SUBSCRIPTION_ENDED)
+        purchases.buy(Activity(), Tier.STANDARD)
+        assertTrue(purchases.state.value is PurchaseUi.OwnedNotFound)
+        assertTrue(access.current() is AiAccess.Trial)
+    }
+
     /** A refresh sends what Play has that isn't queued yet, and leaves a token that just failed to its retry job. */
     @Test
     fun aRefreshSendsOnlyPurchasesNotAlreadyWaiting() = runBlocking {
@@ -262,7 +322,12 @@ class PurchasesTest {
             sent += purchase.purchaseToken
             return results[purchase.purchaseToken]?.removeFirstOrNull() ?: AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
         }
-        override suspend fun restore(currentKeyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        @Volatile var restore: AccessResult = AccessResult.Failed(AccessError(AccessErrorCode.NO_PURCHASE))
+        @Volatile var restores = 0
+        override suspend fun restore(currentKeyHash: String?): AccessResult {
+            restores++
+            return restore
+        }
         override suspend fun refresh(purchaseToken: String, keyHash: String?) = AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
     }
 

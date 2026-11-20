@@ -14,12 +14,21 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
- * The allowance as last read from the backend or OpenRouter: [remainingUsd] of [allowanceUsd] were left at [at].
- * Managed calls the app logged since then are subtracted on top.
+ * The allowance as last read from the backend or OpenRouter: [remainingUsd] of [allowanceUsd] were left, counting
+ * spending up to [at]; managed calls the app logged since then are subtracted on top. [remainingUsd] is the key's limit
+ * minus what was spent, and [limitAt] is when that limit was seen: the Worker's answer sees it as it is (it has just set
+ * it), while OpenRouter's figures, the limit included, can be minutes old.
  */
-data class AllowanceBaseline(val allowanceUsd: Double, val remainingUsd: Double, val at: Long) {
+data class AllowanceBaseline(val allowanceUsd: Double, val remainingUsd: Double, val at: Long, val limitAt: Long = at) {
     fun usedFraction(spentSince: Double): Double =
         if (allowanceUsd <= 0) 1.0 else ((allowanceUsd - remainingUsd + spentSince) / allowanceUsd).coerceIn(0.0, 1.0)
+
+    /**
+     * Whether [newer] (a reading of the same allowance) may replace this one: only if it saw neither the limit nor the
+     * spending earlier than this one did. An older figure never overwrites a newer one, so the percent doesn't go back
+     * in time when a stale reading arrives after the Worker's answer.
+     */
+    fun yieldsTo(newer: AllowanceBaseline): Boolean = newer.limitAt >= limitAt && newer.at >= at
 }
 
 /** What's saved about AI access. The managed key and purchase token live in the encrypted [app.transmit.data.SecretStore]. */
@@ -35,7 +44,7 @@ data class StoredAccess(
     val lastKind: String? = null,
     /** The [allowancePeriod] the Home "nearly used up" banner was dismissed for. */
     val warningDismissedFor: String? = null,
-    /** OpenRouter refused the subscription key while Play still lists the subscription: another device took it. */
+    /** The Worker answered `key_mismatch`: another device holds the subscription's key. Only the Worker sets this. */
     val inUseElsewhere: Boolean = false,
     /** The chats' "Translation is off" strip was dismissed; it stays hidden in every chat from then on. */
     val offStripDismissed: Boolean = false,
@@ -116,6 +125,7 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
         val allowanceUsd = doublePreferencesKey("allowance_usd")
         val remainingUsd = doublePreferencesKey("allowance_remaining_usd")
         val baselineAt = longPreferencesKey("allowance_at")
+        val limitAt = longPreferencesKey("allowance_limit_at")
         val lastKind = stringPreferencesKey("last_kind")
         val warningDismissedFor = stringPreferencesKey("warning_dismissed_for")
         val inUseElsewhere = booleanPreferencesKey("in_use_elsewhere")
@@ -142,7 +152,10 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 }
                 else -> null
             }
-            val baseline = p[K.allowanceUsd]?.let { usd -> AllowanceBaseline(usd, p[K.remainingUsd] ?: usd, p[K.baselineAt] ?: 0) }
+            val baseline = p[K.allowanceUsd]?.let { usd ->
+                val at = p[K.baselineAt] ?: 0
+                AllowanceBaseline(usd, p[K.remainingUsd] ?: usd, at, p[K.limitAt] ?: at)
+            }
             return StoredAccess(
                 ownKey = p[K.ownKey] ?: false,
                 entitlement = entitlement,
@@ -191,9 +204,10 @@ class AccessStore(private val store: DataStore<Preferences>, private val hasOwnK
                 p[K.allowanceUsd] = b.allowanceUsd
                 p[K.remainingUsd] = b.remainingUsd
                 p[K.baselineAt] = b.at
+                p[K.limitAt] = b.limitAt
             } else {
                 listOf(K.allowanceUsd, K.remainingUsd).forEach { p.remove(it) }
-                p.remove(K.baselineAt)
+                listOf(K.baselineAt, K.limitAt).forEach { p.remove(it) }
             }
             if (s.lastKind != null) p[K.lastKind] = s.lastKind else p.remove(K.lastKind)
             if (s.warningDismissedFor != null) p[K.warningDismissedFor] = s.warningDismissedFor else p.remove(K.warningDismissedFor)

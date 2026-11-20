@@ -272,7 +272,8 @@
     <string name="purchase_failed">The purchase didn\'t go through.</string>
     <string name="purchase_retrying">Your purchase went through, but Transmit couldn\'t finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts.</string>
     <string name="purchase_play_unavailable">Google Play isn\'t available right now. Try again later.</string>
-    <string name="purchase_already_owned">You already have this plan. Manage it in Google Play.</string>
+    <!-- Google Play said the plan is already owned, but restoring found nothing active: Play's list is out of date. -->
+    <string name="purchase_play_updating">Google Play is still updating your subscription. Please try again in a few minutes.</string>
 
     <!-- Notifications about the plan. -->
     <string name="notify_plan_channel">Plan</string>

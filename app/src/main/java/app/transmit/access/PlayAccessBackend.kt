@@ -65,8 +65,6 @@ class PlayAccessBackend(
         return subscription(purchase.purchaseToken, purchase.productId, currentKeyHash, null)
     }
 
-    override suspend fun activeOnPlay(): Boolean? = store.purchases()?.any { it.tier != null && it.active }
-
     /**
      * `POST /v1/subscription`. After an upgrade the old token answers `replaced`: Play's newer token for the
      * subscription is sent instead (once), and kept from then on.
@@ -83,8 +81,8 @@ class PlayAccessBackend(
         repeat(2) {
             val reply = retryingBusy { api.subscription(t, product, keyHash, androidId, rotate) }
             if (reply.delivery != Delivery.USE_NEWER_TOKEN) return reply.toResult { WorkerApi.subscriptionGrant(it, t) }
-            val newer = store.purchases()?.let { newerThan(t, it) }
-                ?: return fail(AccessErrorCode.SERVICE, "Replaced, and Play has no newer purchase")
+            val owned = store.purchases() ?: return fail(AccessErrorCode.SERVICE, "Replaced, and Play can't be asked", retryable = true)
+            val newer = newerThan(t, owned) ?: return fail(AccessErrorCode.TOKEN_REPLACED, "Replaced, and Play has no newer purchase")
             Log.i(TAG, "Purchase was replaced; sending the newer one")
             t = newer.purchaseToken
             product = newer.productId

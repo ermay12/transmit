@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -40,7 +41,7 @@ data class AllowanceView(val fraction: Double, val resetsAt: Long?) {
 
 /** What [AccessManager.refresh] did, so a caller can tell a call that was skipped from one that changed nothing. */
 sealed interface RefreshResult {
-    /** Not asked: within the throttle, or nothing to ask about (no subscription, ended, in use elsewhere). */
+    /** Not asked: within the throttle, or nothing to ask about (no subscription, or it has ended). */
     data object Skipped : RefreshResult
 
     /**
@@ -74,6 +75,9 @@ class AccessManager(
     autoStart: Boolean = true,
     /** How late OpenRouter books spending, so a figure from it (through the Worker too) covers calls up to then. */
     private val usageLagMs: Long = OpenRouterAllowance.LAG_MS,
+    /** How long after the paid period's end [watchPeriodEnd] asks the Worker, and how long it waits to ask again. */
+    private val periodEndGraceMs: Long = PERIOD_END_GRACE_MS,
+    private val periodEndRetryMs: Long = PERIOD_END_RETRY_MS,
 ) {
     var listener: AccessListener = object : AccessListener {}
 
@@ -152,6 +156,10 @@ class AccessManager(
     private val limitLock = Mutex()
     /** When a refused subscription key was last looked into, so a burst of failed calls checks once. */
     private var keyCheckedAt = 0L
+    /** One reading of OpenRouter at a time: the app coming back and Home showing ask at the same moment. */
+    private val reconciling = Mutex()
+    /** The paid period's end that [watchPeriodEnd] has asked the Worker about, how many times, and when last. */
+    private var periodEndChecks: Triple<Long, Int, Long>? = null
 
     private val started = kotlinx.coroutines.CompletableDeferred<Unit>()
 
@@ -227,30 +235,33 @@ class AccessManager(
         handle(activate = true) { backend.activatePurchase(purchase, hash) }
     }
 
-    /** "Restore purchase". Null when the backend answered: SUBSCRIBED, or ENDED for a lapsed subscription. */
+    /**
+     * "Restore purchase". Null when the backend answered: SUBSCRIBED, or ENDED for a lapsed subscription. A free week
+     * that's still running isn't ended by a lapsed subscription Play still lists (its cache can, for a while).
+     */
     suspend fun restore(): AccessError? = refreshLock.withLock {
         val s = store.current()
         val hash = s.keyHash.takeIf { s.entitlement is Entitlement.Subscription }
-        handle(activate = true) { backend.restore(hash) }
+        val trialRunning = s.entitlement is Entitlement.Trial && s.hasActiveEntitlement(clock())
+        handle(activate = true, endsAccess = !trialRunning) { backend.restore(hash) }
     }
 
     /**
      * Re-checks the subscription with the backend, at most every few minutes unless [force]d. It waits for a purchase
      * or restore that's being sent, then uses the token and key that came back.
      *
-     * A refresh never takes the key from another device: it sends `"rotate": false`, and a `key_mismatch` marks
-     * the subscription in use elsewhere (see [backgroundRefresh]). The key is also checked with OpenRouter first,
-     * which is cheap and covers a Worker that predates `rotate`; a refused key goes through [refusedLocked].
+     * A refresh never takes the key from another device: it sends `"rotate": false`, and only the Worker's
+     * `key_mismatch` marks the subscription in use elsewhere (see [backgroundRefresh]). That mark never stops a
+     * refresh: each one asks again, so a subscription that has since lapsed shows as ended.
      */
     suspend fun refresh(force: Boolean = false): RefreshResult = refreshLock.withLock {
         val s = store.current()
-        if (s.entitlement !is Entitlement.Subscription || s.ended != null || s.inUseElsewhere) return RefreshResult.Skipped
+        if (s.entitlement !is Entitlement.Subscription || s.ended != null) return RefreshResult.Skipped
         val token = vault.get(PURCHASE_TOKEN) ?: return RefreshResult.Skipped
         if (!force && clock() - lastRefreshAt < REFRESH_INTERVAL_MS) return RefreshResult.Skipped
         lastRefreshAt = clock()
         val wasUsedUp = allowanceNow()?.usedUp == true
-        val key = managedKey()
-        val error = if (key != null && read(key) == AllowanceCheck.KeyRejected) refusedLocked(token, s) else backgroundRefresh(token, s)
+        val error = backgroundRefresh(token, s)
         if (error != null) return RefreshResult.Failed(error)
         val after = store.current()
         RefreshResult.Answered(renewed = after.allowancePeriod != s.allowancePeriod || (wasUsedUp && allowanceNow()?.usedUp == false))
@@ -258,18 +269,33 @@ class AccessManager(
 
     /**
      * `POST /v1/subscription` with `"rotate": false`, for calls the user didn't ask for. If the key is on another
-     * device the Worker changes nothing and answers `key_mismatch`: mark it so the app asks before taking it back.
+     * device the Worker changes nothing and answers `key_mismatch`: mark it so the app asks before taking it back. An
+     * expired or refunded token ends the subscription ([handle]). So does a `replaced` one Play names no newer token
+     * for, once OpenRouter has refused the key ([keyRefused]); while the key still works, that's a plan change Play
+     * hasn't listed yet, and nothing changes.
      */
-    private suspend fun backgroundRefresh(token: String, s: StoredAccess): AccessError? {
+    private suspend fun backgroundRefresh(token: String, s: StoredAccess, keyRefused: Boolean = false): AccessError? {
         val error = handle(activate = false) { backend.refresh(token, s.keyHash) }
-        if (error?.code != AccessErrorCode.KEY_IN_USE_ELSEWHERE) return error
-        markInUseElsewhere()
-        return null
+        return when (error?.code) {
+            AccessErrorCode.KEY_IN_USE_ELSEWHERE -> {
+                markInUseElsewhere()
+                null
+            }
+            AccessErrorCode.TOKEN_REPLACED -> if (keyRefused) {
+                markEnded(EndReason.SUBSCRIPTION_ENDED)
+                null
+            } else {
+                error
+            }
+            else -> error
+        }
     }
 
+    /** Only for the Worker's `key_mismatch`. Each refresh asks again; the notice is for the first time only. */
     private suspend fun markInUseElsewhere() {
+        val already = store.current().inUseElsewhere
         store.update { it.copy(inUseElsewhere = true) }
-        if (!isForeground()) listener.onInUseElsewhereInBackground()
+        if (!already && !isForeground()) listener.onInUseElsewhereInBackground()
     }
 
     private suspend fun read(key: String): AllowanceCheck = try {
@@ -282,16 +308,21 @@ class AccessManager(
     }
 
     /**
-     * OpenRouter refused the subscription key. If Play still lists the subscription as paid up, another device
-     * took the key: mark it so the app asks before taking it back (`backend/API.md`). Otherwise it lapsed or was
-     * refunded, and a refresh lets the Worker say so. Returns the block for the call that failed, if any.
+     * OpenRouter refused the subscription key (a 401): the Worker says why, with `"rotate": false` so it never takes
+     * the key back. `key_mismatch`: another device has it, so the app asks before taking it back (`backend/API.md`).
+     * Expired, refunded, or replaced with nothing newer: it has ended. Play's own list isn't asked: its cache can show
+     * a subscription for a while after it ended. Once every few minutes at most, so a burst of failed calls asks once.
+     * Returns the block for the call that failed, if any.
      */
     private suspend fun subscriptionKeyRefused(): AiBlock? {
         refreshLock.withLock {
             val s = store.current()
-            if (s.entitlement is Entitlement.Subscription && s.ended == null && !s.inUseElsewhere) {
+            if (s.entitlement is Entitlement.Subscription && s.ended == null) {
                 val token = vault.get(PURCHASE_TOKEN)
-                if (token != null && clock() - keyCheckedAt >= REFRESH_INTERVAL_MS) refusedLocked(token, s)
+                if (token != null && clock() - keyCheckedAt >= REFRESH_INTERVAL_MS) {
+                    keyCheckedAt = clock()
+                    backgroundRefresh(token, s, keyRefused = true)
+                }
             }
         }
         return when (val a = current()) {
@@ -301,23 +332,11 @@ class AccessManager(
         }
     }
 
-    private suspend fun refusedLocked(token: String, s: StoredAccess): AccessError? {
-        keyCheckedAt = clock()
-        return when (backend.activeOnPlay()) {
-            true -> {
-                markInUseElsewhere()
-                null
-            }
-            false -> backgroundRefresh(token, s)
-            // Play can't be asked now: a service problem; the next failure or refresh looks again.
-            null -> AccessError(AccessErrorCode.SERVICE, detail = "Play purchases unavailable", retryable = true)
-        }
-    }
-
     /** "Use it here": takes the subscription's key back from the other device. Null on success. */
     suspend fun useHere(): AccessError? = restore()
 
-    private suspend fun handle(activate: Boolean, call: suspend () -> AccessResult): AccessError? {
+    /** [endsAccess]: an answer that the purchase gives no AI ends the app's trial or subscription. */
+    private suspend fun handle(activate: Boolean, endsAccess: Boolean = true, call: suspend () -> AccessResult): AccessError? {
         val result = try {
             call()
         } catch (e: CancellationException) {
@@ -332,7 +351,7 @@ class AccessManager(
                 null
             }
             is AccessResult.Ended -> {
-                markEnded(result.reason)
+                if (endsAccess) markEnded(result.reason)
                 null
             }
             is AccessResult.Failed -> result.error
@@ -355,7 +374,8 @@ class AccessManager(
                 ownKey = if (activate) false else it.ownKey,
                 ended = null,
                 keyHash = g.keyHash ?: it.keyHash.takeIf { g.key == null },
-                baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, if (samePeriod) clock() - usageLagMs else clock()),
+                // The Worker has just set the key's limit, so its figure for the limit is the newest there is.
+                baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, if (samePeriod) clock() - usageLagMs else clock(), limitAt = clock()),
                 // A key from the Worker works here, whichever device had it before.
                 inUseElsewhere = false,
             )
@@ -366,7 +386,7 @@ class AccessManager(
         }
     }
 
-    suspend fun markEnded(reason: EndReason) = store.update { it.copy(ended = reason) }
+    suspend fun markEnded(reason: EndReason) = store.update { it.copy(ended = reason, inUseElsewhere = false) }
 
     // ---- choosing ------------------------------------------------------------------------------
 
@@ -437,25 +457,46 @@ class AccessManager(
     /**
      * Corrects the local tally with OpenRouter's (lagging) figure, and notices a key that stopped working. Once a
      * switch to Transmit is due, it first asks the Worker for the new plan and allowance (at most every few minutes).
+     * OpenRouter's figure only replaces the stored one if it isn't older ([observed]). One at a time: a second call
+     * while one runs does nothing, since the running one reads the same figure.
      */
     suspend fun reconcile() {
-        if ((current() as? AiAccess.Subscribed)?.pendingSwitch?.let { clock() >= it.startsAt } == true) refresh()
-        val key = managedKey() ?: return
-        val a = current()
-        if (!a.isManaged) return
-        when (val check = read(key)) {
-            is AllowanceCheck.Reading -> {
-                setBaseline { b -> b.copy(remainingUsd = check.remainingUsd, at = check.at) }
-                afterManagedCall()
+        if (!reconciling.tryLock()) return
+        try {
+            if ((current() as? AiAccess.Subscribed)?.pendingSwitch?.let { clock() >= it.startsAt } == true) refresh()
+            val key = managedKey() ?: return
+            val a = current()
+            if (!a.isManaged) return
+            when (val check = read(key)) {
+                is AllowanceCheck.Reading -> {
+                    observed(check.remainingUsd, at = check.at, limitAt = check.at)
+                    afterManagedCall()
+                }
+                AllowanceCheck.UsedUp -> {
+                    usedUpObserved()
+                    afterManagedCall()
+                }
+                AllowanceCheck.KeyRejected -> keyRefused(a)
+                AllowanceCheck.Unavailable -> Unit
             }
-            AllowanceCheck.UsedUp -> {
-                setBaseline { b -> b.copy(remainingUsd = 0.0, at = clock()) }
-                afterManagedCall()
-            }
-            AllowanceCheck.KeyRejected -> keyRefused(a)
-            AllowanceCheck.Unavailable -> Unit
+        } finally {
+            reconciling.unlock()
         }
     }
+
+    /**
+     * What OpenRouter says is left: kept only if it saw neither the limit nor the spending earlier than the stored
+     * figure did ([AllowanceBaseline.yieldsTo]). OpenRouter's `/key` can answer with a limit from before the Worker
+     * changed it moments ago, so a newer answer from the Worker stands until OpenRouter has caught up.
+     */
+    private suspend fun observed(remainingUsd: Double, at: Long, limitAt: Long) = store.update { s ->
+        val b = s.baseline ?: AllowanceBaseline(0.0, 0.0, Long.MIN_VALUE, Long.MIN_VALUE)
+        val next = b.copy(remainingUsd = remainingUsd, at = at, limitAt = limitAt)
+        if (b.yieldsTo(next)) s.copy(baseline = next) else s
+    }
+
+    /** OpenRouter's "Key limit exceeded": nothing left now, against a limit that may be as old as its other figures. */
+    private suspend fun usedUpObserved() = clock().let { now -> observed(0.0, at = now, limitAt = now - usageLagMs) }
 
     /** A 401 for the managed key: a trial is over; a subscription key was taken or turned off. */
     private suspend fun keyRefused(a: AiAccess): AiBlock? = when (a) {
@@ -467,6 +508,7 @@ class AccessManager(
         else -> null
     }
 
+    /** Sets the stored figure as it is, whatever its age (debug builds). OpenRouter's figures go through [observed]. */
     suspend fun setBaseline(block: (AllowanceBaseline) -> AllowanceBaseline) =
         store.update { s -> s.copy(baseline = block(s.baseline ?: AllowanceBaseline(0.0, 0.0, clock()))) }
 
@@ -480,7 +522,7 @@ class AccessManager(
         if (!a.isManaged) return null
         return when {
             e.kind == AiException.Kind.KEY_LIMIT -> {
-                setBaseline { it.copy(remainingUsd = 0.0, at = clock()) }
+                usedUpObserved()
                 when {
                     a is AiAccess.Trial -> {
                         markEnded(EndReason.TRIAL_USED_UP)
@@ -496,6 +538,37 @@ class AccessManager(
         }
     }
 
+    /**
+     * While the app is in the foreground (the caller runs this only then): shortly after the paid period's known end,
+     * a renewal or an expiry, the Worker is asked what happened ([periodEndGraceMs] later), so a lapse, a renewal or a
+     * switch that took effect shows while the app stays open. If the plan still looks as it did (the same period end,
+     * not ended), it's asked once more [periodEndRetryMs] later; after that the daily refresh takes over. Coming back
+     * after the end has passed asks at once, if it hasn't been asked yet. Not while [busy] (Play's purchase sheet is
+     * open or its token is on its way: that answer brings the plan).
+     */
+    suspend fun watchPeriodEnd(busy: () -> Boolean = { false }) {
+        store.state.map { s -> (s.entitlement as? Entitlement.Subscription)?.periodEndsAt?.takeIf { s.ended == null } }
+            .distinctUntilChanged()
+            .collectLatest { end -> if (end != null) checkAfter(end, busy) }
+    }
+
+    private suspend fun checkAfter(end: Long, busy: () -> Boolean) {
+        while (true) {
+            val (lastEnd, asked, askedAt) = periodEndChecks ?: Triple(0L, 0, 0L)
+            val done = if (lastEnd == end) asked else 0
+            if (done >= 2) return
+            val due = if (done == 0) end + periodEndGraceMs else askedAt + periodEndRetryMs
+            if (due > clock()) delay(due - clock())
+            if (busy()) {
+                delay(BUSY_RECHECK_MS)
+                continue
+            }
+            periodEndChecks = Triple(end, done + 1, clock())
+            // In the manager's scope: an answer that moves the period end restarts this watch, which mustn't cancel it.
+            scope.launch { refresh(force = true) }.join()
+        }
+    }
+
     /** Debug builds only: edits the stored state directly. */
     suspend fun debugEdit(block: (StoredAccess) -> StoredAccess) {
         store.update { block(it).copy(warningDismissedFor = null) }
@@ -508,5 +581,10 @@ class AccessManager(
         private const val REFRESH_INTERVAL_MS = 5 * 60_000L
         /** Past this, a subscription asks the backend whether it has renewed. */
         private const val REFRESH_AT = 0.9
+        /** Play renews or ends a subscription around its period end; the Worker hears from Google soon after. */
+        const val PERIOD_END_GRACE_MS = 2 * 60_000L
+        /** Play's renewals can come a few minutes late (seen with test subscriptions). */
+        const val PERIOD_END_RETRY_MS = 5 * 60_000L
+        private const val BUSY_RECHECK_MS = 30_000L
     }
 }

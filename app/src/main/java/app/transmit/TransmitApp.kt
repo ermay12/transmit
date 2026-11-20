@@ -13,8 +13,8 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.video.VideoFrameDecoder
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import app.transmit.access.AccessBuild
 import app.transmit.access.AccessListener
 import app.transmit.access.AccessManager
@@ -142,16 +142,31 @@ class AppContainer(val context: Context) {
         access.start()
     }
 
+    @Volatile private var accessCheckedAt = 0L
+
     /**
-     * At launch and whenever the app comes back: a trial or subscription that ended meanwhile (OpenRouter refuses a
-     * key the Worker turned off; a trial past its end resolves as ended), and purchases still to be delivered. The
-     * Worker itself is asked daily and near the limit, not on every return.
+     * Each time the app's screen comes back (MainActivity resumed), the same whether it's from the launcher, Recents,
+     * a notification or another app: a trial or subscription that ended meanwhile (OpenRouter refuses a key the Worker
+     * turned off; a trial past its end resolves as ended), OpenRouter's figure for the allowance, and purchases still
+     * to be delivered. Not while Play's purchase sheet is open or its token is on its way: that answer is the plan. The
+     * Worker itself is asked daily, near the limit and after the paid period's end ([AccessManager.watchPeriodEnd]).
      */
     fun checkAccess() {
+        if (purchases.flowOpen) return
+        val now = System.currentTimeMillis()
+        synchronized(this) {
+            // One resume can come with another a moment later (a permission prompt closing, say).
+            if (now - accessCheckedAt < ACCESS_CHECK_GAP_MS) return
+            accessCheckedAt = now
+        }
         scope.launch {
             access.reconcile()
             purchases.sync()
         }
+    }
+
+    private companion object {
+        const val ACCESS_CHECK_GAP_MS = 2_000L
     }
 }
 
@@ -166,9 +181,14 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
         container.shortcuts.start(container.scope)
         BridgeService.start(this)
         AccessWork.scheduleDailyRefresh(this)
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) = container.checkAccess()
-        })
+        // Coming back is checked in MainActivity.onResume (container.checkAccess); while a screen of the app shows,
+        // the end of the paid period is watched for, so a lapse or a renewal shows without leaving the app.
+        val process = ProcessLifecycleOwner.get()
+        process.lifecycleScope.launch {
+            process.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                container.access.watchPeriodEnd(busy = { container.purchases.flowOpen })
+            }
+        }
     }
 
     override val workManagerConfiguration: Configuration

@@ -37,6 +37,8 @@ class AccessModelTest {
         val states = listOf(
             StoredAccess(),
             StoredAccess(entitlement = Entitlement.Trial(now + day), keyHash = "h1", baseline = AllowanceBaseline(0.5, 0.2, now)),
+            // The Worker's answer: spending as OpenRouter booked it a few minutes ago, the limit as it is now.
+            StoredAccess(entitlement = Entitlement.Subscription(Tier.STANDARD, now + day), baseline = AllowanceBaseline(4.5, 4.4, now - 180_000, limitAt = now)),
             StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 30 * day, autoRenewing = false), lastKind = "SUBSCRIBED"),
             StoredAccess(entitlement = Entitlement.Subscription(Tier.STANDARD, null), ended = EndReason.SUBSCRIPTION_ENDED),
             StoredAccess(ownKey = true, entitlement = Entitlement.Trial(now + day)),
@@ -58,6 +60,23 @@ class AccessModelTest {
         val kept = StoredAccess(entitlement = Entitlement.Subscription(Tier.PLUS, now + 9 * day), keyHash = "h2")
         AccessStore.encode(kept, p)
         assertEquals(kept, AccessStore.decode(p) { false })
+    }
+
+    /** A figure stored before limits carried their own time saw its limit when it saw the spending. */
+    @Test
+    fun anOlderFigureNeverOverwritesANewerOne() {
+        val p = mutablePreferencesOf()
+        AccessStore.encode(StoredAccess(baseline = AllowanceBaseline(4.5, 1.0, now)), p)
+        p.remove(androidx.datastore.preferences.core.longPreferencesKey("allowance_limit_at"))
+        assertEquals(AllowanceBaseline(4.5, 1.0, now, limitAt = now), AccessStore.decode(p) { false }.baseline)
+
+        val worker = AllowanceBaseline(4.5, 4.5, at = now, limitAt = now)
+        // OpenRouter's /key a moment later, still showing the limit from before the renewal (beta6: 85% after it).
+        assertFalse(worker.yieldsTo(AllowanceBaseline(4.5, 0.675, at = now + 17_000 - 180_000, limitAt = now + 17_000 - 180_000)))
+        // Once its figures are newer than the Worker's, in limit and in spending, OpenRouter's reading counts.
+        assertTrue(worker.yieldsTo(AllowanceBaseline(4.5, 0.0001, at = now + 1, limitAt = now + 1)))
+        // Seeing a newer limit isn't enough if the spending it counts is older.
+        assertFalse(worker.yieldsTo(AllowanceBaseline(4.5, 3.0, at = now - 1, limitAt = now + 1)))
     }
 
     @Test

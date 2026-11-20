@@ -124,6 +124,12 @@ class MainActivity : ComponentActivity() {
         BridgeService.start(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // The same check whichever way the app came back: the launcher, Recents, a notification, Google Play.
+        app.container.checkAccess()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // So the referrer read while parsing is this intent's.

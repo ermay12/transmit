@@ -311,8 +311,6 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         return AccessResult.Granted(subscriptionGrant(tier, newKey = false))
     }
 
-    override suspend fun activeOnPlay(): Boolean = purchased != null
-
     /** Nothing to reconcile with: the configured percent is the truth. */
     override suspend fun read(managedKey: String): AllowanceCheck = AllowanceCheck.Unavailable
 
