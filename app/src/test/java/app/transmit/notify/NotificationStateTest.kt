@@ -91,6 +91,31 @@ class NotificationStateTest {
         assertEquals(emptyList<NotificationState.Shown>(), state.showing())
     }
 
+    @Test
+    fun readingElsewhereClearsItOnceNothingIsUnread() {
+        state.posted(NotificationState.Shown(THREAD, "Ana", "Message 2", 2_000), state.lines(THREAD, listOf(received(1), received(2))))
+        assertFalse(state.goesOnReadElsewhere(THREAD, listOf(received(2))))
+        assertTrue(state.goesOnReadElsewhere(THREAD, emptyList()))
+    }
+
+    @Test
+    fun theReadThatEchoesAReplyLeavesItUp() {
+        state.replied(THREAD, state.lines(THREAD, listOf(received(1))), "Ok", at = 1_500)
+        state.posted(NotificationState.Shown(THREAD, "Ana", "Message 1", 1_000), state.lines(THREAD, emptyList()))
+        assertFalse(state.goesOnReadElsewhere(THREAD, emptyList()))
+    }
+
+    @Test
+    fun readingElsewhereWhatCameAfterAReplyClearsIt() {
+        state.replied(THREAD, state.lines(THREAD, listOf(received(1))), "Ok", at = 1_500)
+        state.posted(NotificationState.Shown(THREAD, "Ana", "Message 3", 3_000), state.lines(THREAD, listOf(received(3))))
+        assertTrue(state.goesOnReadElsewhere(THREAD, emptyList()))
+
+        // A second reply starts over: what it showed then stays through the echo.
+        state.replied(THREAD, state.lines(THREAD, emptyList()), "See you", at = 3_500)
+        assertFalse(state.goesOnReadElsewhere(THREAD, emptyList()))
+    }
+
     private companion object {
         const val THREAD = 10_000_000_007L
         const val OTHER = 10_000_000_008L

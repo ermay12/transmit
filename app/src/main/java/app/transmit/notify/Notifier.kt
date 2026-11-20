@@ -97,8 +97,10 @@ class Notifier(
     private enum class Update {
         /** A message arrived: it alerts, and starts afresh if the notification had gone. */
         NEW_MESSAGE,
-        /** Something in it changed (a translation, a read elsewhere): updated silently, and only if it's still up. */
+        /** Something in it changed (a translation): updated silently, and only if it's still up. */
         REFRESH,
+        /** Read elsewhere, maybe only up to a message: a silent refresh, and it goes once nothing is unread. */
+        READ_ELSEWHERE,
         /** The user replied from it, or the reply couldn't go: updated silently, which also ends the reply spinner. */
         REPLY,
     }
@@ -111,9 +113,9 @@ class Notifier(
 
     /**
      * [threadId] was read elsewhere, maybe only up to a message: its notification keeps what is still unread, and goes
-     * when nothing is. A reply's lines stay, since the phone can't tell a read apart from the echo of that reply.
+     * when nothing is (see [NotificationState.goesOnReadElsewhere] for one the user replied from).
      */
-    suspend fun readElsewhere(threadId: Long) = update(threadId, Update.REFRESH)
+    suspend fun readElsewhere(threadId: Long) = update(threadId, Update.READ_ELSEWHERE)
 
     /**
      * The user replied [text] from [threadId]'s notification. It stays up, showing what it showed with "You: …" after
@@ -141,14 +143,15 @@ class Notifier(
         if (threadId == activeThreadId || !canPost()) return
         val showing = state.isShowing(threadId)
         when {
-            how == Update.REFRESH && !showing -> return
+            (how == Update.REFRESH || how == Update.READ_ELSEWHERE) && !showing -> return
             // Dismissed, opened or read since: a new one shows only what's unread.
             how == Update.NEW_MESSAGE && !showing -> state.gone(threadId)
             else -> Unit
         }
         val generation = clearedCount[threadId]
-        val lines = state.lines(threadId, repo.unreadIncoming(threadId, NotificationState.MAX_LINES))
-        if (lines.isEmpty()) {
+        val unread = repo.unreadIncoming(threadId, NotificationState.MAX_LINES)
+        val lines = state.lines(threadId, unread)
+        if (lines.isEmpty() || (how == Update.READ_ELSEWHERE && state.goesOnReadElsewhere(threadId, unread))) {
             remove(threadId)
             return
         }
@@ -233,7 +236,7 @@ class Notifier(
         if (clearedCount[threadId] != generation) return
         val posted = runCatching { nm.notify(notificationId(threadId), builder.build()) }.isSuccess
         if (posted) {
-            state.posted(NotificationState.Shown(threadId, title, summaryText, newestAt))
+            state.posted(NotificationState.Shown(threadId, title, summaryText, newestAt), lines)
             updateSummary()
         }
     }
