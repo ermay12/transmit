@@ -315,19 +315,20 @@ class Notifier(
     private var summaryShows: List<NotificationState.Shown>? = null
 
     /**
-     * Two or more conversations bundle under a summary. It never alerts (the conversation that changed does), and
-     * goes once one conversation is left, which then shows on its own.
+     * Two or more conversations bundle under a summary. It never alerts (the conversation that changed does). Once one
+     * conversation is left the system shows it on its own, and the summary stays until none is: cancelling a summary
+     * cancels the notifications under it too.
      */
     @Synchronized
     private fun updateSummary() {
         val chats = state.showing()
-        if (chats.size < 2) {
+        if (chats.isEmpty()) {
             if (summaryUp || summaryShows != null) nm.cancel(SUMMARY_ID)
             summaryUp = false
             summaryShows = null
             return
         }
-        if (chats == summaryShows) return
+        if (chats.size < 2 || chats == summaryShows) return
         val inbox = NotificationCompat.InboxStyle()
         chats.forEach { inbox.addLine(if (it.text.isEmpty()) it.title else "${it.title}: ${it.text}") }
         val n = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
