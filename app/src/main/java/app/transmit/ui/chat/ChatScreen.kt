@@ -167,6 +167,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                 customName = chat?.overrides?.name,
                 // With translation off the flag is never lit, and tapping it offers to turn translation on.
                 autoTranslate = chat?.autoTranslate == true && !translationOff,
+                translationOff = translationOff,
                 flag = target?.flag ?: "🌐",
                 onBack = onBack,
                 onInfo = { vm.sheet.value = Sheet.ChatInfo },
@@ -430,6 +431,8 @@ private fun ChatTopBar(
     groupPhoto: android.net.Uri?,
     customName: String?,
     autoTranslate: Boolean,
+    /** No AI set up, or it ended: the toggle springs back, then [onToggleTranslate] offers to turn translation on. */
+    translationOff: Boolean,
     flag: String,
     onBack: () -> Unit,
     onInfo: () -> Unit,
@@ -469,18 +472,11 @@ private fun ChatTopBar(
                     }
                 }
             }
-            // Auto-translate toggle: the practice-language flag, lit when on.
-            Surface(
-                onClick = onToggleTranslate,
-                shape = CircleShape,
-                color = if (autoTranslate) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
-                border = if (autoTranslate) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.padding(horizontal = 4.dp).size(36.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(flag, fontSize = 18.sp, modifier = Modifier.alpha(if (autoTranslate) 1f else 0.4f))
-                }
-            }
+            // Auto-translate switch: its thumb carries the practice-language flag.
+            TranslateToggle(
+                on = autoTranslate, flag = flag, available = !translationOff, onClick = onToggleTranslate,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
             if (!demo && people.size == 1 && !PhoneNumbers.isShortCodeOrAlpha(people[0].address)) {
                 IconButton(onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${people[0].address}"))) }) {
                     Icon(Icons.Default.Call, "Call")

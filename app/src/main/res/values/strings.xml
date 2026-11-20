@@ -132,6 +132,11 @@
     <string name="compose_plain_hint">Message</string>
     <string name="turn_on_title">Turn on translation</string>
 
+    <!-- The chat's top bar: the auto-translate switch. Its long-press tooltip and TalkBack label, then its state for TalkBack ("Auto-translate, on"). -->
+    <string name="chat_auto_translate">Auto-translate</string>
+    <string name="chat_auto_translate_on">On</string>
+    <string name="chat_auto_translate_off">Off</string>
+
     <!-- Home banners. -->
     <string name="banner_starting">Starting…</string>
     <string name="banner_subscribe_to_keep">Subscribe to keep translating.</string>
