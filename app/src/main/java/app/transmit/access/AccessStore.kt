@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.map
 /**
  * The allowance as last read from the backend or OpenRouter: [remainingUsd] of [allowanceUsd] were left, counting
  * spending up to [at]; managed calls the app logged since then are subtracted on top. [remainingUsd] is the key's limit
- * minus what was spent, and [limitAt] is when that limit was seen: the Worker's answer sees it as it is (it has just set
- * it), while OpenRouter's figures, the limit included, can be minutes old.
+ * minus what was spent, and [limitAt] is since when that limit is known to stand: a Worker answer that raised or set it
+ * sees it as it is, while OpenRouter's figures, the limit included, can be minutes old.
  */
 data class AllowanceBaseline(val allowanceUsd: Double, val remainingUsd: Double, val at: Long, val limitAt: Long = at) {
     fun usedFraction(spentSince: Double): Double =

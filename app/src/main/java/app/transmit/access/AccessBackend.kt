@@ -101,6 +101,8 @@ data class Grant(
     val remainingUsd: Double,
     /** The subscription's Play purchase token, kept for [AccessBackend.refresh]. */
     val purchaseToken: String? = null,
+    /** The Worker's `allowanceRenewed`: this call credited a new Play order (a purchase, an upgrade, a renewal) and raised the key's limit. */
+    val allowanceRenewed: Boolean = false,
 )
 
 sealed interface AccessResult {

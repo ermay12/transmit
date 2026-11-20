@@ -72,11 +72,16 @@ class WorkerApiTest {
         assertEquals("0b9e", kept.keyHash)
         assertEquals("ptok", kept.purchaseToken)
         assertEquals(Entitlement.Subscription(Tier.PLUS, Instant.parse("2026-12-18T19:30:00Z").toEpochMilli(), autoRenewing = false), kept.entitlement)
+        assertFalse(kept.allowanceRenewed)
 
         reply(200, """{"kind":"subscription","productId":"transmit_monthly","state":"active","key":"sk-or-v1-new","keyHash":"aa","newKey":true,"allowanceUsd":4.5,"remainingUsd":4.5,"periodEndsAt":"2026-12-18T19:30:00Z","autoRenewing":true}""")
         val rotated = (sub() as AccessResult.Granted).grant
         assertEquals("sk-or-v1-new", rotated.key)
         assertEquals(Tier.STANDARD, (rotated.entitlement as Entitlement.Subscription).tier)
+        // Absent means false. A credited order says true: the key's limit was just raised.
+        assertFalse(rotated.allowanceRenewed)
+        reply(200, """{"kind":"subscription","productId":"transmit_monthly","state":"active","keyHash":"aa","newKey":false,"allowanceUsd":4.5,"remainingUsd":4.5,"allowanceRenewed":true,"periodEndsAt":"2027-01-18T19:30:00Z","autoRenewing":true}""")
+        assertTrue((sub() as AccessResult.Granted).grant.allowanceRenewed)
     }
 
     @Test

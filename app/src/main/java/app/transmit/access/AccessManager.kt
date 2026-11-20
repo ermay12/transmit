@@ -370,12 +370,21 @@ class AccessManager(
             // The same key in the same period: what's left is OpenRouter's figure, which lags, so the calls logged in
             // that time count on top (as in [reconcile]). Otherwise a used-up allowance would look free again.
             val samePeriod = g.key == null && it.allowancePeriod != null && next.allowancePeriod == it.allowancePeriod
+            val fresh = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, if (samePeriod) clock() - usageLagMs else clock(), limitAt = clock())
+            val prior = it.baseline
             next.copy(
                 ownKey = if (activate) false else it.ownKey,
                 ended = null,
                 keyHash = g.keyHash ?: it.keyHash.takeIf { g.key == null },
-                // The Worker has just set the key's limit, so its figure for the limit is the newest there is.
-                baseline = AllowanceBaseline(g.allowanceUsd, g.remainingUsd, if (samePeriod) clock() - usageLagMs else clock(), limitAt = clock()),
+                baseline = when {
+                    // The Worker has just raised or set the key's limit (a new key, a renewal, an upgrade, an order it
+                    // credited), so its figure for the limit is the newest there is: OpenRouter's figures and 403s
+                    // from the next few minutes may predate it ([observed]).
+                    !samePeriod || g.allowanceRenewed || prior == null || g.allowanceUsd != prior.allowanceUsd -> fresh
+                    // No change to the limit: what's left is OpenRouter's figure, as late as any other, so it's kept
+                    // only if it isn't older than the stored one. A 403 since then still means used up.
+                    else -> fresh.copy(limitAt = prior.limitAt).takeIf { f -> prior.yieldsTo(f) } ?: prior
+                },
                 // A key from the Worker works here, whichever device had it before.
                 inUseElsewhere = false,
             )
@@ -516,6 +525,8 @@ class AccessManager(
      * A managed call failed. Returns the block to show when the failure means the allowance is spent or the trial is
      * over; null for anything else, which is a service problem and never a paywall. A 403 for a subscription asks the
      * Worker once ([limitReached]): when it reports a renewal or a higher limit, it's null, and the call may run again.
+     * So is a 403 in the minutes after a Worker answer that raised the limit, since OpenRouter may not have caught up
+     * ([applyGrant]); after an answer that left the limit as it was, a 403 means used up.
      */
     suspend fun onManagedError(e: AiException): AiBlock? {
         val a = current()

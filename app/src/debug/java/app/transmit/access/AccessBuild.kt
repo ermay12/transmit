@@ -270,7 +270,8 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         key(), "debug-trial", TRIAL_USD, remaining(TRIAL_USD),
     )
 
-    fun subscriptionGrant(tier: Tier, newKey: Boolean = true): Grant {
+    /** [renewed]: like the Worker's `allowanceRenewed`, this call credited a new order (a purchase, a renewal). */
+    fun subscriptionGrant(tier: Tier, newKey: Boolean = true, renewed: Boolean = false): Grant {
         val usd = if (tier == Tier.PLUS) PLUS_USD else STANDARD_USD
         val ends = periodEnd.takeIf { it > 0 } ?: (System.currentTimeMillis() + 18 * DAY)
         // Like the Worker: no `pending…` fields once renewal is off.
@@ -278,6 +279,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         return Grant(
             Entitlement.Subscription(tier, ends, autoRenewing = !canceled, pendingSwitch = switch),
             if (newKey) key() else null, "debug-sub", usd, remaining(usd), purchaseToken = "debug-token-${tier.productId}",
+            allowanceRenewed = renewed,
         )
     }
 
@@ -293,7 +295,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
         delay(500)
         val tier = Tier.fromProductId(purchase.productId) ?: return AccessResult.Failed(AccessError(AccessErrorCode.SERVICE))
         purchased = tier
-        return AccessResult.Granted(subscriptionGrant(tier, newKey = currentKeyHash == null))
+        return AccessResult.Granted(subscriptionGrant(tier, newKey = currentKeyHash == null, renewed = true))
     }
 
     override suspend fun restore(currentKeyHash: String?): AccessResult {
@@ -360,7 +362,7 @@ class FakeAccessBackend(context: Context, private val vault: KeyVault) : AccessB
             access.refresh(force = true)
             return
         }
-        access.applyGrant(subscriptionGrant(tier, newKey = false), activate = false)
+        access.applyGrant(subscriptionGrant(tier, newKey = false, renewed = true), activate = false)
     }
 
     /**

@@ -5,6 +5,7 @@ import app.transmit.ai.AiBlock
 import app.transmit.ai.AiException
 import app.transmit.ai.ProviderType
 import app.transmit.data.KeyVault
+import app.transmit.ui.access.usedUpStrip
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -256,8 +257,9 @@ class AccessManagerTest {
         var now = System.currentTimeMillis()
         val m = manager(clock = { now })
         m.applyGrant(sub(0.5), activate = true)
-        // A higher limit in the same period (OpenRouter's lag is covered, so it's real room).
-        backend.refresh = AccessResult.Granted(sub(4.5, key = null))
+        // A higher limit in the same period, from an order the Worker just credited (OpenRouter's lag is covered, so
+        // it's real room).
+        backend.refresh = AccessResult.Granted(sub(4.5, key = null).copy(allowanceRenewed = true))
         spent.value = 0.5
         m.afterManagedCall()
         withTimeout(5_000) { m.allowance.first { it?.usedUp == false } }
@@ -277,6 +279,55 @@ class AccessManagerTest {
         assertNull(m.usedUpPrompt.value)
     }
 
+    /** A 403 just after the Worker found room (here a renewal) may predate it: a service problem, not used up. */
+    @Test
+    fun aForbiddenCallJustAfterTheWorkerFoundRoomIsAServiceProblem() = runBlocking {
+        var now = System.currentTimeMillis()
+        val m = manager(clock = { now })
+        m.applyGrant(sub(0.0), activate = true)
+        now += OpenRouterAllowance.LAG_MS + 60_000
+        backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null).copy(allowanceRenewed = true))
+        assertFalse(m.allowanceUsedUp())
+        assertEquals(1, backend.refreshes)
+
+        now += 30_000
+        assertNull(m.onManagedError(keyLimit))
+        assertFalse(m.allowanceNow()!!.usedUp)
+        assertFalse(m.allowanceUsedUp())
+        assertEquals(1, backend.refreshes)
+        delay(200)
+        assertNull(m.usedUpPrompt.value)
+    }
+
+    /**
+     * At 100% the Worker is asked, and answers "no change": the limit stands, so a 403 minutes later means used up and
+     * the strip shows, even where the Worker's figure (OpenRouter's, which lags) still showed a little room.
+     */
+    @Test
+    fun aForbiddenCallAfterTheWorkerSaidNoChangeIsUsedUp() = runBlocking {
+        for (left in listOf(0.0, 0.05)) {
+            var now = System.currentTimeMillis()
+            val m = manager(clock = { now })
+            m.applyGrant(sub(left), activate = true)
+            now += OpenRouterAllowance.LAG_MS + 60_000
+            val before = backend.refreshes
+            backend.refresh = AccessResult.Granted(sub(left, key = null))
+            assertEquals(RefreshResult.Answered(renewed = false), m.refresh(force = true))
+
+            now += 30_000
+            val block = m.onManagedError(keyLimit)
+            assertTrue("$left left", block is AiBlock.AllowanceUsedUp)
+            assertTrue(usedUpStrip((block as AiBlock.AllowanceUsedUp).access, canBuy = true)!!.upgrade)
+            assertTrue(m.allowanceNow()!!.usedUp)
+            // Every blocked call after that is used up too, with no more questions.
+            val asked = backend.refreshes
+            repeat(3) { assertTrue(m.allowanceUsedUp()) }
+            assertTrue(m.onManagedError(keyLimit) is AiBlock.AllowanceUsedUp)
+            assertEquals(asked, backend.refreshes)
+            assertTrue(asked - before <= 2)
+        }
+    }
+
     /** What a refresh did: skipped (throttled or nothing to ask), answered (and whether it renewed), or failed. */
     @Test
     fun aRefreshTellsSkippedFromNoChange() = runBlocking {
@@ -288,7 +339,7 @@ class AccessManagerTest {
         // Within the throttle: skipped, which is not the same as "asked, and nothing changed".
         assertEquals(RefreshResult.Skipped, m.refresh())
         assertEquals(1, backend.refreshes)
-        backend.refresh = AccessResult.Granted(sub(4.5, key = null))
+        backend.refresh = AccessResult.Granted(sub(4.5, key = null).copy(allowanceRenewed = true))
         assertEquals(RefreshResult.Answered(renewed = true), m.refresh(force = true))
         backend.refresh = AccessResult.Granted(sub(4.5, ends = periodEnd + 30 * day, key = null))
         assertEquals(RefreshResult.Answered(renewed = true), m.refresh(force = true))

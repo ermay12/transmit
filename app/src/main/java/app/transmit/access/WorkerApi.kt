@@ -157,6 +157,7 @@ class WorkerApi(private val http: OkHttpClient = defaultHttp(), baseUrl: String 
             return Grant(
                 Entitlement.Subscription(tier, periodEndsAt, autoRenewing = renewing, pendingSwitch = pendingSwitch(b, tier, periodEndsAt)),
                 key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance, purchaseToken = purchaseToken,
+                allowanceRenewed = b["allowanceRenewed"].bool() ?: false,
             )
         }
 
