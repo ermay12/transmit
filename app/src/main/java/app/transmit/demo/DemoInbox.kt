@@ -102,6 +102,9 @@ internal class DemoInbox(private val scope: CoroutineScope, now: Long = System.c
         chats.values.firstNotNullOfOrNull { c -> c.messages.firstOrNull { it.key == key } }
     }
 
+    /** The samples are all there is. */
+    override fun requestOlder(threadId: Long) = false
+
     override suspend fun reactionTarget(threadId: Long, reactionDate: Long, r: Reactions.Parsed): Message? =
         Reactions.target(r, messages(threadId, 60, reactionDate))
 

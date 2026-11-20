@@ -468,9 +468,13 @@ class GmBridge(
         }
     }
 
-    /** Fetches messages older than the oldest cached one, unless the conversation's start is reached. */
-    fun requestOlder(threadId: Long) {
-        if (client == null || threadId in exhausted || !olderInFlight.add(threadId)) return
+    /**
+     * Fetches messages older than the oldest cached one, unless the conversation's start is reached. False when
+     * there's nothing to fetch: not connected, or the start was reached.
+     */
+    fun requestOlder(threadId: Long): Boolean {
+        if (client == null || threadId in exhausted) return false
+        if (!olderInFlight.add(threadId)) return true
         scope.launch {
             try {
                 val conv = conversation(threadId) ?: return@launch
@@ -486,6 +490,7 @@ class GmBridge(
                 olderInFlight.remove(threadId)
             }
         }
+        return true
     }
 
     /** Returns how many messages were new to the cache. */

@@ -133,6 +133,8 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
         rows.mapNotNull { toMessage(it, conv) }
     }
 
+    override fun requestOlder(threadId: Long): Boolean = bridge.requestOlder(threadId)
+
     override suspend fun message(key: String): Message? = withContext(Dispatchers.IO) {
         if (!key.startsWith("g")) return@withContext null
         val row = gmDao.message(key.drop(1)) ?: return@withContext null

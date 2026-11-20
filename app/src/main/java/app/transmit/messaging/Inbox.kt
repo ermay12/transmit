@@ -26,6 +26,12 @@ interface Inbox {
 
     suspend fun message(key: String): Message?
 
+    /**
+     * Asks for messages older than the oldest held for [threadId]; they arrive through [changes]. False when there
+     * are none to ask for: the conversation's start was reached, or nothing is connected.
+     */
+    fun requestOlder(threadId: Long): Boolean
+
     /** The message that tapback text [r], sent at [reactionDate] in [threadId], refers to. */
     suspend fun reactionTarget(threadId: Long, reactionDate: Long, r: Reactions.Parsed): Message?
 
