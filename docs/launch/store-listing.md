@@ -30,16 +30,16 @@ A naming risk to check yourself: Panic Inc. sells a well-known file-transfer app
 
 ## Short description (80 characters max)
 
-**Chosen (developer, 2026-11-19):**
+**Chosen (developer, 2026-11-20):**
 
 ```text
-Text friends in a language you're learning. Two-way translation and an AI tutor.
+Practice any language while texting your friends
 ```
 
-- 80 characters (checked by script), exactly at the limit, so paste it as is.
+- 48 characters, well under the 80 limit.
 - It's benefit-led, and has no brand names, promotions or "free". It doesn't name Google Messages, so it can't be read as implying a Google relationship.
-- "Two-way" is accurate: incoming texts are translated into the practice language, and replies into the language the user speaks.
-- It came from the developer's longer idea (109 characters), cut to fit. "Secretly" was dropped: it risks a reviewer reading the app as deceptive.
+- "Any language" is broad: the language picker offers a fixed list (`app/src/main/java/app/transmit/data/Languages.kt`). If that becomes a concern, "Practice a language while texting your friends" is the drop-in fallback.
+- It replaces the 2026-11-19 choice, "Text friends in a language you're learning. Two-way translation and an AI tutor." (80 characters).
 
 Options considered before the decision:
 

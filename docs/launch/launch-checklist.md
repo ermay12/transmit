@@ -28,7 +28,7 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
 - [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
 - [ ] **Deletion turnaround:** the draft promises 30 days.
 - [x] **App name:** the Play title is **"Transmit: Learn by Texting"** (2026-11-19). The in-app name stays "Transmit" (`app_name`). Still worth doing before production: the trademark and Play search for existing "Transmit" apps and marks (`store-listing.md`), which isn't recorded as done.
-- [x] **Short description:** "Text friends in a language you're learning. Two-way translation and an AI tutor." (80 characters, 2026-11-19; `store-listing.md`).
+- [x] **Short description:** "Practice any language while texting your friends" (48 characters, 2026-11-20; `store-listing.md`).
 - [x] **App copy:** everything in `docs/product/copy-review.md` was approved by the developer on 2026-11-19.
 - [x] **Sender names in AI context:** replaced with neutral labels (`docs/product/release-1.0.md`). `data-safety.md` and the privacy policy assume that app change (step 2.5).
 
