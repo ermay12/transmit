@@ -1,4 +1,4 @@
-Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4), and the 1.0.0-beta5 plan changes: no Keep Plus, one calm message for any Google Play error, and plans whose renewal is off (added on top of 5a55df4).
+Reflects commit 246e412, plus the strings for switching Plus to Transmit (added on top of ff86e3f), and the Play compliance strings: the privacy policy link, the AI disclosures, the auto-renew line and the reviewer demo (added on top of fa4eeb4), the 1.0.0-beta5 plan changes: no Keep Plus, one calm message for any Google Play error, and plans whose renewal is off (added on top of 5a55df4), and the 1.0.0-beta6 changes: Google Play's refusal of a new subscription says nothing was charged, and a chat's strip for a used-up month carries the next step (added on top of 59bc079).
 
 The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.workers.dev/privacy. Where it follows a disclosure, the two read as one paragraph, the link last. The demo's sample messages are in `app/src/main/java/app/transmit/demo/DemoChats.kt`, not in strings.xml, since they're content rather than copy.
 
@@ -226,7 +226,8 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | Plans: switch set | `plan_switches_on` | Switches to Transmit on %1$s |
 | Plans: switch set | `plan_switch_starts` | Starts %1$s |
 | Plans: switch set (in place of Keep Plus, which Google Play doesn't support) | `plan_switch_pending_note` | Switching to Transmit on %1$s. Changed your mind? You can upgrade back to Plus anytime after the switch. |
-| Plans: any error from Google Play (a switch, an upgrade or a purchase) | `billing_failed` | Google Play couldn't make that change. Please try again later. |
+| Plans: any error from Google Play for an upgrade or a switch | `billing_failed` | Google Play couldn't make that change. Please try again later. |
+| Plans: any error from Google Play for a new subscription (a declined card, say), or its sheet not opening | `purchase_declined` | Your purchase didn't go through. You haven't been charged. |
 | Plans: switch didn't go through | `purchase_play_unavailable` | Google Play isn't available right now. Try again later. |
 | Plans: switch didn't go through | `purchase_retrying` | Your purchase went through, but Transmit couldn't finish setting it up yet. It will keep trying. Google Play refunds a plan that never starts. |
 | Plans: renewal turned off in Google Play (own plan card) | `plan_ends` | Ends %1$s |
@@ -291,6 +292,10 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | Chat: translation-off strip | `strip_starting` | Starting your free week… |
 | Chat: translation-off strip, not from Play | `translation_off` | Translation is off |
 | Chat: translation-off strip, not from Play | `play_get` | Get Transmit on Google Play |
+| Chat: month-used strip (automatic translation stopped), Transmit; shown as "You've used this month's AI · Upgrade to Plus", the link opens Plans | `access_month_used` | You've used this month's AI |
+| Chat: month-used strip, Transmit | `plan_upgrade` | Upgrade to Plus |
+| Chat: month-used strip, Plus (or Transmit not from Play); shown as "You've used this month's AI · Resets %1$s", with no date when renewal is off | `access_month_used` | You've used this month's AI |
+| Chat: month-used strip, Plus | `allowance_resets` | Resets %1$s |
 | Chat: composer with translation off | `compose_plain_hint` | Message |
 | Chat: turn-on sheet | `ended_free_week` | Your free week has ended |
 | Chat: turn-on sheet | `ended_subscription` | Your subscription has ended |
@@ -323,7 +328,7 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | Blocked-AI dialog: ended | `access_keep_going` | Subscribe to keep translating and getting help with your replies. |
 | Blocked-AI dialog: ended | `plan_subscribe` | Subscribe |
 | Blocked-AI dialog: ended | `action_not_now` | Not now |
-| Blocked-AI dialog: month used up | `access_month_used` | You've used this month's AI |
+| Blocked-AI dialog: month used up (after a blocked tap, and once per month after an AI call runs it out) | `access_month_used` | You've used this month's AI |
 | Blocked-AI dialog: month used up | `block_resets_upgrade` | It resets %1$s. Transmit Plus has twice the AI. |
 | Blocked-AI dialog: month used up | `block_resets` | It resets %1$s. |
 | Blocked-AI dialog: month used up | `block_resets_at_renewal_upgrade` | It resets when your subscription renews. Transmit Plus has twice the AI. |
