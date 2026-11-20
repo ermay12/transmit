@@ -12,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -37,7 +38,11 @@ import app.transmit.messaging.Message
 import app.transmit.messaging.MessagingRepository
 import app.transmit.messaging.Reactions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
 class Notifier(
@@ -80,23 +85,83 @@ class Notifier(
     private fun canPost() = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** Posts (or silently refreshes, when [alert] is false) the notification for a conversation. */
-    suspend fun showThread(threadId: Long, alert: Boolean) = withContext(Dispatchers.IO) {
-        if (threadId == activeThreadId || !canPost()) return@withContext
-        val unread = repo.unreadIncoming(threadId)
-        if (unread.isEmpty()) {
-            cancel(threadId)
-            return@withContext
+    /** What the conversation notifications show between posts. */
+    private val state = NotificationState()
+    /** Builds and posts one at a time, so an older build is never posted over a newer one. */
+    private val posting = Mutex()
+    /** Bumped when a conversation's notification is cleared, so a build already under way doesn't bring it back. */
+    private val clearedCount = ConcurrentHashMap<Long, Int>()
+    private val seeded = AtomicBoolean(false)
+
+    /** How a conversation's notification is being updated. */
+    private enum class Update {
+        /** A message arrived: it alerts, and starts afresh if the notification had gone. */
+        NEW_MESSAGE,
+        /** Something in it changed (a translation, a read elsewhere): updated silently, and only if it's still up. */
+        REFRESH,
+        /** The user replied from it, or the reply couldn't go: updated silently, which also ends the reply spinner. */
+        REPLY,
+    }
+
+    /**
+     * Posts the notification for a conversation, stacking its unread messages: with [alert], for a new message; without,
+     * it silently refreshes the notification if it's still up (one the user dismissed stays dismissed).
+     */
+    suspend fun showThread(threadId: Long, alert: Boolean) = update(threadId, if (alert) Update.NEW_MESSAGE else Update.REFRESH)
+
+    /**
+     * [threadId] was read elsewhere, maybe only up to a message: its notification keeps what is still unread, and goes
+     * when nothing is. A reply's lines stay, since the phone can't tell a read apart from the echo of that reply.
+     */
+    suspend fun readElsewhere(threadId: Long) = update(threadId, Update.REFRESH)
+
+    /**
+     * The user replied [text] from [threadId]'s notification. It stays up, showing what it showed with "You: …" after
+     * it, and doesn't alert. Call before marking the conversation read, so the received messages are still unread.
+     */
+    suspend fun replied(threadId: Long, text: String) = withContext(Dispatchers.IO) {
+        posting.withLock {
+            seed()
+            state.replied(threadId, state.lines(threadId, repo.unreadIncoming(threadId, NotificationState.MAX_LINES)), text, System.currentTimeMillis())
+            post(threadId, Update.REPLY)
+        }
+    }
+
+    /** A reply from [threadId]'s notification didn't go (or was empty): the notification shows as it was, without the spinner. */
+    suspend fun replyNotSent(threadId: Long) = update(threadId, Update.REPLY)
+
+    private suspend fun update(threadId: Long, how: Update) = withContext(Dispatchers.IO) {
+        posting.withLock {
+            seed()
+            post(threadId, how)
+        }
+    }
+
+    private suspend fun post(threadId: Long, how: Update) {
+        if (threadId == activeThreadId || !canPost()) return
+        val showing = state.isShowing(threadId)
+        when {
+            how == Update.REFRESH && !showing -> return
+            // Dismissed, opened or read since: a new one shows only what's unread.
+            how == Update.NEW_MESSAGE && !showing -> state.gone(threadId)
+            else -> Unit
+        }
+        val generation = clearedCount[threadId]
+        val lines = state.lines(threadId, repo.unreadIncoming(threadId, NotificationState.MAX_LINES))
+        if (lines.isEmpty()) {
+            remove(threadId)
+            return
         }
         val s = settings.current()
         val eff = policy.effective(threadId, s)
-        if (eff.muted) return@withContext
+        if (eff.muted) return
+        val received = lines.mapNotNull { (it as? NotificationState.Line.Received)?.message }
         // A reaction quotes its target in the original language, so it shows the target's translation.
-        val reactionTargets = unread.mapNotNull { m ->
+        val reactionTargets = received.mapNotNull { m ->
             val r = Reactions.parse(m.body)?.takeIf { it.quoted != null } ?: return@mapNotNull null
             repo.reactionTarget(threadId, m.date, r)?.let { m.key to it.key }
         }.toMap()
-        val translated = dao.translations((unread.map { it.key } + reactionTargets.values).distinct(), eff.target.code)
+        val translated = dao.translations((received.map { it.key } + reactionTargets.values).distinct(), eff.target.code)
             .associateBy { it.msgKey }
         val recipients = repo.recipientsForThread(threadId)
         val isGroup = recipients.size > 1
@@ -108,18 +173,36 @@ class Notifier(
         val title = customName ?: recipients.joinToString(", ") { contacts.lookup(it).displayName }
         if (isGroup || customName != null) style.conversationTitle = title
         val people = HashMap<String, Person>()
-        for (m in unread) {
-            val address = m.sender ?: recipients.firstOrNull().orEmpty()
-            val person = people.getOrPut(address) { shortcuts.person(address) }
-            val display = s.scriptDisplay(eff.target)
-            // A reaction quotes in one line; a message gets its pinyin or romaji under it.
-            val translation = reactionTargets[m.key]?.let { translated[it]?.shown(display) } ?: translated[m.key]?.shownWithReading(display)
-            style.addMessage(notificationText(m, translation, s.notificationContent, eff.autoTranslate), m.date, person)
+        val display = s.scriptDisplay(eff.target)
+        // The summary lists each chat by what it received last.
+        var summaryText = ""
+        var newestAt = 0L
+        for (line in lines) {
+            when (line) {
+                is NotificationState.Line.Received -> {
+                    val m = line.message
+                    val address = m.sender ?: recipients.firstOrNull().orEmpty()
+                    val person = people.getOrPut(address) { shortcuts.person(address) }
+                    // A reaction quotes in one line; a message gets its pinyin or romaji under it.
+                    val translation = reactionTargets[m.key]?.let { translated[it]?.shown(display) } ?: translated[m.key]?.shownWithReading(display)
+                    val text = notificationText(m, translation, s.notificationContent, eff.autoTranslate)
+                    summaryText = text
+                    newestAt = m.date
+                    style.addMessage(text, m.date, person)
+                }
+                is NotificationState.Line.Replied -> {
+                    // From the user: the style's own person, "You".
+                    val text = if (s.notificationContent == NotificationContent.HIDDEN) context.getString(R.string.notify_reply_hidden) else line.text
+                    newestAt = line.at
+                    style.addMessage(NotificationCompat.MessagingStyle.Message(text, line.at, null as Person?))
+                }
+            }
         }
 
         // Labelled like the conversation list, so the share sheet and launcher show the same name.
         val label = chatTitle(recipients.map(contacts::lookup), customName)
         val shortcutId = shortcuts.push(threadId, label, if (isGroup) null else people.values.firstOrNull(), recipients.firstOrNull() ?: title)
+        val alert = how == Update.NEW_MESSAGE
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_stat_message)
             .setStyle(style)
@@ -130,10 +213,15 @@ class Notifier(
             .setShortcutId(shortcutId)
             .setLocusId(LocusIdCompat(shortcutId))
             .setContentIntent(openThreadIntent(threadId))
-            .setWhen(unread.last().date)
+            .setDeleteIntent(dismissedIntent(threadId))
+            .setWhen(newestAt)
+            // Several conversations bundle under one summary, which never alerts itself.
+            .setGroup(GROUP_MESSAGES)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .addExtras(Bundle().apply { putLong(EXTRA_THREAD_ID, threadId) })
         // The newest verification code gets a one-tap copy, ahead of the other actions. On Android 16 the system
         // offers its own copy chip too; one button is enough, and ours also marks the code read.
-        unread.asReversed().firstNotNullOfOrNull { Otp.find(it.body) }?.let {
+        received.asReversed().firstNotNullOfOrNull { Otp.find(it.body) }?.let {
             builder.addAction(copyCodeAction(threadId, it.code, showCode = s.notificationContent != NotificationContent.HIDDEN))
             builder.setAllowSystemGeneratedContextualActions(false)
         }
@@ -141,7 +229,13 @@ class Notifier(
             .addAction(replyAction(threadId))
             .addAction(markReadAction(threadId))
         if (!alert) builder.setSilent(true)
-        runCatching { nm.notify(notificationId(threadId), builder.build()) }
+        // Opened, read or dismissed while this was being built.
+        if (clearedCount[threadId] != generation) return
+        val posted = runCatching { nm.notify(notificationId(threadId), builder.build()) }.isSuccess
+        if (posted) {
+            state.posted(NotificationState.Shown(threadId, title, summaryText, newestAt))
+            updateSummary()
+        }
     }
 
     /** For a reaction, [translation] is that of the message it reacts to. */
@@ -175,20 +269,93 @@ class Notifier(
         return listOfNotNull(attachment, text.takeIf { it.isNotBlank() }).joinToString(" ").ifBlank { "New message" }
     }
 
+    /** Clears [threadId]'s notification: the chat was opened or marked read. */
     fun cancel(threadId: Long) {
-        nm.cancel(notificationId(threadId))
+        clearedCount.merge(threadId, 1, Int::plus)
+        seed()
+        remove(threadId)
     }
+
+    /** The user dismissed [threadId]'s notification. */
+    fun dismissed(threadId: Long) {
+        seed()
+        state.gone(threadId)
+        updateSummary()
+    }
+
+    /** The user dismissed the whole bundle. */
+    fun allDismissed() {
+        seed()
+        state.allGone()
+        updateSummary()
+    }
+
+    private fun remove(threadId: Long) {
+        state.gone(threadId)
+        nm.cancel(notificationId(threadId))
+        updateSummary()
+    }
+
+    /** After a restart, the conversation notifications still up are known from what the system shows. */
+    private fun seed() {
+        if (!seeded.compareAndSet(false, true)) return
+        val active = runCatching { nm.activeNotifications }.getOrNull().orEmpty()
+        summaryUp = active.any { it.id == SUMMARY_ID && it.tag == null }
+        for (sbn in active) {
+            val threadId = sbn.notification.extras.getLong(EXTRA_THREAD_ID, -1)
+            if (threadId < 0 || sbn.id != notificationId(threadId)) continue
+            val extras = sbn.notification.extras
+            val title = extras.getCharSequence(NotificationCompat.EXTRA_CONVERSATION_TITLE) ?: extras.getCharSequence(NotificationCompat.EXTRA_TITLE)
+            val text = extras.getCharSequence(NotificationCompat.EXTRA_TEXT)
+            state.posted(NotificationState.Shown(threadId, title?.toString().orEmpty(), text?.toString().orEmpty(), sbn.notification.`when`))
+        }
+    }
+
+    @Volatile private var summaryUp = false
+    private var summaryShows: List<NotificationState.Shown>? = null
 
     /**
-     * [threadId] was read elsewhere, maybe only up to a message: its notification keeps what is still unread, and
-     * goes when nothing is. One the user dismissed stays dismissed.
+     * Two or more conversations bundle under a summary. It never alerts (the conversation that changed does), and
+     * goes once one conversation is left, which then shows on its own.
      */
-    suspend fun readElsewhere(threadId: Long) {
-        if (isShowing(threadId)) showThread(threadId, alert = false)
+    @Synchronized
+    private fun updateSummary() {
+        val chats = state.showing()
+        if (chats.size < 2) {
+            if (summaryUp || summaryShows != null) nm.cancel(SUMMARY_ID)
+            summaryUp = false
+            summaryShows = null
+            return
+        }
+        if (chats == summaryShows) return
+        val inbox = NotificationCompat.InboxStyle()
+        chats.forEach { inbox.addLine(if (it.text.isEmpty()) it.title else "${it.title}: ${it.text}") }
+        val n = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_message)
+            .setContentTitle(context.getString(R.string.notify_summary_chats, chats.size))
+            .setContentText(chats.joinToString(", ") { it.title })
+            .setStyle(inbox)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setWhen(chats.first().at)
+            .setGroup(GROUP_MESSAGES)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(PendingIntent.getActivity(context, SUMMARY_ID, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+            .setDeleteIntent(
+                PendingIntent.getBroadcast(
+                    context, SUMMARY_ID,
+                    Intent(context, NotificationActionReceiver::class.java).setAction(NotificationActionReceiver.ACTION_DISMISSED_ALL),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+            .build()
+        if (runCatching { nm.notify(SUMMARY_ID, n) }.isSuccess) {
+            summaryUp = true
+            summaryShows = chats
+        }
     }
-
-    private fun isShowing(threadId: Long) =
-        runCatching { nm.activeNotifications.any { it.id == notificationId(threadId) && it.tag == null } }.getOrDefault(true)
 
     suspend fun notifySendFailed(threadId: Long) = withContext(Dispatchers.IO) {
         if (!canPost() || threadId == activeThreadId) return@withContext
@@ -267,6 +434,13 @@ class Notifier(
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    private fun dismissedIntent(threadId: Long): PendingIntent {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(NotificationActionReceiver.ACTION_DISMISSED)
+            .putExtra(NotificationActionReceiver.EXTRA_THREAD, threadId)
+        return PendingIntent.getBroadcast(context, notificationId(threadId), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
     private fun replyAction(threadId: Long): NotificationCompat.Action {
         val intent = Intent(context, NotificationActionReceiver::class.java)
             .setAction(NotificationActionReceiver.ACTION_REPLY)
@@ -313,6 +487,10 @@ class Notifier(
         const val CONNECTION_ID = Int.MAX_VALUE - 1
         const val LOGGED_OUT_ID = Int.MAX_VALUE - 3
         const val PLAN_ID = Int.MAX_VALUE - 5
+        /** The summary that bundles the conversations' notifications. */
+        const val SUMMARY_ID = Int.MAX_VALUE - 7
+        const val GROUP_MESSAGES = "app.transmit.MESSAGES"
+        private const val EXTRA_THREAD_ID = "app.transmit.THREAD_ID"
         fun notificationId(threadId: Long) = (threadId % 1_000_000).toInt() * 2
     }
 }

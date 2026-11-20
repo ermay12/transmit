@@ -283,4 +283,9 @@
     <string name="notify_plan_channel_description">When your free week or subscription is ending or has ended</string>
     <string name="notify_trial_ends_tomorrow">Your free week ends tomorrow</string>
     <string name="notify_in_use_elsewhere_body">Open Transmit to use it on this phone.</string>
+
+    <!-- beta8: conversation notifications. The summary bundles two or more chats' notifications. -->
+    <string name="notify_summary_chats">%1$d chats</string>
+    <!-- A reply sent from a notification, when the notification content setting hides message text. -->
+    <string name="notify_reply_hidden">Reply sent</string>
 </resources>

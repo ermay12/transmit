@@ -11,9 +11,17 @@ import kotlinx.coroutines.launch
 
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val container = context.app.container
+        if (intent.action == ACTION_DISMISSED_ALL) {
+            container.notifier.allDismissed()
+            return
+        }
         val threadId = intent.getLongExtra(EXTRA_THREAD, -1)
         if (threadId < 0) return
-        val container = context.app.container
+        if (intent.action == ACTION_DISMISSED) {
+            container.notifier.dismissed(threadId)
+            return
+        }
         if (intent.action == ACTION_COPY_CODE) {
             // The clipboard write happens right away, on the main thread; marking read can follow.
             SmartActions.copyCode(context, intent.getStringExtra(EXTRA_CODE) ?: return)
@@ -23,11 +31,18 @@ class NotificationActionReceiver : BroadcastReceiver() {
         container.scope.launch {
             try {
                 when (intent.action) {
-                    ACTION_REPLY -> if (!reply.isNullOrBlank()) {
-                        val recipients = container.messaging.recipientsForThread(threadId)
-                        if (recipients.isNotEmpty()) container.sender.send(recipients, reply)
-                        container.messaging.markThreadRead(threadId)
-                        container.notifier.cancel(threadId)
+                    ACTION_REPLY -> {
+                        val text = reply?.trim().orEmpty()
+                        val sent = text.isNotEmpty() && runCatching { container.sender.sendToThread(threadId, text) }
+                            .onFailure { Log.w("NotificationAction", "Reply not sent", it) }.isSuccess
+                        if (sent) {
+                            // The notification stays, with the reply after what it showed; then the chat counts as read.
+                            container.notifier.replied(threadId, text)
+                            container.messaging.markThreadRead(threadId)
+                        } else {
+                            container.notifier.replyNotSent(threadId)
+                            if (text.isNotEmpty()) container.notifier.notifySendFailed(threadId)
+                        }
                     }
                     ACTION_MARK_READ, ACTION_COPY_CODE -> {
                         container.messaging.markThreadRead(threadId)
@@ -46,6 +61,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_REPLY = "app.transmit.REPLY"
         const val ACTION_MARK_READ = "app.transmit.MARK_READ"
         const val ACTION_COPY_CODE = "app.transmit.COPY_CODE"
+        const val ACTION_DISMISSED = "app.transmit.DISMISSED"
+        const val ACTION_DISMISSED_ALL = "app.transmit.DISMISSED_ALL"
         const val EXTRA_THREAD = "thread_id"
         const val KEY_REPLY = "reply"
         const val EXTRA_CODE = "code"

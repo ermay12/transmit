@@ -383,3 +383,12 @@ The privacy policy link (`privacy_policy`) opens https://transmit.ermay12.worker
 | AI errors (toasts, chat notices, explanation sheet) | `ai_in_use_elsewhere` | Your subscription is in use on another device. |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_budget_reached` | Monthly AI budget reached (%1$s of %2$s). |
 | AI errors (toasts, chat notices, explanation sheet) | `ai_chat_budget_reached` | This chat's AI budget is used up (%1$s of %2$s). |
+
+## beta8: notifications
+
+**Needs review (beta8, 2026-11-20):** two new strings for conversation notifications. A reply from a notification now stays in it as "You: …", with "You" as the sender name the notification already used. The notification-content setting still applies: when it hides message text, the reply shows as `notify_reply_hidden`, just as a received message shows as "New message".
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Notifications: the summary notification that bundles two or more chats (its title) | `notify_summary_chats` | %1$d chats |
+| Notifications: a reply sent from a notification, when the notification-content setting is Hidden | `notify_reply_hidden` | Reply sent |
