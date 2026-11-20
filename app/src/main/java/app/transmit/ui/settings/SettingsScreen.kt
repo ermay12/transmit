@@ -346,7 +346,7 @@ private fun OwnKeySettings(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         )
     }
-    val masked = vm.maskedKey(s.provider)
+    val masked = savedKey(vm, s.provider)
     Row0(
         Icons.Default.Key, stringResource(R.string.settings_api_key), masked ?: stringResource(R.string.settings_api_key_not_set),
         trailing = {
@@ -491,10 +491,9 @@ fun OwnKeyDialog(vm: SettingsViewModel, onDismiss: () -> Unit, onDone: () -> Uni
     val context = LocalContext.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val check by vm.keyCheck.collectAsStateWithLifecycle()
-    vm.keyVersion.collectAsStateWithLifecycle().value
     val provider = settings?.provider ?: return
     var key by remember(provider) { mutableStateOf("") }
-    val saved = vm.maskedKey(provider)
+    val saved = savedKey(vm, provider)
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Key, null) },
@@ -696,6 +695,17 @@ private fun DefaultsRow(icon: ImageVector, title: String, d: ChatDefaults, onCha
         }
         MoneyField(d.monthlyBudgetUsd, { onChange(d.copy(monthlyBudgetUsd = it)) })
     }
+}
+
+/**
+ * The saved key for [provider] as "••••" and its last four, read again whenever a key is saved or removed. Read here,
+ * where it's shown: a screen further up that watches the keys doesn't make this part recompose, so after Remove the
+ * row kept showing the old key until Settings was opened again.
+ */
+@Composable
+private fun savedKey(vm: SettingsViewModel, provider: ProviderType): String? {
+    val version by vm.keyVersion.collectAsStateWithLifecycle()
+    return remember(version, provider) { vm.maskedKey(provider) }
 }
 
 @Composable
