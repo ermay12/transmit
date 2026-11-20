@@ -21,9 +21,8 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
   - Existing accounts must declare by **February 1, 2027**, at Manage account → Account details → About you. Declaring falsely can get the account removed. Submitting it is step 4.
   - Traders on personal accounts get their **phone number and address shown publicly**, everywhere from **March 1, 2027**. Both apply account-wide, so LinguaRead's listing shows them too.
   - Separately, once a personal account sells, Google Play already shows its address publicly.
-- [ ] **Still open from the trader decision:**
-  - the public **phone number** (traders must give one, and Play publishes it);
-  - a **terms of service page** for Transmit, since traders give a terms link for each app.
+- [x] **Public phone number:** +1 484-948-5575 (developer, 2026-11-20). Play publishes it account-wide for traders.
+- [ ] **Still open from the trader decision:** a **terms of service page** for Transmit, since traders give a terms link for each app.
 - [x] **Target audience:** 18+ (`docs/product/release-1.0.md`, Play compliance; `content-rating-and-declarations.md` §2).
 - [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
 - [ ] **Deletion turnaround:** the draft promises 30 days.

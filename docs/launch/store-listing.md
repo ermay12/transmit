@@ -126,7 +126,7 @@ Decided by the developer on 2026-11-19: Transmit is published from the existing 
 - **Email (required, shown publicly):** ermay12@gmail.com. It's also the privacy policy's contact for data deletion requests.
 - **Address (shown publicly for traders):** Eric Maynard, 7320 Austin St APT 5H, Forest Hills, NY 11375, United States. It comes from the developer account, not from this listing, and shows on every app of the account, LinguaRead included.
 - **Website (optional):** the privacy policy page, or https://github.com/ermay12/transmit once it's public.
-- **Phone:** traders must give one, and Play publishes it (see `launch-checklist.md`). Not chosen yet.
+- **Phone (shown publicly for traders):** +1 484-948-5575 (chosen by the developer, 2026-11-20). It's set on the developer account and shows on every app of the account.
 - **Privacy policy URL:** required. See `launch-checklist.md`, step 3.
 
 ## Graphics
