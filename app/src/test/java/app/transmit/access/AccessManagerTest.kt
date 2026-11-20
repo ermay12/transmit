@@ -836,7 +836,7 @@ class AccessManagerTest {
         override fun put(name: String, value: String?) {
             if (value.isNullOrBlank()) map.remove(name) else map[name] = value
         }
-        fun has(name: String) = name in map
+        override fun has(name: String) = name in map
     }
 
     private class ScriptedBackend : AccessBackend {

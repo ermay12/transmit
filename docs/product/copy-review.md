@@ -402,3 +402,12 @@ New in beta8 (docs/product/chat-extras.md, section 1); needs review. The chat's 
 | Chat search bar: under the field, nothing matches | `search_no_matches` | No matches |
 | Chat search bar: under the field, past the oldest match, while older messages load from the phone | `search_looking_back` | Looking further back… |
 | Chat search bar: under the field, nothing older matched | `search_no_more` | No more matches |
+
+## beta8: notifications
+
+**Needs review (beta8, 2026-11-20):** two new strings for conversation notifications. A reply from a notification now stays in it as "You: …", with "You" as the sender name the notification already used. The notification-content setting still applies: when it hides message text, the reply shows as `notify_reply_hidden`, just as a received message shows as "New message".
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Notifications: the summary notification that bundles two or more chats (its title) | `notify_summary_chats` | %1$d chats |
+| Notifications: a reply sent from a notification, when the notification-content setting is Hidden | `notify_reply_hidden` | Reply sent |

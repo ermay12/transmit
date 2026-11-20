@@ -301,4 +301,9 @@
     <!-- Past the oldest match, older messages are being fetched from the phone. -->
     <string name="search_looking_back">Looking further back…</string>
     <string name="search_no_more">No more matches</string>
+
+    <!-- beta8: conversation notifications. The summary bundles two or more chats' notifications. -->
+    <string name="notify_summary_chats">%1$d chats</string>
+    <!-- A reply sent from a notification, when the notification content setting hides message text. -->
+    <string name="notify_reply_hidden">Reply sent</string>
 </resources>

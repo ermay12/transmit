@@ -2,8 +2,9 @@ package app.transmit.gm
 
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import app.transmit.data.ContactsRepository
-import app.transmit.data.SecretStore
+import app.transmit.data.KeyVault
 import app.transmit.data.db.GmConversationEntity
 import app.transmit.data.db.GmDao
 import app.transmit.data.db.GmMessageEntity
@@ -66,7 +67,7 @@ class NotConnectedException : GmException("Not connected to Google Messages")
  * cache (Room) of conversations and messages that the rest of the app reads.
  */
 class GmBridge(
-    private val secrets: SecretStore,
+    private val secrets: KeyVault,
     private val gmDao: GmDao,
     private val dao: TransmitDao,
     private val contacts: ContactsRepository,
@@ -74,7 +75,10 @@ class GmBridge(
     private val scope: CoroutineScope,
     /** A new incoming message arrived (not a sync of old ones). */
     private val onIncoming: suspend (threadId: Long, key: String) -> Unit,
-    /** A conversation was read elsewhere (on the phone, or another Messages for Web). */
+    /**
+     * A conversation was read elsewhere (on the phone, or another Messages for Web), maybe only up to a message:
+     * newer ones can still be unread.
+     */
     private val onReadElsewhere: suspend (threadId: Long) -> Unit,
     private val isOnScreen: (threadId: Long) -> Boolean,
     private val onLoggedOut: (reason: String) -> Unit,
@@ -297,7 +301,8 @@ class GmBridge(
 
     // ---- events ----------------------------------------------------------------------------------
 
-    private suspend fun handle(e: GmEvent) {
+    @VisibleForTesting
+    internal suspend fun handle(e: GmEvent) {
         when (e) {
             is GmEvent.Paired -> {
                 pairingJob?.cancel()
@@ -347,15 +352,18 @@ class GmBridge(
             val threadId = GmMapping.threadId(id)
             if (System.currentTimeMillis() - (phoneToldReadAt[threadId] ?: 0L) < PHONE_READ_RETRY_MS) continue
             val row = gmDao.conversation(threadId) ?: continue
-            tellPhoneRead(row, newestMessage(threadId))
+            // Read up to what was read here: a message that has arrived since is still unread.
+            val upTo = readUpTo[threadId] ?: continue
+            tellPhoneRead(row, newestMessage(threadId, before = upTo + 1))
         }
         for (conv in list) {
             if (conv.unread) continue
             val threadId = GmMapping.threadId(conv.conversationID)
-            if (before[conv.conversationID]?.unread == true || gmDao.unreadIncoming(threadId, 1).isNotEmpty()) {
-                gmDao.markThreadRead(threadId)
-                onReadElsewhere(threadId)
-            }
+            // Only the messages the phone had when it said "read". Marking every message read here cleared the ones
+            // that arrived after the update was made, so each notification lost all but its newest message.
+            val upTo = GmMapping.readUpTo(conv, latestCached(conv))
+            val cleared = gmDao.markThreadReadUpTo(threadId, upTo)
+            if (cleared > 0 || before[conv.conversationID]?.unread == true) onReadElsewhere(threadId)
         }
     }
 
@@ -370,13 +378,23 @@ class GmBridge(
         val placeholders = replacePlaceholder(msg)
         val existing = gmDao.message(msg.messageID)
         val outgoing = GmMapping.isOutgoing(msg)
-        val read = existing?.read ?: (outgoing || isOld || isOnScreen(threadId))
+        // A replayed message is no news, but only read if the phone said so: one that came while the connection was
+        // down is still unread, and joins the next notification.
+        val read = existing?.read ?: (outgoing || isOnScreen(threadId) || (isOld && oldMessageRead(threadId, msg)))
         gmDao.upsertMessages(listOf(GmMapping.messageEntity(withKnownMedia(msg, existing, placeholders), read)))
         if (gmDao.conversation(threadId) == null) {
             client?.let { c -> runCatching { c.getConversation(msg.conversationID) }.getOrNull()?.let { saveConversations(listOf(it)) } }
         }
         if (existing == null && !outgoing && !isOld) onIncoming(threadId, Message.key(msg.messageID))
     }
+
+    /** Whether a replayed received message is read, as far as the cached conversation says. */
+    private suspend fun oldMessageRead(threadId: Long, msg: GmMessage): Boolean {
+        val conv = conversation(threadId) ?: return true
+        return GmMapping.readByConversation(conv, msg.timestamp / 1000, latestCached(conv))
+    }
+
+    private suspend fun latestCached(conv: Conversation) = conv.latestMessageID.takeIf { it.isNotEmpty() }?.let { gmDao.message(it) }?.timestamp
 
     /**
      * The phone's copy of a message Transmit sent replaces the placeholder shown while sending.
@@ -498,14 +516,17 @@ class GmBridge(
         val c = client ?: return 0
         val resp = c.fetchMessages(conv.conversationID, PAGE, cursor)
         val messages = resp.messagesList.filter { it.messageID.isNotEmpty() && !GmMapping.isNotice(it) && !GmMapping.isDeleted(it) }
-        // In an unread conversation, what came in after the user's last reply is what's unread.
+        // In an unread conversation, what came in after the user's last reply is what's unread. In a read one, what
+        // the phone had when it was read: a message newer than the cached conversation is still unread.
         val lastOutgoing = messages.filter(GmMapping::isOutgoing).maxOfOrNull { it.timestamp } ?: Long.MIN_VALUE
+        val latestMs = messages.firstOrNull { it.messageID == conv.latestMessageID }?.let { it.timestamp / 1000 } ?: latestCached(conv)
         val placeholders = messages.associate { it.messageID to replacePlaceholder(it) }
         var added = 0
         val rows = messages.map { m ->
             val existing = gmDao.message(m.messageID)
             if (existing == null) added++
-            val read = existing?.read ?: (GmMapping.isOutgoing(m) || !conv.unread || m.timestamp < lastOutgoing)
+            val read = existing?.read
+                ?: (GmMapping.isOutgoing(m) || m.timestamp < lastOutgoing || GmMapping.readByConversation(conv, m.timestamp / 1000, latestMs))
             GmMapping.messageEntity(withKnownMedia(m, existing, placeholders[m.messageID].orEmpty()), read)
         }
         gmDao.upsertMessages(rows)
@@ -545,7 +566,8 @@ class GmBridge(
         tellPhoneRead(row, newest)
     }
 
-    private suspend fun newestMessage(threadId: Long) = gmDao.messages(threadId, 10).firstOrNull { !it.messageId.startsWith(PLACEHOLDER) }
+    private suspend fun newestMessage(threadId: Long, before: Long = Long.MAX_VALUE) =
+        gmDao.messages(threadId, 10, before).firstOrNull { !it.messageId.startsWith(PLACEHOLDER) }
 
     private fun tellPhoneRead(row: GmConversationEntity, newest: GmMessageEntity?) {
         val c = client ?: return

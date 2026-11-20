@@ -16,6 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 interface KeyVault {
     fun get(name: String): String?
     fun put(name: String, value: String?)
+    fun has(name: String): Boolean = get(name) != null
 }
 
 /**
@@ -50,7 +51,7 @@ class SecretStore(context: Context) : KeyVault {
         _version.value++
     }
 
-    fun has(name: String) = prefs.contains(name)
+    override fun has(name: String) = prefs.contains(name)
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
