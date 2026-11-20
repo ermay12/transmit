@@ -26,12 +26,17 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.transmit.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -71,7 +77,7 @@ private const val POP_SCALE = 1.3f
 /** How far across the thumb gets, with no AI, before it springs back. */
 private const val NUDGE = 0.45f
 private val BackSpring = spring<Float>(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium)
-/** How long a tap's position shows before the chat's setting must have caught up. */
+/** How long a tap's position shows, once passed on, before the chat's setting must have caught up. */
 private const val PENDING_MS = 2_000L
 
 /**
@@ -82,7 +88,8 @@ private const val PENDING_MS = 2_000L
  *
  * Without AI ([available] false: none set up, or it ended) it never looks on. A tap sends the thumb part way across
  * and springs it back, and then [onClick] opens the sheet that turns translation on. Otherwise [onClick] switches
- * the chat's auto-translate at once.
+ * the chat's auto-translate, once the thumb has come to rest: switching on starts translating at once, and that work
+ * may hold up a frame or two, which would cut the slide short.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,9 +103,13 @@ fun TranslateToggle(on: Boolean, flag: String, available: Boolean, onClick: () -
     val actual = on && available
     // A tap moves the thumb at once; the chat's setting follows a moment later and takes over.
     var tapped by remember { mutableStateOf<Boolean?>(null) }
+    // Taps not yet passed on to [onClick]; an even number changes nothing.
+    var owed by remember { mutableIntStateOf(0) }
+    val send by rememberUpdatedState(onClick)
     LaunchedEffect(actual) { tapped = null }
     LaunchedEffect(tapped) {
         if (tapped != null) {
+            snapshotFlow { owed }.first { it == 0 }
             delay(PENDING_MS)
             tapped = null
         }
@@ -115,6 +126,16 @@ fun TranslateToggle(on: Boolean, flag: String, available: Boolean, onClick: () -
         // Also settles a pop that a quick switch back cut short.
         pop.animateTo(1f, PopSpring)
     }
+    LaunchedEffect(owed) {
+        if (owed == 0) return@LaunchedEffect
+        withFrameNanos {} // the slide has started
+        snapshotFlow { position.isRunning || pop.isRunning }.first { !it }
+        val flip = owed % 2 == 1
+        owed = 0
+        if (flip) send()
+    }
+    // Leaving the chat mid-slide still switches it.
+    DisposableEffect(Unit) { onDispose { if (owed % 2 == 1) send() } }
 
     // The flag is an icon in a thumb of fixed size, so it doesn't grow with the font size.
     val flagSize = with(LocalDensity.current) { 17.dp.toSp() }
@@ -146,7 +167,7 @@ fun TranslateToggle(on: Boolean, flag: String, available: Boolean, onClick: () -
                     } else {
                         view.tick(!checked)
                         tapped = !checked
-                        onClick()
+                        owed++
                     }
                 }
                 .semantics {
