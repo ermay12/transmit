@@ -60,3 +60,23 @@ The reference is Google Messages on Android 17.
   translations are left alone.
 - **No AI access (NONE/ENDED).** The toggle never looks on. A tap makes the thumb start across and spring back, then
   opens the existing "Turn on translation" sheet.
+
+## As built
+
+- **Search** counts one match per message, however often the words appear in it. Past the oldest match it asks the
+  phone for at most 4 pages of 50 older messages. Subjects are not searched.
+- **Notifications.** The summary appears only once 2 or more chats are showing. It then stays while one is left, since
+  cancelling a summary cancels the notifications under it. A group's title is its member list ("Ana, Ben").
+- **The translate toggle** has no shimmer, because bubbles already pulse while their translation is pending.
+- **The switch holds its position.** The thumb moves at the tap and stays on its new side; nothing springs it back. The
+  chat changes once the thumb is within 3% of rest, about 0.36 s after the tap. Waiting for full rest took about
+  0.47 s. Changing the chat during the slide dropped frames (one of 53–59 ms in a debug build), so the change still
+  waits for the slide to end, though no longer for the spring's last wobble. With quick taps, only where the thumb
+  ends up is sent, and nothing is sent if that is where it started.
+- **Off the main thread.** The work after a flip now runs in the background: the translations, the chat's settings,
+  the recent-message translation, and the settings write. The write runs in order, one at a time. Rows whose
+  message hasn't changed are reused, so only the bubbles that change are redrawn; before, every bubble in the chat
+  was redrawn twice.
+- **Debug builds only.** The fake trial's dummy key never reaches OpenRouter. A fake on the device answers it, with
+  the demo's lines in Spanish and anything else marked "≈", so a debug trial no longer ends at the first
+  translation. Release builds are unchanged.
