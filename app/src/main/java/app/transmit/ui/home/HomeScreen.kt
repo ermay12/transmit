@@ -234,15 +234,11 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // The access banner (no AI, the allowance nearly or entirely used, the plan ended, in use elsewhere)
+            // sits above the list, not in it: one that appears while Home is open would otherwise land above the
+            // first chat, where the list keeps its place, out of sight.
             if (!showArchived) {
-                if (demo) {
-                    item("demo-banner") {
-                        StatusBanner(Icons.Default.Science, stringResource(R.string.demo_banner_title), stringResource(R.string.demo_banner_body))
-                    }
-                } else {
-                    item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
-                }
                 val dismissed = { b: AllowanceBannerContent ->
                     when (b.dismiss) {
                         BannerDismiss.TRANSLATION_OFF -> offBannerDismissed
@@ -251,60 +247,69 @@ fun HomeScreen(
                     }
                 }
                 allowanceBanner(access, allowance, vm.canBuy)?.takeUnless(dismissed)?.let { b ->
-                    item("allowance-banner") {
-                        val starting = b.does == BannerAction.START_TRIAL && trial == TrialUi.Starting
-                        StatusBanner(
-                            if (access == AiAccess.None) Icons.Default.Translate else Icons.Default.AutoAwesome,
-                            b.title.string(), b.body?.string(),
-                            if (starting) stringResource(R.string.banner_starting) else b.action?.let { stringResource(it) },
-                            when (b.does) {
-                                BannerAction.PLANS -> onPlans
-                                BannerAction.USE_HERE -> vm::useSubscriptionHere
-                                BannerAction.START_TRIAL -> ({ vm.trial.start() })
-                                BannerAction.GET_PLAY -> ({ openPlayListing(context) })
-                            }.takeIf { b.action != null },
-                            onDismiss = b.dismiss?.let { kind -> { vm.dismissBanner(kind) } },
-                            secondary = if (b.ownKeyLink) stringResource(R.string.access_own_key) else null,
-                            onSecondary = onOwnKey,
-                        )
-                    }
-                }
-                // Until paired there's nothing to be alerted to; pairing comes first.
-                if (paired && !alertsOn && !demo) {
-                    item("alerts-banner") {
-                        StatusBanner(Icons.Default.NotificationsOff, "Notifications are off", "You won't be alerted to new messages", "Turn on", turnOnAlerts)
-                    }
+                    val starting = b.does == BannerAction.START_TRIAL && trial == TrialUi.Starting
+                    StatusBanner(
+                        if (access == AiAccess.None) Icons.Default.Translate else Icons.Default.AutoAwesome,
+                        b.title.string(), b.body?.string(),
+                        if (starting) stringResource(R.string.banner_starting) else b.action?.let { stringResource(it) },
+                        when (b.does) {
+                            BannerAction.PLANS -> onPlans
+                            BannerAction.USE_HERE -> vm::useSubscriptionHere
+                            BannerAction.START_TRIAL -> ({ vm.trial.start() })
+                            BannerAction.GET_PLAY -> ({ openPlayListing(context) })
+                        }.takeIf { b.action != null },
+                        onDismiss = b.dismiss?.let { kind -> { vm.dismissBanner(kind) } },
+                        secondary = if (b.ownKeyLink) stringResource(R.string.access_own_key) else null,
+                        onSecondary = onOwnKey,
+                    )
                 }
             }
-            if (archivedRow) {
-                item("archived") { ArchivedRow(archivedCount, onClick = { vm.clearSelection(); vm.showArchived.value = true }) }
-            }
-            when {
-                list == null && canRead -> item("loading") {
-                    Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                }
-                list.isNullOrEmpty() && complete && syncing && query.isBlank() -> item("syncing") { SyncingState() }
-                list.isNullOrEmpty() && complete -> item("empty") { EmptyState(query.isNotBlank(), showArchived, paired) }
-                list != null -> items(list, key = { it.threadId }) { item ->
-                    // Search results stay listed after a change, so they don't swipe.
-                    SwipeToArchive(archived = item.archived, enabled = query.isBlank(), onSwiped = { archive(item.threadId, !item.archived) }) {
-                        ConversationRow(
-                            item = item,
-                            selected = item.threadId in selection,
-                            onClick = { if (selection.isEmpty()) onOpen(item.threadId) else vm.toggleSelect(item.threadId) },
-                            onLongClick = { vm.toggleSelect(item.threadId) },
-                        )
+            LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
+                if (!showArchived) {
+                    if (demo) {
+                        item("demo-banner") {
+                            StatusBanner(Icons.Default.Science, stringResource(R.string.demo_banner_title), stringResource(R.string.demo_banner_body))
+                        }
+                    } else {
+                        item("bridge-banner") { BridgeBanner(bridge, onPair = onPair, onUseHere = vm::useHere) }
+                    }
+                    // Until paired there's nothing to be alerted to; pairing comes first.
+                    if (paired && !alertsOn && !demo) {
+                        item("alerts-banner") {
+                            StatusBanner(Icons.Default.NotificationsOff, "Notifications are off", "You won't be alerted to new messages", "Turn on", turnOnAlerts)
+                        }
                     }
                 }
-            }
-            if (list != null && !complete) {
-                item("loading-more") {
-                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                if (archivedRow) {
+                    item("archived") { ArchivedRow(archivedCount, onClick = { vm.clearSelection(); vm.showArchived.value = true }) }
+                }
+                when {
+                    list == null && canRead -> item("loading") {
+                        Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    }
+                    list.isNullOrEmpty() && complete && syncing && query.isBlank() -> item("syncing") { SyncingState() }
+                    list.isNullOrEmpty() && complete -> item("empty") { EmptyState(query.isNotBlank(), showArchived, paired) }
+                    list != null -> items(list, key = { it.threadId }) { item ->
+                        // Search results stay listed after a change, so they don't swipe.
+                        SwipeToArchive(archived = item.archived, enabled = query.isBlank(), onSwiped = { archive(item.threadId, !item.archived) }) {
+                            ConversationRow(
+                                item = item,
+                                selected = item.threadId in selection,
+                                onClick = { if (selection.isEmpty()) onOpen(item.threadId) else vm.toggleSelect(item.threadId) },
+                                onLongClick = { vm.toggleSelect(item.threadId) },
+                            )
+                        }
                     }
                 }
+                if (list != null && !complete) {
+                    item("loading-more") {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
+                item("bottom-space") { Spacer(Modifier.height(88.dp)) }
             }
-            item("bottom-space") { Spacer(Modifier.height(88.dp)) }
         }
     }
 
