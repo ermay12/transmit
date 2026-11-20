@@ -179,6 +179,17 @@ class Notifier(
         nm.cancel(notificationId(threadId))
     }
 
+    /**
+     * [threadId] was read elsewhere, maybe only up to a message: its notification keeps what is still unread, and
+     * goes when nothing is. One the user dismissed stays dismissed.
+     */
+    suspend fun readElsewhere(threadId: Long) {
+        if (isShowing(threadId)) showThread(threadId, alert = false)
+    }
+
+    private fun isShowing(threadId: Long) =
+        runCatching { nm.activeNotifications.any { it.id == notificationId(threadId) && it.tag == null } }.getOrDefault(true)
+
     suspend fun notifySendFailed(threadId: Long) = withContext(Dispatchers.IO) {
         if (!canPost() || threadId == activeThreadId) return@withContext
         val name = dao.chatSettings(threadId)?.name

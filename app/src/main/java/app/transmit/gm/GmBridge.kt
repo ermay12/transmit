@@ -75,7 +75,10 @@ class GmBridge(
     private val scope: CoroutineScope,
     /** A new incoming message arrived (not a sync of old ones). */
     private val onIncoming: suspend (threadId: Long, key: String) -> Unit,
-    /** A conversation was read elsewhere (on the phone, or another Messages for Web). */
+    /**
+     * A conversation was read elsewhere (on the phone, or another Messages for Web), maybe only up to a message:
+     * newer ones can still be unread.
+     */
     private val onReadElsewhere: suspend (threadId: Long) -> Unit,
     private val isOnScreen: (threadId: Long) -> Boolean,
     private val onLoggedOut: (reason: String) -> Unit,
@@ -349,15 +352,18 @@ class GmBridge(
             val threadId = GmMapping.threadId(id)
             if (System.currentTimeMillis() - (phoneToldReadAt[threadId] ?: 0L) < PHONE_READ_RETRY_MS) continue
             val row = gmDao.conversation(threadId) ?: continue
-            tellPhoneRead(row, newestMessage(threadId))
+            // Read up to what was read here: a message that has arrived since is still unread.
+            val upTo = readUpTo[threadId] ?: continue
+            tellPhoneRead(row, newestMessage(threadId, before = upTo + 1))
         }
         for (conv in list) {
             if (conv.unread) continue
             val threadId = GmMapping.threadId(conv.conversationID)
-            if (before[conv.conversationID]?.unread == true || gmDao.unreadIncoming(threadId, 1).isNotEmpty()) {
-                gmDao.markThreadRead(threadId)
-                onReadElsewhere(threadId)
-            }
+            // Only the messages the phone had when it said "read". Marking every message read here cleared the ones
+            // that arrived after the update was made, so each notification lost all but its newest message.
+            val upTo = GmMapping.readUpTo(conv, conv.latestMessageID.takeIf { it.isNotEmpty() }?.let { gmDao.message(it) }?.timestamp)
+            val cleared = gmDao.markThreadReadUpTo(threadId, upTo)
+            if (cleared > 0 || before[conv.conversationID]?.unread == true) onReadElsewhere(threadId)
         }
     }
 
@@ -542,7 +548,8 @@ class GmBridge(
         tellPhoneRead(row, newest)
     }
 
-    private suspend fun newestMessage(threadId: Long) = gmDao.messages(threadId, 10).firstOrNull { !it.messageId.startsWith(PLACEHOLDER) }
+    private suspend fun newestMessage(threadId: Long, before: Long = Long.MAX_VALUE) =
+        gmDao.messages(threadId, 10, before).firstOrNull { !it.messageId.startsWith(PLACEHOLDER) }
 
     private fun tellPhoneRead(row: GmConversationEntity, newest: GmMessageEntity?) {
         val c = client ?: return

@@ -40,6 +40,13 @@ object GmMapping {
     fun isStaleUnread(conv: Conversation, readUpToMs: Long?) =
         conv.unread && readUpToMs != null && conv.lastMessageTimestamp / 1000 <= readUpToMs
 
+    /**
+     * The newest message time (ms) that [conv], when the phone calls it read, covers: its latest message's
+     * ([latestMs], when that message is cached) or the conversation's own time. A conversation update can trail
+     * the messages, so anything newer arrived since and is still unread.
+     */
+    fun readUpTo(conv: Conversation, latestMs: Long?): Long = maxOf(conv.lastMessageTimestamp / 1000, latestMs ?: Long.MIN_VALUE)
+
     fun messageEntity(msg: GmMessage, read: Boolean) = GmMessageEntity(
         messageId = msg.messageID,
         threadId = threadId(msg.conversationID),

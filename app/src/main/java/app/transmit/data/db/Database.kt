@@ -296,6 +296,10 @@ interface GmDao {
     @Query("UPDATE gm_messages SET read = 1 WHERE threadId = :threadId AND read = 0")
     suspend fun markThreadRead(threadId: Long)
 
+    /** Marks [threadId]'s messages up to [upTo] (ms) read, and returns how many were unread. */
+    @Query("UPDATE gm_messages SET read = 1 WHERE threadId = :threadId AND read = 0 AND timestamp <= :upTo")
+    suspend fun markThreadReadUpTo(threadId: Long, upTo: Long): Int
+
     /** The newest message of every conversation that has any cached. */
     @Query(
         "SELECT m.* FROM gm_messages m JOIN (SELECT threadId, MAX(timestamp) AS ts FROM gm_messages GROUP BY threadId) l " +

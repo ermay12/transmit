@@ -74,7 +74,7 @@ class AppContainer(val context: Context) {
             notifier.showThread(threadId, alert = true)
             IncomingWorker.enqueue(context, threadId, key)
         },
-        onReadElsewhere = { threadId -> notifier.cancel(threadId) },
+        onReadElsewhere = { threadId -> notifier.readElsewhere(threadId) },
         isOnScreen = { threadId -> notifier.activeThreadId == threadId },
         onLoggedOut = { reason -> notifier.notifyLoggedOut(reason) },
     )
