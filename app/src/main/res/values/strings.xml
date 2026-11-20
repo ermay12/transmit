@@ -41,6 +41,9 @@
     <string name="onboarding_change">Change</string>
     <string name="onboarding_connect_title">Connect your messages</string>
     <string name="onboarding_connect_body">Transmit works with Google Messages on your phone, like Messages for Web. Your texts keep going through Google Messages.</string>
+    <!-- Step 2's reassurances: the same claims as pair_intro, the store listing and the privacy policy. Nothing new. -->
+    <string name="onboarding_connect_unchanged">Nothing changes for the people you text.</string>
+    <string name="onboarding_connect_private">Your messages never reach Transmit\'s server.</string>
     <string name="onboarding_connect">Connect Google Messages</string>
     <string name="onboarding_later">Do this later</string>
     <string name="onboarding_connected">Connected to Google Messages</string>

@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +28,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material.icons.filled.Translate
@@ -112,16 +116,22 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
         }
         Spacer(Modifier.height(12.dp))
         AnimatedContent(step, modifier = Modifier.weight(1f), label = "step") { st ->
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                when (st) {
-                    0 -> PracticeStep(vm, s)
-                    1 -> MessagesStep(
-                        vm, pairingStarted,
-                        onPair = { pairingStarted = true; onPair() },
-                        onNext = { pairingStarted = false; step = 2 },
-                        onDemo = onDemo,
-                    )
-                    else -> TranslationStep(vm, onPlans, onFinish = ::finish)
+            // Step 2 has little on it, so it sits in the middle of the screen rather than leaving the bottom half empty.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                    verticalArrangement = if (st == 1) Arrangement.Center else Arrangement.Top,
+                ) {
+                    when (st) {
+                        0 -> PracticeStep(vm, s)
+                        1 -> MessagesStep(
+                            vm, pairingStarted,
+                            onPair = { pairingStarted = true; onPair() },
+                            onNext = { pairingStarted = false; step = 2 },
+                            onDemo = onDemo,
+                        )
+                        else -> TranslationStep(vm, onPlans, onFinish = ::finish)
+                    }
                 }
             }
         }
@@ -204,6 +214,10 @@ private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Bool
         if (paired && pairingStarted) askThenNext()
     }
     Title(stringResource(R.string.onboarding_connect_title), stringResource(R.string.onboarding_connect_body), onLongPress = onDemo)
+    // What connecting doesn't change, in words the store listing and privacy policy already use.
+    Benefit(Icons.Default.Group, stringResource(R.string.onboarding_connect_unchanged))
+    Benefit(Icons.Default.Lock, stringResource(R.string.onboarding_connect_private))
+    Spacer(Modifier.height(28.dp))
     if (paired) {
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
