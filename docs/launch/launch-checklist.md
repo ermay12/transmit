@@ -2,9 +2,9 @@
 
 Ordered steps to get Transmit 1.0 onto Google Play production. Updated 2026-11-21:
 
-- Branch `play-launch` is 118 commits ahead of `main`, at versionName `1.0.0-beta10` and versionCode 141.
-- beta10 is on the internal testing track and installed from Play on the test Pixel. The Worker is deployed, and both subscriptions are active.
-- Every subscription flow has passed on a real Play install (beta3, beta5 and beta6 device tests, Nov 19–20). What is left to test is in the remaining-work doc and in step 6 below.
+- Branch `play-launch` is 128 commits ahead of `main`, at versionName `1.0.0-beta11` and versionCode 150.
+- beta11 is on the internal testing track, installed from Play on both Pixels (yours and Melodee's). The Worker is deployed, and both subscriptions are active.
+- Every subscription flow has passed on a real Play install (beta3, beta5 and beta6 device tests, Nov 19–20). Notifications passed on two phones on Nov 21, except catch-up after being offline (see step 2.11). What is left to test is in the remaining-work doc and in step 6 below.
 
 The companion drafts are in this folder: `privacy-policy.md`, `data-safety.md`, `store-listing.md`, and `content-rating-and-declarations.md`.
 
@@ -48,7 +48,8 @@ The closed track is reviewed against the same policies as production, so fix the
 10. [x] **Docs** (641a460):
     - Fix `README.md`. It still says "Unknown numbers aren't auto-translated", but since 13d9dc4 they are, by default.
     - Its BYOK-only intro ("Translation and tutoring use your own AI API key") also predates the free week and plans.
-11. [ ] Set `versionName` to `1.0.0` for the production build.
+11. [ ] **(code)** A text that arrives while Transmit is offline gets no notification (found Nov 21 on beta11). With Wi-Fi and data off, a text from Melodee showed in the chat after reconnecting, but nothing was posted in more than 5 minutes. Likely cause: `GmBridge.saveMessage` only notifies for live messages (`!isOld`). Messages replayed after a reconnect are saved unread to "join the next notification", so on their own they stay silent. Fix: after a reconnect, notify for unread replayed messages newer than the last connection drop, but not for the first sync after pairing. Then retest on both phones.
+12. [ ] Set `versionName` to `1.0.0` for the production build.
 
 ## 3. Host the privacy policy (you + code)
 
@@ -97,13 +98,18 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 
 ## 6. Internal test (you + me)
 
-1. [x] Build the bundle with the upload key (beta10 = versionCode 141):
+1. [x] Build the bundle with the upload key (beta11 = versionCode 150):
    ```sh
    set -a; . ~/.config/transmit/upload-key.env; set +a; ./gradlew :app:bundleRelease
    ```
    Its versionCode must be higher than any bundle uploaded so far. It's the commit count, so committing is enough.
 2. [x] Upload it to **Internal testing**. Add yourself and your license testers.
-3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet. Passed on one Pixel (Nov 19–20): a real free week with Integrity, purchases, the test renewals, the allowance bar and the 80%/100% warnings, upgrade (CHARGE_FULL_PRICE), switch to Transmit (DEFERRED; Keep Plus was removed since Play can't revert it), restore without rotation, cancel and lapse, a refund by revoke, and own-key mode. Still open: the free week on a fresh device and `trial_already_used`, a second device on the same account, and the not-from-Play paths. The original list (`backend/README.md` "Not done yet"; `docs/product/phase2b-notes.md` §3):
+3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet. Passed on one Pixel (Nov 19–21): a real free week with Integrity, purchases, the test renewals, the allowance bar and the 80%/100% warnings, upgrade (CHARGE_FULL_PRICE), switch to Transmit (DEFERRED; Keep Plus was removed since Play can't revert it), restore without rotation, cancel and lapse (the ended banner while Home is open, with no false "in use on another device"), a refund by revoke, and own-key mode. Passed on the emulator (Nov 21): the not-from-Play paths and the reviewer demo. Passed on two Pixels (Nov 21, beta11): 3 texts stack into one notification; reading the chat in Google Messages clears it (about 2 s), and so does opening it in Transmit (about 3 s); inline reply from the notification; no crashes. Failed: catch-up after being offline (step 2.11). Still open:
+   - the reviewer demo on a fresh Play install, with `trial_already_used` and the `transmit-review` key: next, on your phone, which then needs pairing again;
+   - the beta11 fixes on a phone: arrows in Explain, a perfect check showing your own words, and removing your own key;
+   - a group notification showing member names, which needs a group chat;
+   - a second device on the same Play account ("Use it here?"). Melodee's phone uses her own account, so it can't test this;
+   - the free week on a device that hasn't used one. Melodee's Transmit is in own-key mode. The original list (`backend/README.md` "Not done yet"; `docs/product/phase2b-notes.md` §3):
    - a real free week (Integrity passes; `restored: true` after a reinstall; `trial_already_used` the second time);
    - a license-tester purchase of Transmit; the 5-minute test renewals; the allowance bar;
    - upgrade to Plus (CHARGE_FULL_PRICE); switch to Transmit (DEFERRED) and Keep Plus, noting which replacement mode Play accepts;
