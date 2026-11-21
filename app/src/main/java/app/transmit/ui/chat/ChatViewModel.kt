@@ -200,6 +200,11 @@ data class MessageUi(
     val needsCharacters: Boolean = false,
     /** The message this one replies to. */
     val quote: Quote? = null,
+    /**
+     * Auto-translate is off, so this bubble's translation stays behind its native-language side unless tapped. A move
+     * of the switch changes it, and the bubble crossfades to its other side.
+     */
+    val nativeSide: Boolean = false,
 ) {
     val key get() = message.key
     /** True when the bubble currently shows the target-language text. */
@@ -211,8 +216,11 @@ data class MessageUi(
     val romanMissing: Boolean
         get() = romanWanted && translation != null && translation.origin != TranslationOrigin.SAME && translation.romanized == null && !romanFailed
 
-    /** Romanized as soon as it's on screen; with characters only, a tap asks for it instead. */
-    val romanizesOnSight get() = romanMissing && script != ScriptDisplay.CHARACTERS
+    /**
+     * Romanized as soon as it's on screen, while the translation shows (not behind the native side with auto-translate
+     * off); with characters only, a tap asks for it instead.
+     */
+    val romanizesOnSight get() = romanMissing && script != ScriptDisplay.CHARACTERS && showingTranslation
 
     private val romanUnder get() = showingTranslation && (script == ScriptDisplay.BOTH || (script == ScriptDisplay.CHARACTERS && showRoman))
 
@@ -228,6 +236,42 @@ data class MessageUi(
 
     /** The romanization would show under the text but is on its way. */
     val subtextPending get() = romanUnder && romanMissing
+}
+
+/**
+ * Bubbles tapped to their other side, and whether auto-translate was [on] when they were: a move of the switch
+ * resets them all. [original] are those flipped from the side the chat shows; [roman] show the romanization under the
+ * characters.
+ */
+internal data class Flips(val on: Boolean, val original: Set<String> = emptySet(), val roman: Set<String> = emptySet()) {
+    /** These flips with auto-translate [on]: none once the switch has moved. */
+    fun under(on: Boolean): Flips = if (on == this.on) this else Flips(on)
+
+    /** [key] set to show its original ([toOriginal]) or its translation, whichever side the chat shows by default. */
+    fun show(key: String, toOriginal: Boolean): Flips = copy(original = if (toOriginal == on) original + key else original - key)
+
+    fun toggle(key: String): Flips = copy(original = if (key in original) original - key else original + key)
+}
+
+/** Which side a bubble shows: [showOriginal] and [awaiting] as [MessageUi] has them. */
+internal data class BubbleSide(val showOriginal: Boolean, val awaiting: Boolean, val nativeSide: Boolean)
+
+/**
+ * Which side of [key]'s bubble shows (docs/product/chat-extras.md, section 3). With auto-translate [on], its
+ * [translation] into the practice language once it has one. Off, its native-language side, which is its original:
+ * translations are stored only into the practice language, so there is never a cached native one to show, and a sent
+ * message's original is the text friends got. A tap ([flips]) shows the other side until the switch moves.
+ *
+ * [waiting]: a translation is on its way (or its romanization, or its characters). Off, the bubble waits for it only
+ * when the user asked for it. A bubble with nothing but its original keeps the flag it had, so the switch doesn't
+ * redraw it.
+ */
+internal fun bubbleSide(on: Boolean, flips: Flips, key: String, translation: TranslationEntity?, waiting: Boolean): BubbleSide {
+    val flipped = key in flips.under(on).original
+    val awaiting = waiting && (on || flipped)
+    val translated = translation != null && translation.origin != TranslationOrigin.SAME
+    val showOriginal = if (on || !(translated || awaiting)) flipped else !flipped
+    return BubbleSide(showOriginal, awaiting, nativeSide = !on && translated)
 }
 
 sealed interface Sheet {
@@ -294,9 +338,14 @@ class ChatViewModel(
     /** Finds addresses, dates and codes in bubbles as they're drawn. */
     val smart: SmartLinks get() = c.smart
     val chat = MutableStateFlow<EffectiveChat?>(null)
-    val showOriginal = MutableStateFlow<Set<String>>(emptySet())
-    /** Messages tapped to show their romanization under the characters. */
-    private val showRoman = MutableStateFlow<Set<String>>(emptySet())
+    /**
+     * Auto-translate as the top bar's switch shows it: never on without AI (none set up, or it ended). Off, the chat
+     * shows its native language.
+     */
+    private val autoOn: StateFlow<Boolean> = combine(chat, translationOff) { eff, off -> eff?.autoTranslate == true && !off }
+        .distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** Bubbles tapped to their other side, or to show their romanization, since the switch last moved. */
+    private val flips = MutableStateFlow(Flips(on = false))
     /** How the chat's practice language is shown; null when it has no romanization. */
     val script: StateFlow<ScriptDisplay?> = combine(settings, chat) { s, eff -> eff?.target?.let { s?.scriptDisplay(it) } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -344,14 +393,17 @@ class ChatViewModel(
 
     /** How each message is shown, apart from its translation. */
     private data class Views(
-        val original: Set<String>,
-        val roman: Set<String>,
+        val flips: Flips,
+        /** Auto-translate is on: bubbles show their translations, or else their native-language side. */
+        val on: Boolean,
         val script: ScriptDisplay?,
         val romanFailed: Set<String>,
         val conversions: TranslationManager.Conversions,
     )
 
-    private val views: Flow<Views> = combine(showOriginal, showRoman, script, c.translations.romanFailed, c.translations.conversions, ::Views)
+    private val views: Flow<Views> = combine(flips, autoOn, script, c.translations.romanFailed, c.translations.conversions) { f, on, s, rf, cv ->
+        Views(f.under(on), on, s, rf, cv)
+    }
 
     /** The last list [items] gave, by key. */
     private var shown: Map<String, MessageUi> = emptyMap()
@@ -401,6 +453,8 @@ class ChatViewModel(
                 refreshPeople()
                 val before = chat.value
                 chat.value = c.policy.effective(threadId, s, r.ifEmpty { null })
+                // After the change, so no bubble shows its tap's side under the switch's new position for a moment.
+                resetFlips()
                 if (before != null && (before.target != chat.value?.target || before.autoTranslate != chat.value?.autoTranslate)) autoTranslate()
             }
         }
@@ -437,6 +491,8 @@ class ChatViewModel(
         viewModelScope.launch { script.filterNotNull().drop(1).collect { autoTranslate() } }
         // Translation turned off (the free week ended, say): the composer becomes one plain box.
         viewModelScope.launch { translationOff.filter { it }.collect { compose.update { it.plain() } } }
+        // With AI gone or back, the switch moves too.
+        viewModelScope.launch { translationOff.collect { resetFlips() } }
         // AI turned on while the chat is open (the free week started from the strip, or in Settings): translate now.
         viewModelScope.launch {
             access.filterNotNull().map { it.canUseAi }.distinctUntilChanged().drop(1).filter { it }.collect { autoTranslate() }
@@ -585,6 +641,8 @@ class ChatViewModel(
             val converting = m.key in views.conversions.running
             val needsCharacters = r != null && t.origin == TranslationOrigin.SELF && !converting && m.key !in views.conversions.tried &&
                 (views.script == ScriptDisplay.CHARACTERS || views.script == ScriptDisplay.BOTH) && Scripts.isRomanized(t.text, r)
+            val waiting = (translatable && ((t == null && (m.key in pending || m.key in expected)) || romanWait)) || converting
+            val side = bubbleSide(views.on, views.flips, m.key, t, waiting)
             MessageUi(
                 message = m,
                 reactions = m.reactions.map { ReactionUi(it.emoji, it.count, it.mine) }.let { native ->
@@ -594,18 +652,19 @@ class ChatViewModel(
                         .map { (emoji, who) -> ReactionUi(emoji, who.size, ME in who) }
                 },
                 translation = t,
-                showOriginal = m.key in views.original,
+                showOriginal = side.showOriginal,
                 firstInRun = prev == null || !grouped(prev, m),
                 lastInRun = next == null || !grouped(m, next) || m.status == DeliveryStatus.FAILED,
                 newDay = prev == null || !sameDay(prev.date, m.date),
                 translatable = translatable,
-                awaiting = (translatable && ((t == null && (m.key in pending || m.key in expected)) || romanWait)) || converting,
+                awaiting = side.awaiting,
                 code = codes[m.key],
                 codeChip = m.key == chipKey,
                 script = views.script,
-                showRoman = m.key in views.roman,
+                showRoman = m.key in views.flips.roman,
                 romanFailed = m.key in views.romanFailed,
                 needsCharacters = needsCharacters,
+                nativeSide = side.nativeSide,
             )
         }
         if (list.none { it.message.replyTo != null }) return list
@@ -614,10 +673,11 @@ class ChatViewModel(
             val key = item.message.replyTo ?: return@map item
             val quote = byKey[key]?.toQuote()
                 ?: quoted[key]?.let { q ->
-                    // Further back than the list: shown as its bubble would be, translated unless switched to the original.
+                    // Further back than the list: shown as its bubble would be, in the side the chat shows unless tapped.
                     val t = tr[q.key]
                     MessageUi(
-                        message = q, reactions = emptyList(), translation = t, showOriginal = q.key in views.original,
+                        message = q, reactions = emptyList(), translation = t,
+                        showOriginal = bubbleSide(views.on, views.flips, q.key, t, waiting = false).showOriginal,
                         firstInRun = true, lastInRun = true, newDay = false, translatable = c.translations.isTranslatable(q),
                         awaiting = false, script = views.script,
                     ).toQuote()
@@ -668,15 +728,24 @@ class ChatViewModel(
         val tr = item.translation
         when {
             item.script == ScriptDisplay.CHARACTERS && item.showingTranslation && !item.showRoman && tr != null && Scripts.needsReading(tr.text) -> {
-                showRoman.update { it + key }
+                flip { it.copy(roman = it.roman + key) }
                 if (tr.romanized == null) romanize(item)
             }
-            item.showRoman -> {
-                showRoman.update { it - key }
-                showOriginal.update { it + key }
-            }
-            else -> showOriginal.update { if (key in it) it - key else it + key }
+            item.showRoman -> flip { it.copy(roman = it.roman - key).show(key, toOriginal = true) }
+            else -> flip { it.toggle(key) }
         }
+    }
+
+    /** Forgets the taps once the switch has moved. Each move is seen here in turn, so on, then off again, still resets. */
+    private fun resetFlips() {
+        val on = chat.value?.autoTranslate == true && !translationOff.value
+        flips.update { it.under(on) }
+    }
+
+    /** A tap's change to [flips], under the switch's current position. */
+    private fun flip(change: (Flips) -> Flips) {
+        val on = autoOn.value
+        flips.update { change(it.under(on)) }
     }
 
     /** A bubble whose romanization should show came into view without one. */
@@ -710,12 +779,14 @@ class ChatViewModel(
         }
     }
 
+    /** Translates one message and shows its translation, with auto-translate off too (its placeholder first). */
     fun translate(m: Message, refresh: Boolean = false, overrideBudget: Boolean = false) {
         val lang = chat.value?.target ?: return
+        flip { it.show(m.key, toOriginal = false) }
         viewModelScope.launch {
             try {
                 c.translations.translateNow(m, raw.value, lang, overrideBudget, refresh)
-                showOriginal.update { it - m.key }
+                flip { it.show(m.key, toOriginal = false) }
             } catch (e: AiBlockedException) {
                 budgetPrompt.value = BudgetPrompt(e.block) { translate(m, refresh, true) }
             } catch (e: AiException) {
