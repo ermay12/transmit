@@ -2,6 +2,8 @@ package app.transmit
 
 import android.app.Application
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -26,6 +28,7 @@ import app.transmit.access.PurchaseQueue
 import app.transmit.access.Purchases
 import app.transmit.access.RefreshTrigger
 import app.transmit.ai.AiService
+import app.transmit.ui.pairing.GoogleSignInCookies
 import app.transmit.ai.ProviderType
 import app.transmit.ai.BudgetManager
 import app.transmit.ai.ChatPolicy
@@ -77,6 +80,13 @@ class AppContainer(val context: Context) {
         onReadElsewhere = { threadId -> notifier.readElsewhere(threadId) },
         isOnScreen = { threadId -> notifier.activeThreadId == threadId },
         onLoggedOut = { reason -> notifier.notifyLoggedOut(reason) },
+        clearWebSignIn = {
+            // Only where the in-app sign-in was ever opened (QR pairing never loads a WebView); CookieManager wants the
+            // main thread, and throws while the WebView package is updating.
+            if (File(context.dataDir, "app_webview").exists()) {
+                Handler(Looper.getMainLooper()).post { runCatching { GoogleSignInCookies.clear() } }
+            }
+        },
     )
     val messaging: MessagingRepository = MessagingRepository(context, db, bridge)
     val sender: Sender = Sender(context, db.gmDao(), dao, bridge, scope) { threadId -> notifier.notifySendFailed(threadId) }

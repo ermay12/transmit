@@ -82,6 +82,11 @@ class GmBridge(
     private val onReadElsewhere: suspend (threadId: Long) -> Unit,
     private val isOnScreen: (threadId: Long) -> Boolean,
     private val onLoggedOut: (reason: String) -> Unit,
+    /**
+     * Signs the in-app Google sign-in out. Called once a Google pairing has its cookies in [secrets], and whenever the
+     * pairing goes, so Google's cookies are never kept anywhere but the encrypted pairing.
+     */
+    private val clearWebSignIn: () -> Unit = {},
 ) : Link {
     private val _state = MutableStateFlow<BridgeState>(if (secrets.has(AUTH_KEY)) BridgeState.Connecting else BridgeState.Unpaired)
     override val state: StateFlow<BridgeState> = _state
@@ -215,6 +220,7 @@ class GmBridge(
                 val pairing = c.startGooglePairing()
                 _state.value = BridgeState.Pairing(google = true, emoji = pairing.emoji)
                 c.finishGooglePairing(pairing)
+                clearWebSignIn()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -263,12 +269,14 @@ class GmBridge(
         fetchedLatest.clear()
         exhausted.clear()
         mediaDir.deleteRecursively()
+        clearWebSignIn()
     }
 
     private suspend fun loggedOut(reason: String) {
         client?.close()
         client = null
         secrets.put(AUTH_KEY, null)
+        clearWebSignIn()
         _state.value = BridgeState.LoggedOut(reason)
         onLoggedOut(reason)
     }
