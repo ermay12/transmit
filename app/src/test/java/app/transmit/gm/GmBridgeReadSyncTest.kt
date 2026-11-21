@@ -12,6 +12,8 @@ import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.Participant
 import app.transmit.gm.proto.SmallInfo
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -27,6 +29,8 @@ class GmBridgeReadSyncTest {
     private val gmDao = FakeGmDao()
     private val readElsewhere = mutableListOf<Long>()
     private val incoming = mutableListOf<String>()
+    /** Each call to onIncoming: one alert, for a conversation's new messages. */
+    private val alerts = mutableListOf<List<String>>()
     private val thread = GmMapping.threadId(CONV)
 
     private fun TestScope.bridge() = GmBridge(
@@ -39,7 +43,7 @@ class GmBridgeReadSyncTest {
         contacts = ContactsRepository(object : ContextWrapper(null) {}),
         mediaDir = File(System.getProperty("java.io.tmpdir"), "gm-bridge-test"),
         scope = backgroundScope,
-        onIncoming = { _, key -> incoming += key },
+        onIncoming = { _, keys -> incoming += keys; alerts += keys },
         onReadElsewhere = { readElsewhere += it },
         isOnScreen = { false },
         onLoggedOut = {},
@@ -58,10 +62,10 @@ class GmBridgeReadSyncTest {
             .build(),
     )
 
-    private fun received(id: String, ms: Long, text: String = "Message $id", isOld: Boolean = false) = GmEvent.MessageUpdate(
+    private fun received(id: String, ms: Long, text: String = "Message $id", isOld: Boolean = false, conv: String = CONV) = GmEvent.MessageUpdate(
         GmMessage.newBuilder()
             .setMessageID(id)
-            .setConversationID(CONV)
+            .setConversationID(conv)
             .setParticipantID("2")
             .setTimestamp(ms * 1000)
             .setMessageStatus(MessageStatus.newBuilder().setStatus(MessageStatusType.INCOMING_COMPLETE))
@@ -69,6 +73,12 @@ class GmBridgeReadSyncTest {
             .build(),
         isOld = isOld,
     )
+
+    /** Past the bridge's wait for the phone's replays (its scope is the background scope, which only virtual time runs). */
+    private fun TestScope.catchUp() {
+        advanceTimeBy(10_000)
+        runCurrent()
+    }
 
     /** What the conversation's notification would show: its unread received messages, oldest first. */
     private suspend fun stacked() = gmDao.unreadIncoming(thread, 8).sortedBy { it.timestamp }.map { it.messageId }
@@ -154,8 +164,79 @@ class GmBridgeReadSyncTest {
         bridge.handle(received("m1", 2_000, isOld = true))
 
         assertEquals(listOf("m1"), stacked())
-        // A replay doesn't alert: it joins the next notification.
+        // Not alerted yet: that waits for the sync after reconnecting (and this one is too old to alert at all).
         assertEquals(listOf("gm0"), incoming)
+    }
+
+    @Test
+    fun textsMissedWhileOfflineAlertOnceAfterTheCatchUp() = runTest {
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        bridge.handle(received("m0", now - 60_000))
+        bridge.handle(conversation(unread = false, lastMs = now - 60_000, latestId = "m0"))
+        // Offline; Ana texts twice; the connection comes back and the phone replays both.
+        bridge.handle(GmEvent.ConnectionRestored)
+        bridge.handle(received("m1", now - 30_000, isOld = true))
+        bridge.handle(received("m2", now - 20_000, isOld = true))
+        assertEquals(listOf(listOf("gm0")), alerts)
+
+        catchUp()
+        assertEquals(listOf("m1", "m2"), stacked())
+        // One alert for both, oldest first, so each is translated and the notification stacks them.
+        assertEquals(listOf(listOf("gm0"), listOf("gm1", "gm2")), alerts)
+    }
+
+    @Test
+    fun aMissedTextReadOnThePhoneBeforeTheCatchUpStaysQuiet() = runTest {
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        bridge.handle(received("m0", now - 60_000))
+        bridge.handle(conversation(unread = false, lastMs = now - 60_000, latestId = "m0"))
+        bridge.handle(received("m1", now - 30_000, isOld = true))
+        // The sync's conversation list says it was read on the phone meanwhile.
+        bridge.handle(conversation(unread = false, lastMs = now - 30_000, latestId = "m1"))
+
+        catchUp()
+        assertEquals(emptyList<String>(), stacked())
+        assertEquals(listOf(listOf("gm0")), alerts)
+    }
+
+    @Test
+    fun aMissedTextFromLongAgoStaysQuiet() = runTest {
+        val bridge = bridge()
+        val twoDaysAgo = System.currentTimeMillis() - 2 * 24 * 60 * 60_000L
+        bridge.handle(conversation(unread = true, lastMs = twoDaysAgo, latestId = "m1"))
+        bridge.handle(received("m1", twoDaysAgo, isOld = true))
+
+        catchUp()
+        // Still unread, so it's in the next notification, but Google Messages will have shown it long ago.
+        assertEquals(listOf("m1"), stacked())
+        assertEquals(emptyList<List<String>>(), alerts)
+    }
+
+    @Test
+    fun aMissedTextInANewConversationAlertsAfterTheCatchUp() = runTest {
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        bridge.handle(received("m0", now - 60_000))
+        bridge.handle(conversation(unread = false, lastMs = now - 60_000, latestId = "m0"))
+        bridge.handle(GmEvent.ConnectionRestored)
+        // Someone new texted while Transmit was offline: no conversation is cached for it.
+        bridge.handle(received("n1", now - 30_000, isOld = true, conv = "8"))
+
+        catchUp()
+        assertEquals(listOf(listOf("gm0"), listOf("gn1")), alerts)
+    }
+
+    @Test
+    fun aReplayOfAMessageAlreadyCachedDoesntAlertAgain() = runTest {
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        bridge.handle(received("m1", now - 30_000))
+        bridge.handle(received("m1", now - 30_000, isOld = true))
+
+        catchUp()
+        assertEquals(listOf(listOf("gm1")), alerts)
     }
 
     @Test

@@ -73,8 +73,11 @@ class GmBridge(
     private val contacts: ContactsRepository,
     private val mediaDir: File,
     private val scope: CoroutineScope,
-    /** A new incoming message arrived (not a sync of old ones). */
-    private val onIncoming: suspend (threadId: Long, key: String) -> Unit,
+    /**
+     * New incoming messages of a conversation: one that just arrived, or the ones that came while Transmit couldn't
+     * hear (oldest first). Alert once for the call, and translate each.
+     */
+    private val onIncoming: suspend (threadId: Long, keys: List<String>) -> Unit,
     /**
      * A conversation was read elsewhere (on the phone, or another Messages for Web), maybe only up to a message:
      * newer ones can still be unread.
@@ -109,6 +112,21 @@ class GmBridge(
      */
     private val _synced = MutableStateFlow(false)
     override val synced: StateFlow<Boolean> = _synced
+
+    /**
+     * Messages that reached the phone while Transmit wasn't listening (offline, or between two connections), by id,
+     * with their conversation. They never come as live messages: the phone replays them when the connection resumes,
+     * or only the sync after it finds them. They're notified once that sync has the phone's read state, so what was
+     * read on the phone meanwhile stays quiet.
+     */
+    private val missed = Collections.synchronizedMap(LinkedHashMap<String, Long>())
+
+    /**
+     * The newest cached message (ms) from before the connection went: a message the sync finds that's newer is one
+     * Transmit missed. Null right after pairing, when everything the sync finds is history.
+     */
+    @Volatile private var missedAfter: Long? = null
+    private var catchUpJob: Job? = null
 
     init {
         scope.launch {
@@ -147,6 +165,7 @@ class GmBridge(
 
     private suspend fun connect(auth: GmAuth) {
         _state.value = BridgeState.Connecting
+        missedAfter = newestCachedMs()
         val c = newClient(auth)
         client = c
         try {
@@ -319,6 +338,8 @@ class GmBridge(
                 _synced.value = false
                 gmDao.clearMessages()
                 gmDao.clearConversations()
+                missedAfter = null
+                missed.clear()
                 _state.value = BridgeState.Connecting
             }
             GmEvent.Ready -> {
@@ -330,7 +351,12 @@ class GmBridge(
             is GmEvent.ConnectionTrouble -> _state.update {
                 if (it is BridgeState.Connected) it.copy(trouble = "Reconnecting…") else it
             }
-            GmEvent.ConnectionRestored -> _state.update { if (it is BridgeState.Connected) it.copy(trouble = null) else it }
+            GmEvent.ConnectionRestored -> {
+                _state.update { if (it is BridgeState.Connected) it.copy(trouble = null) else it }
+                // Before the phone's replays are handled (they come after this event), so they count as missed.
+                newestCachedMs()?.let { missedAfter = it }
+                catchUp()
+            }
             is GmEvent.PhoneResponding -> _state.update {
                 if (it is BridgeState.Connected) it.copy(phoneResponding = e.responding) else it
             }
@@ -386,19 +412,53 @@ class GmBridge(
         val placeholders = replacePlaceholder(msg)
         val existing = gmDao.message(msg.messageID)
         val outgoing = GmMapping.isOutgoing(msg)
-        // A replayed message is no news, but only read if the phone said so: one that came while the connection was
-        // down is still unread, and joins the next notification.
+        // A replayed message is only read if the phone said so: one that came while the connection was down is still
+        // unread, and is notified after the sync it starts.
         val read = existing?.read ?: (outgoing || isOnScreen(threadId) || (isOld && oldMessageRead(threadId, msg)))
         gmDao.upsertMessages(listOf(GmMapping.messageEntity(withKnownMedia(msg, existing, placeholders), read)))
         if (gmDao.conversation(threadId) == null) {
             client?.let { c -> runCatching { c.getConversation(msg.conversationID) }.getOrNull()?.let { saveConversations(listOf(it)) } }
         }
-        if (existing == null && !outgoing && !isOld) onIncoming(threadId, Message.key(msg.messageID))
+        if (existing == null && !outgoing) {
+            if (!isOld) {
+                onIncoming(threadId, listOf(Message.key(msg.messageID)))
+            } else if (!read) {
+                // Came while Transmit couldn't hear: notified once the sync has what the phone read meanwhile.
+                missed[msg.messageID] = threadId
+                catchUp()
+            }
+        }
     }
 
-    /** Whether a replayed received message is read, as far as the cached conversation says. */
+    /** Syncs conversations soon, then notifies what was [missed]. One at a time; the replays come in a burst. */
+    private fun catchUp() {
+        if (catchUpJob?.isActive == true) return
+        catchUpJob = scope.launch {
+            delay(CATCH_UP_DELAY_MS)
+            initialSync()
+        }
+    }
+
+    /** Notifies the [missed] messages still unread, recent, and not on screen: one call per conversation. */
+    private suspend fun notifyMissed() {
+        val found = synchronized(missed) { missed.toMap().also { missed.clear() } }
+        if (found.isEmpty()) return
+        val now = System.currentTimeMillis()
+        found.keys.mapNotNull { gmDao.message(it) }
+            .filter { !it.read && !it.outgoing && now - it.timestamp < MISSED_MAX_AGE_MS && !isOnScreen(it.threadId) }
+            .sortedBy { it.timestamp }
+            .groupBy { it.threadId }
+            .forEach { (threadId, rows) -> onIncoming(threadId, rows.map { Message.key(it.messageId) }) }
+    }
+
+    private suspend fun newestCachedMs(): Long? = gmDao.latestMessages().maxOfOrNull { it.timestamp }
+
+    /**
+     * Whether a replayed received message is read, as far as the cached conversation says. Without one it's history
+     * (right after pairing), unless it's newer than everything cached before the connection went: a new conversation.
+     */
     private suspend fun oldMessageRead(threadId: Long, msg: GmMessage): Boolean {
-        val conv = conversation(threadId) ?: return true
+        val conv = conversation(threadId) ?: return missedAfter.let { it == null || msg.timestamp / 1000 <= it }
         return GmMapping.readByConversation(conv, msg.timestamp / 1000, latestCached(conv))
     }
 
@@ -462,24 +522,32 @@ class GmBridge(
 
     // ---- sync ------------------------------------------------------------------------------------
 
+    /**
+     * On connecting, and again after the connection comes back: the phone's conversations (with its read state), the
+     * latest messages of recent ones, then a notification for each conversation with messages Transmit [missed].
+     */
     private suspend fun initialSync() {
-        val c = client ?: return
-        dropPlaceholderTranslations()
-        try {
-            val inbox = c.listConversations(INITIAL_CONVERSATIONS)
-            saveConversations(inbox.conversationsList)
-            _synced.value = true
-            runCatching { c.listConversations(ARCHIVED_CONVERSATIONS, ListConversationsRequest.Folder.ARCHIVE) }
-                .onSuccess { saveConversations(it.conversationsList) }
-            // Recent conversations get their latest messages ahead of time so they open instantly.
-            for (conv in inbox.conversationsList.take(PREFETCH_CONVERSATIONS)) {
-                if (gmDao.message(conv.latestMessageID) == null) fetchPage(conv, cursor = null)
+        val c = client
+        if (c != null) {
+            dropPlaceholderTranslations()
+            try {
+                val inbox = c.listConversations(INITIAL_CONVERSATIONS)
+                saveConversations(inbox.conversationsList)
+                _synced.value = true
+                runCatching { c.listConversations(ARCHIVED_CONVERSATIONS, ListConversationsRequest.Folder.ARCHIVE) }
+                    .onSuccess { saveConversations(it.conversationsList) }
+                // Recent conversations get their latest messages ahead of time so they open instantly. A latest
+                // message that isn't cached is also how a text the phone never replayed shows up.
+                for (conv in inbox.conversationsList.take(PREFETCH_CONVERSATIONS)) {
+                    if (gmDao.message(conv.latestMessageID) == null) fetchPage(conv, cursor = null, collectMissed = true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Initial sync failed", e)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Initial sync failed", e)
         }
+        notifyMissed()
     }
 
     /** Fetches the newest messages of a conversation once per connection (or again, with [force]). */
@@ -519,8 +587,11 @@ class GmBridge(
         return true
     }
 
-    /** Returns how many messages were new to the cache. */
-    private suspend fun fetchPage(conv: Conversation, cursor: Cursor?): Int {
+    /**
+     * Returns how many messages were new to the cache. With [collectMissed] (the sync after connecting), unread
+     * received ones newer than anything cached before are ones Transmit [missed].
+     */
+    private suspend fun fetchPage(conv: Conversation, cursor: Cursor?, collectMissed: Boolean = false): Int {
         val c = client ?: return 0
         val resp = c.fetchMessages(conv.conversationID, PAGE, cursor)
         val messages = resp.messagesList.filter { it.messageID.isNotEmpty() && !GmMapping.isNotice(it) && !GmMapping.isDeleted(it) }
@@ -530,11 +601,14 @@ class GmBridge(
         val latestMs = messages.firstOrNull { it.messageID == conv.latestMessageID }?.let { it.timestamp / 1000 } ?: latestCached(conv)
         val placeholders = messages.associate { it.messageID to replacePlaceholder(it) }
         var added = 0
+        val after = missedAfter.takeIf { collectMissed }
+        val threadId = GmMapping.threadId(conv.conversationID)
         val rows = messages.map { m ->
             val existing = gmDao.message(m.messageID)
             if (existing == null) added++
             val read = existing?.read
                 ?: (GmMapping.isOutgoing(m) || m.timestamp < lastOutgoing || GmMapping.readByConversation(conv, m.timestamp / 1000, latestMs))
+            if (existing == null && !read && after != null && m.timestamp / 1000 > after) missed[m.messageID] = threadId
             GmMapping.messageEntity(withKnownMedia(m, existing, placeholders[m.messageID].orEmpty()), read)
         }
         gmDao.upsertMessages(rows)
@@ -714,6 +788,10 @@ class GmBridge(
         private const val PAGE = 50
         private const val PLACEHOLDER_TRANSLATION_GRACE_MS = 30_000L
         private const val PHONE_READ_RETRY_MS = 60_000L
+        /** Lets the phone's replays after a reconnect arrive (they come in a burst) before the catch-up sync. */
+        private const val CATCH_UP_DELAY_MS = 3_000L
+        /** A missed message older than this is no news: Google Messages on the phone will have shown it. */
+        private const val MISSED_MAX_AGE_MS = 24 * 60 * 60_000L
         private const val PHOTO_BATCH = 20
         private const val PHOTO_REFRESH_MS = 6 * 60 * 60_000L
         /** Message ids of sent messages the phone hasn't confirmed yet. */

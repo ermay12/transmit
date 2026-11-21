@@ -73,9 +73,9 @@ class AppContainer(val context: Context) {
     /** The connection to Google Messages on the phone, which does the actual messaging. */
     val bridge: GmBridge = GmBridge(
         secrets, db.gmDao(), dao, contacts, File(context.cacheDir, "gm-media"), scope,
-        onIncoming = { threadId, key ->
+        onIncoming = { threadId, keys ->
             notifier.showThread(threadId, alert = true)
-            IncomingWorker.enqueue(context, threadId, key)
+            keys.forEach { IncomingWorker.enqueue(context, threadId, it) }
         },
         onReadElsewhere = { threadId -> notifier.readElsewhere(threadId) },
         isOnScreen = { threadId -> notifier.activeThreadId == threadId },
