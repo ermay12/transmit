@@ -5,7 +5,7 @@ import { type Env, loadConfig } from "./config";
 import { makeCtx, defaultDeps, type Deps } from "./context";
 import { Budget, runScheduled, type CronReport } from "./cron";
 import { dataKeys } from "./crypto";
-import { HOME_HTML, PRIVACY_HTML } from "./generated/pages";
+import { HOME_HTML, PRIVACY_HTML, TERMS_HTML } from "./generated/pages";
 import { ApiError, errorResponse, html, json, log } from "./http";
 import { checkPerMinute, networkKey } from "./ratelimit";
 import { handleSubscription } from "./subscription";
@@ -39,9 +39,11 @@ async function network(req: Request, env: Env, deps: Deps): Promise<string | nul
 }
 
 const ROUTES: Record<string, Record<string, Handler>> = {
-  // Pages rendered at build time (scripts/build-pages.mjs); the privacy policy is linked from the app and Play.
+  // Pages rendered at build time (scripts/build-pages.mjs); the privacy policy is linked from the app and Play,
+  // the terms from Play's trader details.
   "/": { GET: async () => html(HOME_HTML) },
   "/privacy": { GET: async () => html(PRIVACY_HTML) },
+  "/terms": { GET: async () => html(TERMS_HTML) },
   "/v1/health": { GET: async () => json({ ok: true }) },
   "/v1/trial": {
     POST: async (req, env, deps) => {

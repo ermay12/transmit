@@ -6,7 +6,8 @@ subscriptions, creates and adjusts one OpenRouter key per trial or subscription,
 and disables keys whose subscription lapsed or was refunded. The app talks to
 OpenRouter directly with that key. The contract with the app is in
 [API.md](API.md). It also serves the privacy policy at
-[`/privacy`](https://transmit.ermay12.workers.dev/privacy).
+[`/privacy`](https://transmit.ermay12.workers.dev/privacy) and the terms of
+service at [`/terms`](https://transmit.ermay12.workers.dev/terms).
 
 ## Layout
 
@@ -19,7 +20,7 @@ OpenRouter directly with that key. The contract with the app is in
 | `src/shared-token.ts` | Shares the Google access token between isolates through D1 |
 | `src/ratelimit.ts` | Per-network call limits (Workers Rate Limiting binding), keyed by a daily keyed hash of the network |
 | `src/crypto.ts` | Keyed hashes (device, purchase token, network) and AES-GCM for stored secrets |
-| `scripts/build-pages.mjs` | Renders `GET /privacy` (from `docs/launch/privacy-policy.md`) and `GET /` into `src/generated/pages.ts`, which isn't committed |
+| `scripts/build-pages.mjs` | Renders `GET /privacy` (from `docs/launch/privacy-policy.md`), `GET /terms` (from `docs/launch/terms-of-service.md`) and `GET /` into `src/generated/pages.ts`, which isn't committed |
 | `migrations/` | D1 schema |
 | `test/` | Vitest suite in the Workers runtime, with fake Google and OpenRouter |
 
@@ -74,24 +75,26 @@ What the Worker and Cloudflare keep about a request, as of 2026-11-19:
 The privacy policy (`docs/launch/privacy-policy.md`, sections 4 and 6) and
 `docs/launch/data-safety.md` describe exactly this. Change them together.
 
-## Privacy policy page
+## Policy pages
 
-`GET /privacy` is `docs/launch/privacy-policy.md`, rendered to one
-self-contained HTML page (no scripts, no external requests) when the Worker is
-built. `GET /` is a short page that links to it. The Markdown is the only
-source:
+`GET /privacy` is `docs/launch/privacy-policy.md` and `GET /terms` is
+`docs/launch/terms-of-service.md` (the link Play's trader details give for
+Transmit), each rendered to one self-contained HTML page (no scripts, no
+external requests) when the Worker is built. `GET /` is a short page that links
+to both. The Markdown is the only source:
 
-1. Edit `docs/launch/privacy-policy.md`. Placeholders like `[LEGAL NAME]` show
-   on the page, highlighted, until you replace them. HTML comments (drafting
-   notes) are left out of the page.
-2. Optional preview: `npm run build:pages`, then open the `PRIVACY_HTML`
-   string in `src/generated/pages.ts`, or run `npx wrangler dev` and open
-   `http://localhost:8787/privacy`.
+1. Edit the Markdown. Placeholders like `[LEGAL NAME]` show on the page,
+   highlighted, until you replace them. HTML comments (drafting notes) are left
+   out of the page. Set a new effective date when the content changes.
+2. Optional preview: `npm run build:pages`, then open the `PRIVACY_HTML` or
+   `TERMS_HTML` string in `src/generated/pages.ts`, or run `npx wrangler dev`
+   and open `http://localhost:8787/privacy` or `/terms`.
 3. Deploy (below). `wrangler deploy` runs `scripts/build-pages.mjs` first (the
    `build` section of `wrangler.jsonc`), so the deploy carries the new page.
    The tests and `npm run typecheck` run it too.
 
-Headings get GitHub-style anchors, for example `/privacy#7-your-choices-and-rights`.
+Headings get GitHub-style anchors, for example `/privacy#7-your-choices-and-rights`
+or `/terms#5-subscriptions`.
 Browsers may cache the page for 5 minutes.
 
 ## Config
@@ -150,7 +153,7 @@ npx wrangler deploy
 ```
 
 Check it: `curl https://transmit.ermay12.workers.dev/v1/health`, and open
-`https://transmit.ermay12.workers.dev/privacy`.
+`https://transmit.ermay12.workers.dev/privacy` and `/terms`.
 
 ## Tests
 
@@ -214,7 +217,8 @@ refund with revoke is stored as `refunded`, not `expired` (no migration). Then
 (version `f633abc6`): when a DEFERRED switch's purchase lists both items with
 the same expiry and order after the renewal, the Worker takes the item with the
 billed plan (`autoRenewingPlan` with a price: Transmit), in either order, not
-the first listed (no migration). Not done yet:
+the first listed (no migration). On 2026-11-20 (version `43eccc92`): the
+`/terms` page, linked from `/privacy` and `/` (no migration). Not done yet:
 
 - **No real trial or purchase tested end to end.** That needs a Play-installed
   build (internal testing track) on a Pixel, and a license-tester purchase

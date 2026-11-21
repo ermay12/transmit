@@ -5,7 +5,8 @@
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "preview_urls": false,
-  // Renders GET /privacy from docs/launch/privacy-policy.md (and GET /) into src/generated/pages.ts.
+  // Renders GET /privacy and GET /terms from docs/launch/privacy-policy.md and terms-of-service.md (and GET /)
+  // into src/generated/pages.ts.
   "build": { "command": "node scripts/build-pages.mjs", "watch_dir": ["scripts", "../docs/launch"] },
   // Workers Logs keep only the Worker's own log lines (http.ts log(): no IP addresses, keys, tokens or
   // device IDs), for 3 days. Invocation logs are off: they store every request's headers, including

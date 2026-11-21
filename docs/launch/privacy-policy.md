@@ -1,7 +1,7 @@
 <!--
 This file is the privacy policy page. The Worker serves it at https://transmit.ermay12.workers.dev/privacy:
 backend/scripts/build-pages.mjs renders it to HTML when the Worker is built, so editing this file and redeploying the
-Worker updates the page (backend/README.md, "Privacy policy page").
+Worker updates the page (backend/README.md, "Policy pages").
 The developer's name, address and email, the country and the effective date were filled in on 2026-11-19, with the
 developer's approval to publish them. A new [BRACKETED] placeholder would show on the page, highlighted. When the policy
 changes, set a new effective date, and re-check the facts against the build you ship. Comments like this one don't
@@ -16,7 +16,7 @@ docs/launch/data-safety.md for the code references behind each statement.
 
 **Effective date:** November 19, 2026
 
-Transmit is an Android app for language learners. It shows your Google Messages chats with AI translation and a tutor. It's made by Eric Maynard, an individual developer ("I", "me"). This policy explains what Transmit does with your data, in plain language. If anything is unclear, write to me at ermay12@gmail.com.
+Transmit is an Android app for language learners. It shows your Google Messages chats with AI translation and a tutor. It's made by Eric Maynard, an individual developer ("I", "me"). This policy explains what Transmit does with your data, in plain language. If anything is unclear, write to me at ermay12@gmail.com. The free week, the plans and the rules for using them are in the [terms of service](https://transmit.ermay12.workers.dev/terms).
 
 ## The short version
 

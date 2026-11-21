@@ -128,6 +128,7 @@ Decided by the developer on 2026-11-19: Transmit is published from the existing 
 - **Website (optional):** the privacy policy page, or https://github.com/ermay12/transmit once it's public.
 - **Phone (shown publicly for traders):** +1 484-948-5575 (chosen by the developer, 2026-11-20). It's set on the developer account and shows on every app of the account.
 - **Privacy policy URL:** required. See `launch-checklist.md`, step 3.
+- **Terms of service URL:** https://transmit.ermay12.workers.dev/terms (live since 2026-11-20, from `terms-of-service.md`). It isn't a store listing field: it's the terms link the trader form asks for, per app (`launch-checklist.md`, step 1). Review it before you submit.
 
 ## Graphics
 

@@ -22,7 +22,8 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
   - Traders on personal accounts get their **phone number and address shown publicly**, everywhere from **March 1, 2027**. Both apply account-wide, so LinguaRead's listing shows them too.
   - Separately, once a personal account sells, Google Play already shows its address publicly.
 - [x] **Public phone number:** +1 484-948-5575 (developer, 2026-11-20). Play publishes it account-wide for traders.
-- [ ] **Still open from the trader decision:** a **terms of service page** for Transmit, since traders give a terms link for each app.
+- [x] **Terms of service page** for Transmit, since traders give a terms link for each app: live since 2026-11-20 at `https://transmit.ermay12.workers.dev/terms`, rendered from `terms-of-service.md` like the privacy page (Worker version `43eccc92`). It links to the privacy policy, and the privacy policy links back.
+  - **Review it before you submit the trader form (you).** It's a plain-language draft, not legal advice. Look hardest at the free week (§4), subscriptions and refunds (§5), the promise to cancel renewals if the service stops (§12), and the disclaimer and liability cap (§13, §14). A lawyer's read is worth it before production.
 - [x] **Target audience:** 18+ (`docs/product/release-1.0.md`, Play compliance; `content-rating-and-declarations.md` §2).
 - [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
 - [ ] **Deletion turnaround:** the draft promises 30 days.
@@ -55,7 +56,7 @@ Play needs "an active, publicly accessible and non-geofenced URL (no PDFs)" ([Us
 
 - **A route on the existing Worker** (chosen, live since 2026-11-19): `https://transmit.ermay12.workers.dev/privacy`.
   - It works now while the repo is private, uses the domain the policy already names, and its URL won't change if the repo moves.
-  - The page is rendered from `privacy-policy.md` whenever the Worker is deployed. To update it, edit the Markdown and redeploy (`backend/README.md`, "Privacy policy page").
+  - The page is rendered from `privacy-policy.md` whenever the Worker is deployed. To update it, edit the Markdown and redeploy (`backend/README.md`, "Policy pages").
 - **GitHub Pages**, once the repo is public, serving `main` / `docs`: `https://ermay12.github.io/transmit/launch/privacy-policy.html`.
   - No code, and edits are versioned.
   - Pages on a private repo needs a paid GitHub plan. The URL changes if you rename the repo.
@@ -76,7 +77,7 @@ Either way:
   - Recommended: swap the account-wide management key for a workspace-scoped one (`backend/README.md`, Secrets).
 - [ ] **Back up the Worker's `DATA_SECRET`.** Without it, every hashed record is useless (`backend/README.md`).
 - [ ] **Payments profile** linked and verified. The subscriptions are active, so it probably is; confirm in Play Console → Setup → Payments profile.
-- [ ] **Trader declaration** submitted (step 1).
+- [ ] **Trader declaration** submitted (step 1). Give `https://transmit.ermay12.workers.dev/terms` as Transmit's terms link.
 
 ## 5. Play Console: App content and store listing (you)
 

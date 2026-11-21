@@ -51,14 +51,34 @@ describe("pages", () => {
     // The developer's details are filled in (a placeholder would show highlighted); drafting notes don't show.
     expect(page).not.toContain("<mark>");
     expect(page).toContain('<a href="mailto:ermay12@gmail.com">ermay12@gmail.com</a>');
+    expect(page).toContain('<a href="https://transmit.ermay12.workers.dev/terms">terms of service</a>');
     expect(page).not.toContain("<!--");
     expect(page).not.toMatch(/<script|<link|src=/);
   });
 
-  it("links to the policy from the root, and answers HEAD without a body", async () => {
+  it("serves the terms of service as HTML rendered from docs/launch/terms-of-service.md", async () => {
+    const r = await get("/terms");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
+    const page = await r.text();
+    expect(page).toMatch(/^<!doctype html>/);
+    expect(page).toContain("<title>Transmit terms of service</title>");
+    expect(page).toContain('<h2 id="5-subscriptions">5. Subscriptions</h2>');
+    // No placeholders left (they would show highlighted), no drafting notes, and the contact and privacy links.
+    expect(page).not.toContain("<mark>");
+    expect(page).not.toContain("<!--");
+    expect(page).toContain('<a href="mailto:ermay12@gmail.com">ermay12@gmail.com</a>');
+    expect(page).toContain('<a href="https://transmit.ermay12.workers.dev/privacy">privacy policy</a>');
+    expect(page).not.toMatch(/<script|<link|src=/);
+  });
+
+  it("links to both pages from the root, and answers HEAD without a body", async () => {
     const home = await get("/");
     expect(home.status).toBe(200);
-    expect(await home.text()).toContain('<a href="/privacy">Privacy policy</a>');
+    const homePage = await home.text();
+    expect(homePage).toContain('<a href="/privacy">Privacy policy</a>');
+    expect(homePage).toContain('<a href="/terms">Terms of service</a>');
     const head = await get("/privacy", "HEAD");
     expect(head.status).toBe(200);
     expect(head.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -66,6 +86,9 @@ describe("pages", () => {
     const post = await get("/privacy", "POST");
     expect(post.status).toBe(405);
     expect(await post.json()).toMatchObject({ error: "method_not_allowed" });
+    const termsHead = await get("/terms", "HEAD");
+    expect(termsHead.status).toBe(200);
+    expect(await termsHead.text()).toBe("");
   });
 });
 
