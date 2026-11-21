@@ -201,6 +201,8 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     fun setDeliveryReports(v: Boolean) = launch { c.settings.setDeliveryReports(v) }
     fun setScriptDisplay(r: Romanization, v: ScriptDisplay) = launch { c.settings.setScriptDisplay(r, v) }
     fun setOnboarded() = launch { c.settings.setOnboarded(true) }
+    /** Opened from Settings: Home needn't offer it too. */
+    fun doubleAlertsTipSeen() = launch { c.settings.setDoubleAlertsTipSeen() }
 
     suspend fun price(model: String): Price? {
         val s = c.settings.current()

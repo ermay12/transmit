@@ -67,6 +67,11 @@ class HomeViewModel(private val c: Workspace) : ViewModel() {
     val warningDismissed = c.access.warningDismissed
     val offBannerDismissed = c.access.offBannerDismissed
 
+    /** The double-notifications tip was shown: Home doesn't offer it again (Settings still has it). */
+    fun doubleAlertsTipSeen() {
+        c.scope.launch { c.settings.setDoubleAlertsTipSeen() }
+    }
+
     fun dismissBanner(kind: BannerDismiss) {
         c.scope.launch {
             when (kind) {

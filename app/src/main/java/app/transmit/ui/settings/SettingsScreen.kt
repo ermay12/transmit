@@ -22,6 +22,9 @@ import androidx.compose.ui.text.style.TextAlign
 import app.transmit.R
 import app.transmit.access.AccessBuild
 import app.transmit.access.AiAccess
+import app.transmit.ui.DoubleAlertsSheet
+import app.transmit.ui.GoogleMessagesAlerts
+import app.transmit.ui.rememberOpenGoogleMessagesAlerts
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.AllowanceBar
 import app.transmit.ui.access.GetOnPlay
@@ -62,6 +65,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.School
@@ -137,6 +141,9 @@ fun SettingsScreen(
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var confirmUnpair by remember { mutableStateOf(false) }
+    var doubleAlerts by rememberSaveable { mutableStateOf(false) }
+    val openGoogleMessagesAlerts = rememberOpenGoogleMessagesAlerts()
+    val googleMessagesInstalled = remember { GoogleMessagesAlerts.installed(context) }
     var pick by remember { mutableStateOf<String?>(null) }
     var keyDialog by remember { mutableStateOf(false) }
     var ownKeyDialog by rememberSaveable { mutableStateOf(openOwnKey) }
@@ -250,6 +257,12 @@ fun SettingsScreen(
                     ) { Text(v.label, maxLines = 1) }
                 }
             }
+            if (googleMessagesInstalled) {
+                Spacer(Modifier.height(4.dp))
+                Row0(Icons.Default.NotificationsOff, stringResource(R.string.settings_double_alerts), stringResource(R.string.settings_double_alerts_summary)) {
+                    doubleAlerts = true
+                }
+            }
 
             if (a is AiAccess.Subscribed) {
                 Section(stringResource(R.string.settings_subscription))
@@ -303,6 +316,9 @@ fun SettingsScreen(
         when (pick) {
             "native" -> LanguagePickerDialog("I speak", s.nativeLang, { it?.let(vm::setNative); pick = null }, { pick = null })
             "target" -> LanguagePickerDialog("Practicing", s.targetLang, { it?.let(vm::setTarget); pick = null }, { pick = null })
+        }
+        if (doubleAlerts) {
+            DoubleAlertsSheet(onOpen = openGoogleMessagesAlerts, onDismiss = { doubleAlerts = false; vm.doubleAlertsTipSeen() })
         }
         if (keyDialog) KeyDialog(vm, s.provider) { keyDialog = false }
         val usingOwnKey = stringResource(R.string.own_key_done)

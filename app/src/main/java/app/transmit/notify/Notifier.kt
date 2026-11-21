@@ -238,8 +238,14 @@ class Notifier(
         if (posted) {
             state.posted(NotificationState.Shown(threadId, title, summaryText, newestAt), lines)
             updateSummary()
+            // The first alert the user could see: Google Messages most likely alerted too, so Home offers the tip.
+            if (alert && !s.messageAlerted && alertsVisible()) settings.setMessageAlerted()
         }
     }
+
+    /** Notifications allowed and the Messages channel not switched off. */
+    private fun alertsVisible() =
+        nm.areNotificationsEnabled() && nm.getNotificationChannelCompat(CHANNEL_MESSAGES)?.importance != NotificationManagerCompat.IMPORTANCE_NONE
 
     /** For a reaction, [translation] is that of the message it reacts to. */
     private fun notificationText(m: Message, translation: String?, mode: NotificationContent, auto: Boolean): String {

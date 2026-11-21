@@ -116,6 +116,9 @@ import app.transmit.ui.components.ReceiptIcon
 import app.transmit.ui.components.Times
 import app.transmit.gm.BridgeState
 import app.transmit.ui.pairing.BridgeBanner
+import app.transmit.ui.DoubleAlertsSheet
+import app.transmit.ui.GoogleMessagesAlerts
+import app.transmit.ui.rememberOpenGoogleMessagesAlerts
 import app.transmit.ui.rememberTurnOnMessageAlerts
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -171,6 +174,8 @@ fun HomeScreen(
     val archivedRow = !showArchived && archivedCount > 0 && query.isBlank()
     if (atTop) SideEffect { listState.requestScrollToItem(0) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val openGoogleMessagesAlerts = rememberOpenGoogleMessagesAlerts()
+    val googleMessagesInstalled = remember { GoogleMessagesAlerts.installed(context) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -325,6 +330,13 @@ fun HomeScreen(
             onDismiss = vm.trial::reset,
             canBuy = vm.canBuy,
         )
+    }
+
+    // Transmit has just alerted to a text, and Google Messages most likely did too: once, how to stop the second one.
+    settings?.let { s ->
+        if (selection.isEmpty() && GoogleMessagesAlerts.offerTip(s.messageAlerted, s.doubleAlertsTipSeen, alertsOn, paired, demo, googleMessagesInstalled)) {
+            DoubleAlertsSheet(onOpen = openGoogleMessagesAlerts, onDismiss = vm::doubleAlertsTipSeen)
+        }
     }
 
     if (confirmDelete) {

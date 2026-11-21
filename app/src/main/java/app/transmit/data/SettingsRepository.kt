@@ -57,6 +57,10 @@ data class AppSettings(
     val priceOverrides: Map<String, Price> = emptyMap(),
     /** Per romanization; [ScriptDisplay.BOTH] when unset. */
     val scriptDisplays: Map<Romanization, ScriptDisplay> = emptyMap(),
+    /** Transmit has alerted the user to a new message at least once, so Google Messages likely alerted them too. */
+    val messageAlerted: Boolean = false,
+    /** The tip to turn off Google Messages' own message notifications has been shown (or opened from Settings). */
+    val doubleAlertsTipSeen: Boolean = false,
 ) {
     val native get() = Languages.get(nativeLang)
     val target get() = Languages.get(targetLang)
@@ -103,6 +107,8 @@ class SettingsRepository(private val context: Context) {
         val prices = stringPreferencesKey("price_overrides")
         val recentLangs = stringPreferencesKey("recent_langs")
         fun scriptDisplay(r: Romanization) = stringPreferencesKey("script_display_${r.name}")
+        val messageAlerted = booleanPreferencesKey("message_alerted")
+        val doubleAlertsTipSeen = booleanPreferencesKey("double_alerts_tip_seen")
         fun modelCache(p: ProviderType) = stringPreferencesKey("model_cache_${p.name}")
     }
 
@@ -157,6 +163,8 @@ class SettingsRepository(private val context: Context) {
             scriptDisplays = Romanization.entries.mapNotNull { r ->
                 p[K.scriptDisplay(r)]?.let { v -> runCatching { r to ScriptDisplay.valueOf(v) }.getOrNull() }
             }.toMap(),
+            messageAlerted = p[K.messageAlerted] ?: false,
+            doubleAlertsTipSeen = p[K.doubleAlertsTipSeen] ?: false,
         )
     }
 
@@ -200,6 +208,8 @@ class SettingsRepository(private val context: Context) {
     suspend fun setNotificationContent(v: NotificationContent) = edit { it[K.notificationContent] = v.name }
     suspend fun setDeliveryReports(v: Boolean) = edit { it[K.deliveryReports] = v }
     suspend fun setScriptDisplay(r: Romanization, v: ScriptDisplay) = edit { it[K.scriptDisplay(r)] = v.name }
+    suspend fun setMessageAlerted() = edit { it[K.messageAlerted] = true }
+    suspend fun setDoubleAlertsTipSeen() = edit { it[K.doubleAlertsTipSeen] = true }
 
     suspend fun setPriceOverride(provider: ProviderType, model: String, price: Price?) = edit { p ->
         val map = p[K.prices]?.let(::decodePrices).orEmpty().toMutableMap()

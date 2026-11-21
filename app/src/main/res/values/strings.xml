@@ -323,4 +323,17 @@
     <string name="reactions_see_who">See who reacted</string>
     <!-- A picture someone reacted with (Google Messages calls these photomoji), for accessibility. -->
     <string name="reactions_photomoji">Photomoji</string>
+
+    <!--
+        Google Messages notifies about every text too, so each one arrives twice. Home offers this once, after Transmit's
+        first message notification; Settings → Messages has it any time. Only its "Incoming messages" notifications go off.
+    -->
+    <string name="double_alerts_title">Getting two notifications for each text?</string>
+    <string name="double_alerts_body">Google Messages notifies you too. Turn off its Incoming messages notifications and you\'ll get just Transmit\'s.</string>
+    <!-- The looping clip (for accessibility). -->
+    <string name="double_alerts_clip">In Google Messages\' Incoming messages settings, the Show notifications switch is turned off.</string>
+    <string name="double_alerts_note">Google Messages\' other notifications stay on. Transmit needs internet to notify you, so a text that comes while you\'re offline alerts once you\'re back online.</string>
+    <string name="double_alerts_open">Open Google Messages settings</string>
+    <string name="settings_double_alerts">Double notifications</string>
+    <string name="settings_double_alerts_summary">Turn off Google Messages\' notifications for new texts</string>
 </resources>
