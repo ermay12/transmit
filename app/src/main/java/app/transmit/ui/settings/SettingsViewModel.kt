@@ -3,6 +3,7 @@ package app.transmit.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.transmit.AppContainer
+import app.transmit.access.AiAccess
 import app.transmit.access.RefreshTrigger
 import app.transmit.ui.access.AccessText
 import app.transmit.ui.access.TrialStarter
@@ -149,10 +150,17 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * Removing the key the app translates with also leaves own-key mode, which has nothing to use without it: back to
+     * the free week or plan if one still gives AI, otherwise to no AI (or "ended"), so the app offers the way back.
+     */
     fun removeKey(p: ProviderType) {
         c.ai.setApiKey(p, null)
         keyCheck.value = KeyCheck.Idle
         models.value = ModelsState()
+        launch {
+            if (c.access.current() == AiAccess.Byok && c.settings.current().provider == p) c.access.turnOff()
+        }
     }
 
     fun loadModels(refresh: Boolean = false) {
