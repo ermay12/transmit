@@ -356,7 +356,9 @@ private fun FeedbackCard(fb: Feedback, attempt: String, onApply: (String) -> Uni
                 Column(Modifier.weight(1f)) {
                     val corrected = fb.corrected.ifBlank { attempt }
                     if (fb.verdict == Feedback.Verdict.PERFECT || corrected.trim() == attempt.trim()) {
-                        Text(corrected, style = MaterialTheme.typography.bodyLarge)
+                        // Perfect shows the user's own words: the model may still add a capital or a comma, and its
+                        // version shown unmarked would read as a change nobody explained.
+                        Text(if (fb.verdict == Feedback.Verdict.PERFECT) attempt else corrected, style = MaterialTheme.typography.bodyLarge)
                     } else {
                         // Diffs against the live draft, so the highlights shrink as the user types the fixes in.
                         val diff = remember(attempt, corrected, colors.good, colors.bad) {
