@@ -54,6 +54,31 @@ private val bulletRe = Regex("^(\\s*)([-*•+])\\s+(.*)$")
 private val numberRe = Regex("^(\\s*)(\\d+)[.)]\\s+(.*)$")
 private val headingRe = Regex("^(#{1,6})\\s+(.*)$")
 
+/** The LaTeX commands tutors write despite the prompt, as the characters they stand for. */
+private val latexSymbols = mapOf(
+    "rightarrow" to "→", "to" to "→", "longrightarrow" to "→", "mapsto" to "→",
+    "leftarrow" to "←", "longleftarrow" to "←", "gets" to "←",
+    "leftrightarrow" to "↔", "Leftrightarrow" to "⇔", "iff" to "⇔",
+    "Rightarrow" to "⇒", "implies" to "⇒", "Leftarrow" to "⇐",
+    "approx" to "≈", "neq" to "≠", "ne" to "≠", "times" to "×", "cdot" to "·",
+    "ldots" to "…", "dots" to "…", "quad" to " ", "qquad" to " ",
+)
+private val latexCommand = Regex("""\\([a-zA-Z]+)(?![a-zA-Z])\s?""")
+private val latexText = Regex("""\\(?:text|textbf|textit|mathrm|mathbf|emph)\{([^{}]*)\}""")
+private val inlineMath = Regex("""\$([^$\n]*\\[a-zA-Z][^$\n]*)\$""")
+
+/**
+ * Turns the LaTeX some models put in tutor answers ("$\rightarrow$") into plain text ("→"). Only `$…$` spans holding a
+ * backslash command lose their dollar signs, so prices ("$5 and $10") stay as they are; unknown commands are kept.
+ */
+internal fun withoutLatex(md: String): String {
+    if ('\\' !in md) return md
+    fun symbols(s: String) = latexText.replace(s) { it.groupValues[1] }
+        .let { t -> latexCommand.replace(t) { m -> latexSymbols[m.groupValues[1]]?.let { "$it " } ?: m.value } }
+    val unwrapped = inlineMath.replace(md) { m -> symbols(m.groupValues[1]).trim().replace("{", "").replace("}", "") }
+    return symbols(unwrapped).replace(Regex("""([→←↔⇔⇒⇐≈≠×·…])  +"""), "$1 ")
+}
+
 private fun parseBlocks(md: String): List<Block> {
     val out = mutableListOf<Block>()
     val para = StringBuilder()
@@ -61,7 +86,7 @@ private fun parseBlocks(md: String): List<Block> {
         if (para.isNotBlank()) out += Block.Paragraph(para.toString().trim())
         para.clear()
     }
-    md.replace("\r", "").lines().forEach { raw ->
+    withoutLatex(md).replace("\r", "").lines().forEach { raw ->
         val line = raw.trimEnd()
         headingRe.matchEntire(line.trim())?.let { flush(); out += Block.Heading(it.groupValues[1].length, it.groupValues[2]); return@forEach }
         bulletRe.matchEntire(line)?.let { flush(); out += Block.Bullet(it.groupValues[1].length / 2, "•", it.groupValues[3]); return@forEach }
