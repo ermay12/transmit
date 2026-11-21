@@ -2,9 +2,9 @@
 
 Ordered steps to get Transmit 1.0 onto Google Play production. Updated 2026-11-21:
 
-- Branch `play-launch` is 128 commits ahead of `main`, at versionName `1.0.0-beta11` and versionCode 150.
+- Branch `play-launch` is 131 commits ahead of `main`, at versionName `1.0.0-beta12` and versionCode 154. beta12 (`~/Downloads/transmit-1.0.0-beta12-154.aab`) is built and ready to upload; it fixes step 2.11.
 - beta11 is on the internal testing track, installed from Play on both Pixels (yours and Melodee's). The Worker is deployed, and both subscriptions are active.
-- Every subscription flow has passed on a real Play install (beta3, beta5 and beta6 device tests, Nov 19–20). Notifications passed on two phones on Nov 21, except catch-up after being offline (see step 2.11). What is left to test is in the remaining-work doc and in step 6 below.
+- Every subscription flow has passed on a real Play install (beta3, beta5 and beta6 device tests, Nov 19–20). Notifications passed on two phones on Nov 21, except catch-up after being offline (step 2.11, fixed in beta12, to retest). What is left to test is in the remaining-work doc and in step 6 below.
 
 The companion drafts are in this folder: `privacy-policy.md`, `data-safety.md`, `store-listing.md`, and `content-rating-and-declarations.md`.
 
@@ -48,7 +48,7 @@ The closed track is reviewed against the same policies as production, so fix the
 10. [x] **Docs** (641a460):
     - Fix `README.md`. It still says "Unknown numbers aren't auto-translated", but since 13d9dc4 they are, by default.
     - Its BYOK-only intro ("Translation and tutoring use your own AI API key") also predates the free week and plans.
-11. [ ] **(code)** A text that arrives while Transmit is offline gets no notification (found Nov 21 on beta11). With Wi-Fi and data off, a text from Melodee showed in the chat after reconnecting, but nothing was posted in more than 5 minutes. Likely cause: `GmBridge.saveMessage` only notifies for live messages (`!isOld`). Messages replayed after a reconnect are saved unread to "join the next notification", so on their own they stay silent. Fix: after a reconnect, notify for unread replayed messages newer than the last connection drop, but not for the first sync after pairing. Then retest on both phones.
+11. [x] **(code)** A text that arrives while Transmit is offline gets no notification (found Nov 21 on beta11; fixed in beta12, 7397268). With Wi-Fi and data off, a text from Melodee showed in the chat after reconnecting, but nothing was posted in more than 5 minutes. Cause: `GmBridge` only notified live messages. The phone's replays after a reconnect (`isOld`) and messages found by the sync waited for the next live one, and a reconnect after an outage never synced (`Ready` only fires on a client's first connect). Now `ConnectionRestored` runs the sync. Replays new to the cache and still unread, and synced messages newer than anything cached before the outage, alert once per conversation after the sync has the phone's read state. Ones read on the phone meanwhile, older than a day, or in the open chat stay quiet. 6 new unit tests. The emulator can't pair, so **retest on both phones**: Wi-Fi and data off, a text, back on, and the notification within about 10 s of reconnecting.
 12. [ ] Set `versionName` to `1.0.0` for the production build.
 
 ## 3. Host the privacy policy (you + code)
@@ -98,13 +98,14 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 
 ## 6. Internal test (you + me)
 
-1. [x] Build the bundle with the upload key (beta11 = versionCode 150):
+1. [x] Build the bundle with the upload key (beta12 = versionCode 154):
    ```sh
    set -a; . ~/.config/transmit/upload-key.env; set +a; ./gradlew :app:bundleRelease
    ```
    Its versionCode must be higher than any bundle uploaded so far. It's the commit count, so committing is enough.
 2. [x] Upload it to **Internal testing**. Add yourself and your license testers.
-3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet. Passed on one Pixel (Nov 19–21): a real free week with Integrity, purchases, the test renewals, the allowance bar and the 80%/100% warnings, upgrade (CHARGE_FULL_PRICE), switch to Transmit (DEFERRED; Keep Plus was removed since Play can't revert it), restore without rotation, cancel and lapse (the ended banner while Home is open, with no false "in use on another device"), a refund by revoke, and own-key mode. Passed on the emulator (Nov 21): the not-from-Play paths and the reviewer demo. Passed on two Pixels (Nov 21, beta11): 3 texts stack into one notification; reading the chat in Google Messages clears it (about 2 s), and so does opening it in Transmit (about 3 s); inline reply from the notification; no crashes. Failed: catch-up after being offline (step 2.11). Still open:
+3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet. Passed on one Pixel (Nov 19–21): a real free week with Integrity, purchases, the test renewals, the allowance bar and the 80%/100% warnings, upgrade (CHARGE_FULL_PRICE), switch to Transmit (DEFERRED; Keep Plus was removed since Play can't revert it), restore without rotation, cancel and lapse (the ended banner while Home is open, with no false "in use on another device"), a refund by revoke, and own-key mode. Passed on the emulator (Nov 21): the not-from-Play paths and the reviewer demo. Passed on two Pixels (Nov 21, beta11): 3 texts stack into one notification; reading the chat in Google Messages clears it (about 2 s), and so does opening it in Transmit (about 3 s); inline reply from the notification; no crashes. Failed: catch-up after being offline (step 2.11, fixed in beta12). Still open:
+   - retest catch-up after being offline on beta12, on both phones;
    - the reviewer demo on a fresh Play install, with `trial_already_used` and the `transmit-review` key: next, on your phone, which then needs pairing again;
    - the beta11 fixes on a phone: arrows in Explain, a perfect check showing your own words, and removing your own key;
    - a group notification showing member names, which needs a group chat;
