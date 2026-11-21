@@ -56,8 +56,12 @@ The reference is Google Messages on Android 17.
   and the same rules (sent messages only if "Translate my sent messages" is on). It skips any message that already
   has a translation. Bubbles waiting for a translation show the existing pending treatment (add a subtle shimmer if
   there is none). A translation that arrives replaces the original with a short crossfade.
-- **Turning it off** keeps today's meaning: new messages stop being translated automatically, and existing
-  translations are left alone.
+- **Turning it off returns the chat to the user's native language** (the user's correction, 2026-11-20). Every
+  bubble crossfades to its native-language side: the original when it is in the native language, otherwise a cached
+  native translation if there is one, otherwise the original. New messages also stop being translated automatically.
+  Cached translations are kept, so switching back on shows them again at once, and the newest messages are translated
+  as before. Flipping the toggle either way resets any bubble the user flipped by hand. While it is off, the
+  per-bubble translate action still shows one message's translation, the way it does today.
 - **No AI access (NONE/ENDED).** The toggle never looks on. A tap makes the thumb start across and spring back, then
   opens the existing "Turn on translation" sheet.
 
