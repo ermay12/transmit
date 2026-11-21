@@ -42,7 +42,7 @@ The closed track is reviewed against the same policies as production, so fix the
 4. [x] **Recommended:** a **demo mode** (beta4; long-press the step 2 heading), so reviewers and curious users can try it without pairing. App access is otherwise a likely rejection (§4 of the declarations file).
 5. [x] **Recommended:** neutral speaker labels (beta4; Me / Them / Person N) in AI context (`ai/TranslationManager.kt:303`, `ui/chat/ChatViewModel.kt:960`). This removes Contacts from Data safety.
 6. [ ] **Optional:** a "Report translation" action in the long-press sheet (AI-Generated Content policy).
-7. [ ] **Optional:** clear the WebView's Google cookies on unpair. Still open on beta10: `GmBridge.forget` doesn't clear them; only "pick another account" on the pairing screen does (`GoogleSignInCookies.clear`).
+7. [x] **Optional:** clear the WebView's Google cookies on unpair (beta11, 42587f2). They're also cleared once a Google pairing finishes, so they're only kept in the encrypted pairing, as the privacy policy says.
 8. [x] **Worker logs.** Invocation logs stored each request's `cf-connecting-ip`, headers and location (city, postal code, coordinates) for 3 days. They're off since 2026-11-19 (`observability.logs.invocation_logs: false`). The Worker's own log lines stay, and never contain IP addresses. The rate limits count by a keyed hash of the network and the day. See `backend/README.md`, "Privacy".
 9. [x] **Worker retention:** the job deletes subscription rows and their OpenRouter keys 90 days after they end (2026-11-19, migration `0004`).
 10. [x] **Docs** (641a460):
