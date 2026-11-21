@@ -81,6 +81,19 @@ The reference is Google Messages on Android 17.
   the recent-message translation, and the settings write. The write runs in order, one at a time. Rows whose
   message hasn't changed are reused, so only the bubbles that change are redrawn; before, every bubble in the chat
   was redrawn twice.
+- **Off is the native language.** Each bubble's native-language side is its original. Translations are stored only
+  into the chat's practice language, and two-way translation sends the native text as the message itself, so no
+  message ever has a cached native translation to show. A friend's message in the practice language stays in it when
+  off. Sent messages show the text friends got, not the practice-language text the user wrote. While off, a
+  translation that is still on its way isn't waited for (the original shows, not the placeholder) unless the user
+  asked for it, and romanization isn't fetched for a translation that isn't showing.
+- **The switch's position decides, wherever it's set.** The "Auto-translate" choice in chat settings moves it too, and
+  so does AI ending or coming back. Without AI (none set up, or it ended) the switch is never on, so those chats show
+  their native side, and translations cached in a trial are a tap away. Taps on bubbles are forgotten at each move.
+- **Chats that are off by default** (unknown numbers, when that setting is off) now open in the native language. Before,
+  their sent messages showed the practice text the user wrote, and a message translated by a tap kept showing its
+  translation each time the chat was opened. Now a tap shows one message's translation until the switch moves or the
+  chat is closed.
 - **Debug builds only.** The fake trial's dummy key never reaches OpenRouter. A fake on the device answers it, with
   the demo's lines in Spanish and anything else marked "≈", so a debug trial no longer ends at the first
   translation. Release builds are unchanged.
