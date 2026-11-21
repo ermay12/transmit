@@ -27,11 +27,16 @@ under "beta10".
   goes. Its id stays the key, which is what a removal sends back.
 - The picture is shown when the phone gives a web address (`customEmoji.innerData.second`, the sized copy, else
   `first`). Otherwise, or if the address doesn't load, a picture icon shows. The id is never shown.
-- **Unverified on a device:** what the phone actually puts in those fields, since the Play build's data can't be read.
-  `MessagingRepository` logs each photomoji's source once (tag `Messaging`: type, and the scheme and host of each
-  address, never the address itself), and a picture that fails to load logs its error type (tag `Reactions`). After
-  installing beta10 from Play, `adb logcat -s Messaging Reactions` while opening a chat with a photomoji shows which
-  case applies. If the phone sends no web address, the next step is to find how Messages for Web fetches the picture.
+- **Checked on the Pixel (beta10, 2026-11-21):** every photomoji in the Melodee chat arrives as type `EMOTIFY` with
+  custom-emoji data whose two addresses are both local to the phone: `file://` paths, or
+  `content://com.google.android.libraries.compose.core.data.content`, Google Messages' `InternalFileProvider`. Other
+  apps can't read either one: one is Google Messages' private storage, the other a provider that isn't exported. So
+  Transmit shows the picture icon, and that is the expected result, not a failed load.
+- `MessagingRepository` logs each photomoji's source once per run (tag `Messaging`: type, and the scheme and host of
+  each address, never the address itself). The phone's main log buffer is only 256 KB and rolls over within minutes,
+  so capture it live: `adb logcat -v time 'Messaging:I' 'Reactions:V' '*:S'`, then restart the app and open the chat.
+- Showing the real picture would need the phone to send it, like the media in a message. libgm has no request for
+  that, and any id the reaction might carry for it isn't decoded.
 
 ## 3. The correction diff ("Check my translation")
 
