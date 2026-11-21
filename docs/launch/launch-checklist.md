@@ -1,10 +1,10 @@
 # Launch checklist: from now to production
 
-Ordered steps to get Transmit 1.0 onto Google Play production. Step 1's decisions, the privacy policy's details (step 3) and the OpenRouter settings (step 4) were updated on 2026-11-19. The rest is as of 2026-11-18:
+Ordered steps to get Transmit 1.0 onto Google Play production. Updated 2026-11-21:
 
-- Branch `play-launch` is 48 commits ahead of `main`, at versionName `1.0.0-beta3` and versionCode 72.
-- The Worker is deployed. Both subscriptions are active in Play Console, and a first bundle has been uploaded.
-- Nothing has been tested end to end with a real Play install.
+- Branch `play-launch` is 118 commits ahead of `main`, at versionName `1.0.0-beta10` and versionCode 141.
+- beta10 is on the internal testing track and installed from Play on the test Pixel. The Worker is deployed, and both subscriptions are active.
+- Every subscription flow has passed on a real Play install (beta3, beta5 and beta6 device tests, Nov 19–20). What is left to test is in the remaining-work doc and in step 6 below.
 
 The companion drafts are in this folder: `privacy-policy.md`, `data-safety.md`, `store-listing.md`, and `content-rating-and-declarations.md`.
 
@@ -36,16 +36,16 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
 
 The closed track is reviewed against the same policies as production, so fix these first.
 
-1. [ ] **A privacy policy link in the app.** Add it to the Settings footer next to Source code, and to onboarding step 3. The User Data policy requires one "within the app itself".
-2. [ ] **AI disclosure + consent.** One line on onboarding step 3 and on the Turn on translation sheet, above the buttons. Copy is in `content-rating-and-declarations.md` §8.
-3. [ ] **Auto-renewal line on the Plans screen:** "Renews automatically every month until you cancel." (Subscriptions policy).
-4. [ ] **Recommended:** a **demo mode**, so reviewers and curious users can try it without pairing. App access is otherwise a likely rejection (§4 of the declarations file).
-5. [ ] **Recommended:** neutral speaker labels in AI context (`ai/TranslationManager.kt:303`, `ui/chat/ChatViewModel.kt:960`). This removes Contacts from Data safety.
+1. [x] **A privacy policy link in the app** (beta4). Add it to the Settings footer next to Source code, and to onboarding step 3. The User Data policy requires one "within the app itself".
+2. [x] **AI disclosure + consent** (beta4). One line on onboarding step 3 and on the Turn on translation sheet, above the buttons. Copy is in `content-rating-and-declarations.md` §8.
+3. [x] **Auto-renewal line on the Plans screen** (beta4): "Renews automatically every month until you cancel." (Subscriptions policy).
+4. [x] **Recommended:** a **demo mode** (beta4; long-press the step 2 heading), so reviewers and curious users can try it without pairing. App access is otherwise a likely rejection (§4 of the declarations file).
+5. [x] **Recommended:** neutral speaker labels (beta4; Me / Them / Person N) in AI context (`ai/TranslationManager.kt:303`, `ui/chat/ChatViewModel.kt:960`). This removes Contacts from Data safety.
 6. [ ] **Optional:** a "Report translation" action in the long-press sheet (AI-Generated Content policy).
-7. [ ] **Optional:** clear the WebView's Google cookies on unpair (`GmBridge.forget` doesn't clear `CookieManager` today).
+7. [ ] **Optional:** clear the WebView's Google cookies on unpair. Still open on beta10: `GmBridge.forget` doesn't clear them; only "pick another account" on the pairing screen does (`GoogleSignInCookies.clear`).
 8. [x] **Worker logs.** Invocation logs stored each request's `cf-connecting-ip`, headers and location (city, postal code, coordinates) for 3 days. They're off since 2026-11-19 (`observability.logs.invocation_logs: false`). The Worker's own log lines stay, and never contain IP addresses. The rate limits count by a keyed hash of the network and the day. See `backend/README.md`, "Privacy".
 9. [x] **Worker retention:** the job deletes subscription rows and their OpenRouter keys 90 days after they end (2026-11-19, migration `0004`).
-10. [ ] **Docs:**
+10. [x] **Docs** (641a460):
     - Fix `README.md`. It still says "Unknown numbers aren't auto-translated", but since 13d9dc4 they are, by default.
     - Its BYOK-only intro ("Translation and tutoring use your own AI API key") also predates the free week and plans.
 11. [ ] Set `versionName` to `1.0.0` for the production build.
@@ -75,7 +75,7 @@ Either way:
   - The workspace guardrail still enforces ZDR on every model group, with safety retention off and only Gemma 4 31B allowed.
   - Decide on the $100/day workspace budget.
   - Recommended: swap the account-wide management key for a workspace-scoped one (`backend/README.md`, Secrets).
-- [ ] **Back up the Worker's `DATA_SECRET`.** Without it, every hashed record is useless (`backend/README.md`).
+- [x] **Back up the Worker's `DATA_SECRET`** (done 2026-11-19). Without it, every hashed record is useless (`backend/README.md`).
 - [ ] **Payments profile** linked and verified. The subscriptions are active, so it probably is; confirm in Play Console → Setup → Payments profile.
 - [ ] **Trader declaration** submitted (step 1). Give `https://transmit.ermay12.workers.dev/terms` as Transmit's terms link.
 
@@ -83,9 +83,9 @@ Either way:
 
 You can do this alongside step 6. It must all be done before the closed-test release goes to review.
 
-- [ ] Privacy policy URL.
-- [ ] App access: the instructions, the review OpenRouter key (`transmit-review`, $3 limit, in the Transmit Customers workspace), and the video link (`content-rating-and-declarations.md` §4).
-- [ ] Ads: No. Advertising ID: No.
+- [x] Privacy policy URL (2026-11-20).
+- [x] App access (2026-11-20): the instructions, the review OpenRouter key (`transmit-review`, $3 limit, in the Transmit Customers workspace), and the video link (`content-rating-and-declarations.md` §4).
+- [x] Ads: No. Advertising ID: No. (2026-11-20)
 - [ ] Content rating (IARC questionnaire, §1).
 - [ ] Target audience and content (§2).
 - [ ] Data safety (`data-safety.md`). Keep it consistent with the privacy policy.
@@ -97,13 +97,13 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 
 ## 6. Internal test (you + me)
 
-1. [ ] Build the bundle with the upload key:
+1. [x] Build the bundle with the upload key (beta10 = versionCode 141):
    ```sh
    set -a; . ~/.config/transmit/upload-key.env; set +a; ./gradlew :app:bundleRelease
    ```
    Its versionCode must be higher than any bundle uploaded so far. It's the commit count, so committing is enough.
-2. [ ] Upload it to **Internal testing**. Add yourself and your license testers.
-3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet (`backend/README.md` "Not done yet"; `docs/product/phase2b-notes.md` §3):
+2. [x] Upload it to **Internal testing**. Add yourself and your license testers.
+3. [ ] Install it from the Play opt-in link on a Pixel, and test everything that isn't proven yet. Passed on one Pixel (Nov 19–20): a real free week with Integrity, purchases, the test renewals, the allowance bar and the 80%/100% warnings, upgrade (CHARGE_FULL_PRICE), switch to Transmit (DEFERRED; Keep Plus was removed since Play can't revert it), restore without rotation, cancel and lapse, a refund by revoke, and own-key mode. Still open: the free week on a fresh device and `trial_already_used`, a second device on the same account, and the not-from-Play paths. The original list (`backend/README.md` "Not done yet"; `docs/product/phase2b-notes.md` §3):
    - a real free week (Integrity passes; `restored: true` after a reinstall; `trial_already_used` the second time);
    - a license-tester purchase of Transmit; the 5-minute test renewals; the allowance bar;
    - upgrade to Plus (CHARGE_FULL_PRICE); switch to Transmit (DEFERRED) and Keep Plus, noting which replacement mode Play accepts;
