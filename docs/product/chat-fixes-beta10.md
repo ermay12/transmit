@@ -27,7 +27,7 @@ under "beta10".
   goes. Its id stays the key, which is what a removal sends back.
 - The picture is shown when the phone gives a web address (`customEmoji.innerData.second`, the sized copy, else
   `first`). Otherwise, or if the address doesn't load, a picture icon shows. The id is never shown.
-- **Checked on the Pixel (beta10, 2026-11-21):** every photomoji in the Melodee chat arrives as type `EMOTIFY` with
+- **Checked on the Pixel (beta10, 2026-11-21):** every photomoji in a 1:1 chat on the test phone arrives as type `EMOTIFY` with
   custom-emoji data whose two addresses are both local to the phone: `file://` paths, or
   `content://com.google.android.libraries.compose.core.data.content`, Google Messages' `InternalFileProvider`. Other
   apps can't read either one: one is Google Messages' private storage, the other a provider that isn't exported. So
