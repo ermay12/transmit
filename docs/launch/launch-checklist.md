@@ -84,7 +84,7 @@ Either way:
 You can do this alongside step 6. It must all be done before the closed-test release goes to review.
 
 - [x] Privacy policy URL (2026-11-20).
-- [x] App access (2026-11-20): the instructions, the review OpenRouter key (`transmit-review`, $3 limit, in the Transmit Customers workspace), and the video link (`content-rating-and-declarations.md` §4).
+- [x] App access (2026-11-20): the instructions, the review OpenRouter key (`transmit-review`, $3 limit, in the Transmit Customers workspace) — the key itself was created 2026-11-21; re-paste the text from `~/.config/transmit/app-access-text.txt`, which adds it, and the video link (`content-rating-and-declarations.md` §4).
 - [x] Ads: No. Advertising ID: No. (2026-11-20)
 - [ ] Content rating (IARC questionnaire, §1).
 - [ ] Target audience and content (§2).

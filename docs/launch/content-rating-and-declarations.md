@@ -176,4 +176,8 @@ These aren't form answers, but reviewers check them, and the forms above assume 
 
 Paste into Play Console → App content → App access ("All or some functionality is restricted" → add instructions):
 
-> No login or pairing needed. On onboarding step 2, long-press the heading "Connect your messages". A demo inbox labelled DEMO opens, with sample chats in Spanish and one group. Tap "Start your free week", or use Settings > Advanced > Use my own AI key. Tap a bubble to see the original, long-press it for Explain, and type a reply to translate or check it. "Exit demo" or Back returns to onboarding.
+> No login or pairing needed. On onboarding step 2, long-press the heading "Connect your messages". A demo inbox labelled DEMO opens, with sample chats in Spanish and one group. Tap "Start your free week". If it can't start on your device, go to Settings > Advanced > Use my own AI key, choose OpenRouter, paste the key below and tap Save. Tap a bubble to see the original, long-press it for Explain, and type a reply to translate or check it. "Exit demo" or Back returns to onboarding.
+>
+> OpenRouter key for reviewers: [REVIEW KEY]
+
+The review key (`transmit-review`) was created on 2026-11-21 in the Transmit Customers workspace: a $3 limit, no monthly reset and no expiry. It's in `~/.config/transmit/review-key.env`, and the text above with the key filled in is in `~/.config/transmit/app-access-text.txt`; neither is in the repo. A test translation through it worked, and the workspace guardrail refused a non-Gemma model. Watch its spending, and if it leaks, delete it and paste a new one.
