@@ -311,4 +311,16 @@
     <string name="notify_summary_chats">%1$d chats</string>
     <!-- A reply sent from a notification, when the notification content setting hides message text. -->
     <string name="notify_reply_hidden">Reply sent</string>
+
+    <!-- beta10: who reacted to a message, the sheet that tapping a reaction opens. -->
+    <string name="reactions_title">Reactions</string>
+    <!-- The user's own row. -->
+    <string name="reactions_you">You</string>
+    <string name="reactions_tap_to_remove">Tap to remove</string>
+    <!-- Someone the phone counts but doesn't list in the chat, such as a person who left the group. -->
+    <string name="reactions_someone">Someone</string>
+    <!-- What tapping a reaction does (for accessibility). -->
+    <string name="reactions_see_who">See who reacted</string>
+    <!-- A picture someone reacted with (Google Messages calls these photomoji), for accessibility. -->
+    <string name="reactions_photomoji">Photomoji</string>
 </resources>

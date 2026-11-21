@@ -9,7 +9,7 @@ import app.transmit.messaging.DeliveryStatus
 import app.transmit.messaging.Inbox
 import app.transmit.messaging.Message
 import app.transmit.messaging.MessageKind
-import app.transmit.messaging.NativeReaction
+import app.transmit.messaging.Reaction
 import app.transmit.messaging.Outbox
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.messaging.Reactions
@@ -44,6 +44,7 @@ internal class DemoInbox(private val scope: CoroutineScope, now: Long = System.c
         for (spec in DemoChats.chats) {
             val messages = spec.lines.map { line ->
                 message(spec, nextId(), line.from, line.text, now - line.minutesAgo * 60_000L, read = !spec.unread || line.from == null)
+                    .copy(reactions = reactions(line.reactions))
             }
             chats[spec.threadId] = Chat(spec, messages.toMutableList(), spec.unread)
         }
@@ -161,9 +162,16 @@ internal class DemoInbox(private val scope: CoroutineScope, now: Long = System.c
             val list = chats[message.threadId]?.messages ?: return
             val i = list.indexOfFirst { it.key == message.key }.takeIf { it >= 0 } ?: return
             val m = list[i]
-            val mine = m.reactions.firstOrNull { it.mine }
-            val others = m.reactions.filterNot { it.mine }
-            list[i] = m.copy(reactions = if (mine?.emoji == emoji) others else others + NativeReaction(emoji, 1, mine = true))
+            // As in Google Messages: the user's reaction is replaced, or taken back when it's the same emoji.
+            val removing = m.reactions.any { it.mine && it.emoji == emoji }
+            val without = m.reactions.mapNotNull { r -> if (!r.mine) r else r.copy(count = r.count - 1, mine = false).takeIf { it.count > 0 } }
+            list[i] = m.copy(
+                reactions = when {
+                    removing -> without
+                    without.any { it.emoji == emoji } -> without.map { if (it.emoji == emoji) it.copy(count = it.count + 1, mine = true) else it }
+                    else -> without + Reaction(emoji, 1, mine = true)
+                },
+            )
         }
         changed()
     }
@@ -185,6 +193,12 @@ internal class DemoInbox(private val scope: CoroutineScope, now: Long = System.c
             onReply(threadId, reply.key)
         }
     }
+
+    /** Sample reactions, from who (null for the user) to emoji, as Google Messages reports them: one per emoji. */
+    private fun reactions(who: List<Pair<String?, String>>): List<Reaction> =
+        who.groupBy({ it.second }, { it.first }).map { (emoji, people) ->
+            Reaction(emoji, people.size, mine = null in people, others = people.filterNotNull())
+        }
 
     private fun update(threadId: Long, key: String, block: (Message) -> Message) {
         synchronized(lock) {

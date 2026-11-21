@@ -5,12 +5,15 @@ import app.transmit.gm.proto.AuthMessage
 import app.transmit.gm.proto.BugleRoute
 import app.transmit.gm.proto.ConfigVersion
 import app.transmit.gm.proto.Conversation
+import app.transmit.gm.proto.CustomEmojiData
 import app.transmit.gm.proto.EmojiType
 import app.transmit.gm.proto.LongPollingPayload
 import app.transmit.gm.proto.MessageStatus
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.OutgoingRPCMessage
 import app.transmit.gm.proto.Participant
+import app.transmit.gm.proto.ReactionData
+import app.transmit.gm.proto.ReactionEntry
 import app.transmit.gm.proto.ReplyMessage
 import app.transmit.gm.proto.SmallInfo
 import app.transmit.gm.proto.SomeKindOfGroupID
@@ -24,6 +27,7 @@ import app.transmit.gm.proto.Ukey2HandshakeCipher
 import app.transmit.gm.proto.Ukey2Message
 import app.transmit.gm.proto.Ukey2ServerInit
 import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.Photomoji
 import com.google.protobuf.ByteString
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -227,6 +231,73 @@ class GmProtocolTest {
         }
         assertEquals(EmojiType.CUSTOM, GmMapping.emojiType("🎉"))
         assertEquals(ActionType.SEND_REACTION, ActionType.valueOf("SEND_REACTION"))
+    }
+
+    // ---- reactions
+
+    private fun person(id: String, number: String, me: Boolean = false) = Participant.newBuilder()
+        .setID(SmallInfo.newBuilder().setParticipantID(id).setNumber(number)).setIsMe(me).setIsVisible(true)
+
+    private val group = Conversation.newBuilder().setIsGroupChat(true)
+        .addParticipants(person("1", "+15550000000", me = true))
+        .addParticipants(person("7", "+15551110000"))
+        .addParticipants(person("9", "+15552220000"))
+        .build()
+
+    private fun entry(data: ReactionData.Builder, vararg ids: String) =
+        ReactionEntry.newBuilder().setData(data).addAllParticipantIDs(ids.toList()).build()
+
+    /** Group chats can show who reacted: the phone's participant ids become the people's numbers. */
+    @Test
+    fun aReactionKnowsWhoReacted() {
+        val r = GmMapping.reaction(entry(ReactionData.newBuilder().setUnicode("😂").setType(EmojiType.LAUGH), "7", "1", "9"), group)!!
+        assertEquals("😂", r.emoji)
+        assertEquals(3, r.count)
+        assertTrue(r.mine)
+        assertEquals(listOf("+15551110000", "+15552220000"), r.others)
+        assertNull(r.photomoji)
+        // Someone the chat doesn't list (they left the group) still counts, without a number.
+        val gone = GmMapping.reaction(entry(ReactionData.newBuilder().setType(EmojiType.RED_HEART), "7", "42"), group)!!
+        assertEquals("❤️", gone.emoji)
+        assertEquals(2, gone.count)
+        assertFalse(gone.mine)
+        assertEquals(listOf("+15551110000"), gone.others)
+        // No one: no reaction.
+        assertNull(GmMapping.reaction(entry(ReactionData.newBuilder().setUnicode("👍")), group))
+    }
+
+    /**
+     * Beta9 showed photomoji as their ids ("f65f3565-fbf4-…"): the phone puts a photomoji's id where the emoji goes.
+     * The id stays the key (a removal sends it back); the picture is used only when it's on the web.
+     */
+    @Test
+    fun aPhotomojiIsAPictureNotItsId() {
+        val id = "f65f3565-fbf4-45f3-a072-7860f23eccdc"
+        val bare = GmMapping.reaction(entry(ReactionData.newBuilder().setUnicode(id).setType(EmojiType.CUSTOM), "7"), group)!!
+        assertEquals(id, bare.emoji)
+        assertEquals(Photomoji(null), bare.photomoji)
+
+        fun custom(sized: String, plain: String) = ReactionData.newBuilder().setUnicode(id).setType(EmojiType.CUSTOM).setCustomEmoji(
+            CustomEmojiData.newBuilder().setUuid(id).setInnerData(
+                CustomEmojiData.Inner.newBuilder()
+                    .setFirst(CustomEmojiData.Inner.ImageData.newBuilder().setMimeType("image/png").setUri(plain))
+                    .setSecond(
+                        CustomEmojiData.Inner.WrappedImageData.newBuilder()
+                            .setData(CustomEmojiData.Inner.WrappedImageData.ImageData.newBuilder().setMimeType("image/webp").setUri(sized)),
+                    ),
+            ),
+        )
+        assertEquals(Photomoji("https://example.com/sized"), GmMapping.photomoji(custom("https://example.com/sized", "https://example.com/plain").build()))
+        assertEquals(Photomoji("https://example.com/plain"), GmMapping.photomoji(custom("", "https://example.com/plain").build()))
+        // A file on the phone can't be fetched from here.
+        assertEquals(Photomoji(null), GmMapping.photomoji(custom("content://media/1", "").build()))
+        // Logged without the addresses' paths.
+        assertEquals(
+            "type=CUSTOM custom=true sized=content://media (image/webp) plain=https://example.com (image/png)",
+            GmMapping.photomojiSource(custom("content://media/1", "https://example.com/plain?token=secret").build()),
+        )
+        // An emoji that isn't one of the phone's named types is still an emoji.
+        assertNull(GmMapping.photomoji(ReactionData.newBuilder().setUnicode("✨").setType(EmojiType.CUSTOM).build()))
     }
 
     // ---- Google-account pairing. Expected values come from an independent port of libgm's pair_google.go.

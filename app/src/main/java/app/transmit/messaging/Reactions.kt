@@ -98,6 +98,38 @@ object Reactions {
     }
 
     /**
+     * Tapback texts in a chat, gathered onto the messages they react to, oldest first. Each person has one reaction
+     * per message, as in Google Messages: a newer tapback replaces theirs, and "Removed …" takes it back.
+     */
+    class Tally {
+        /** By the key of the message reacted to: emoji → who (their number's match key, or [ME]) → their address. */
+        private val byTarget = HashMap<String, LinkedHashMap<String, LinkedHashMap<String, String?>>>()
+
+        /** [r], the text of [from], reacts to [to]. */
+        fun add(r: Parsed, from: Message, to: Message) {
+            val who = if (from.outgoing) ME else from.sender?.let(PhoneNumbers::matchKey) ?: "?"
+            val map = byTarget.getOrPut(to.key) { LinkedHashMap() }
+            if (r.removed) {
+                map[r.emoji]?.remove(who)
+            } else {
+                map.values.forEach { it.remove(who) }
+                map.getOrPut(r.emoji) { LinkedHashMap() }[who] = from.sender.takeUnless { from.outgoing }
+            }
+        }
+
+        /** [m]'s reactions: the ones Google Messages tracks itself, then tapback texts it didn't recognize. */
+        fun on(m: Message): List<Reaction> {
+            val texts = byTarget[m.key] ?: return m.reactions
+            return m.reactions + texts.filter { (emoji, who) -> who.isNotEmpty() && m.reactions.none { it.emoji == emoji } }
+                .map { (emoji, who) -> Reaction(emoji, who.size, ME in who, others = who.filterKeys { it != ME }.values.filterNotNull()) }
+        }
+
+        private companion object {
+            const val ME = "me"
+        }
+    }
+
+    /**
      * The message [r] reacts to: the newest of [newestFirst] whose text it quotes, or the newest
      * media message when it quotes none.
      */

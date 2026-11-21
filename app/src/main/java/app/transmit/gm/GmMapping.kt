@@ -8,8 +8,12 @@ import app.transmit.gm.proto.EmojiType
 import app.transmit.gm.proto.MediaContent
 import app.transmit.gm.proto.MessageStatusType
 import app.transmit.gm.proto.Participant
+import app.transmit.gm.proto.ReactionData
+import app.transmit.gm.proto.ReactionEntry
 import app.transmit.messaging.DeliveryStatus
 import app.transmit.messaging.PhoneNumbers
+import app.transmit.messaging.Photomoji
+import app.transmit.messaging.Reaction
 import app.transmit.gm.proto.Message as GmMessage
 
 /** Conversions between the phone's protocol messages and Transmit's cache rows. */
@@ -143,6 +147,54 @@ object GmMapping {
 
     fun participant(conv: Conversation?, participantId: String): Participant? =
         conv?.participantsList?.firstOrNull { it.id.participantID == participantId }
+
+    /**
+     * A reaction the phone tracks on a message, with who reacted; null when it names no one or no emoji. A photomoji
+     * comes with its id where the emoji goes, which is kept as the key a removal sends back.
+     */
+    fun reaction(entry: ReactionEntry, conv: Conversation?): Reaction? {
+        val ids = entry.participantIDsList.distinct()
+        if (ids.isEmpty()) return null
+        val data = entry.data
+        val photomoji = photomoji(data)
+        val emoji = data.unicode.ifEmpty { if (photomoji != null) data.customEmoji.uuid.ifEmpty { PHOTOMOJI } else emoji(data.type) }
+        if (emoji.isEmpty()) return null
+        val self = selfIds(conv)
+        return Reaction(
+            emoji = emoji,
+            count = ids.size,
+            mine = ids.any { it in self },
+            others = ids.filter { it !in self }.mapNotNull { id -> participant(conv, id)?.let(::address)?.takeIf { it.isNotEmpty() } },
+            photomoji = photomoji,
+        )
+    }
+
+    /** The key of a photomoji the phone sent without an id. */
+    private const val PHOTOMOJI = "photomoji"
+
+    private val uuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    /**
+     * The picture of a photomoji, when [data] is one: it carries custom-emoji data, or (as seen on Android 17, 2026-11)
+     * its id where the emoji goes. Only a web address is kept, the sized copy first; the phone's own files are out of reach.
+     */
+    fun photomoji(data: ReactionData): Photomoji? {
+        if (!data.hasCustomEmoji() && data.type != EmojiType.EMOTIFY && !uuid.matches(data.unicode)) return null
+        val inner = data.customEmoji.innerData
+        val image = listOf(inner.second.data.uri, inner.first.uri).firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
+        return Photomoji(image)
+    }
+
+    /**
+     * Where [data]'s photomoji pictures point, without the addresses themselves: the scheme and host of each, and the
+     * MIME type. Logged once per photomoji, since which of these the phone sends isn't documented.
+     */
+    fun photomojiSource(data: ReactionData): String {
+        fun where(uri: String) = if (uri.isEmpty()) "none" else uri.substringBefore("://", "?") + "://" + uri.substringAfter("://", "").substringBefore('/')
+        val inner = data.customEmoji.innerData
+        return "type=${data.type} custom=${data.hasCustomEmoji()} sized=${where(inner.second.data.uri)} (${inner.second.data.mimeType}) " +
+            "plain=${where(inner.first.uri)} (${inner.first.mimeType})"
+    }
 
     fun emoji(type: EmojiType): String = when (type) {
         EmojiType.LIKE -> "👍"

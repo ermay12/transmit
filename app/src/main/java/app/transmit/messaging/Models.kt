@@ -20,8 +20,28 @@ data class Attachment(
     val isContactCard get() = mimeType.contains("vcard", ignoreCase = true)
 }
 
-/** A reaction Google Messages tracks on a message (RCS reactions, and SMS tapbacks it recognized). */
-data class NativeReaction(val emoji: String, val count: Int, val mine: Boolean)
+/**
+ * A reaction on a message: one emoji (or photomoji) and who reacted with it. Google Messages tracks RCS reactions and
+ * the SMS tapbacks it recognized; the chat adds tapback texts it didn't.
+ */
+data class Reaction(
+    /** The emoji, or a photomoji's id. */
+    val emoji: String,
+    /** How many people reacted with it, the user included. */
+    val count: Int,
+    /** The user reacted with it. */
+    val mine: Boolean,
+    /**
+     * The other people who reacted with it, by address. Fewer than [count] says (less the user) when the phone names
+     * someone it doesn't list in the chat, such as a person who left the group.
+     */
+    val others: List<String> = emptyList(),
+    /** Set when this is a photomoji, a picture Google Messages lets people react with, rather than an emoji. */
+    val photomoji: Photomoji? = null,
+)
+
+/** A photomoji's picture: [image] is its web address, or null when the phone sent none that Transmit can fetch. */
+data class Photomoji(val image: String?)
 
 /** A message in a Google Messages conversation. [key] is stable: "g" + the phone's message id. */
 data class Message(
@@ -46,7 +66,7 @@ data class Message(
     val mmsPending: Boolean = false,
     val sizeBytes: Long = 0,
     val errorCode: Int = 0,
-    val reactions: List<NativeReaction> = emptyList(),
+    val reactions: List<Reaction> = emptyList(),
     /** The [key] of the message this one replies to; null when it isn't a reply. */
     val replyTo: String? = null,
     /** A reply can point at this message (RCS messages that reached the phone). */

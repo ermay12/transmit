@@ -17,8 +17,17 @@ internal object DemoChats {
 
     val names = mapOf(EMMA to "Emma", JAKE to "Jake", MOM to "Mom", PRIYA to "Priya", SAM to "Sam")
 
-    /** One sample message: from [from] (null for the user), [minutesAgo] when the demo opens. */
-    data class Line(val from: String?, val text: String, val minutesAgo: Int, val wrote: String? = null)
+    /**
+     * One sample message: from [from] (null for the user), [minutesAgo] when the demo opens. [reactions] are who
+     * (null for the user) reacted with what.
+     */
+    data class Line(
+        val from: String?,
+        val text: String,
+        val minutesAgo: Int,
+        val wrote: String? = null,
+        val reactions: List<Pair<String?, String>> = emptyList(),
+    )
 
     /**
      * A sample chat, and the [replies] (sender to text) that answer what the user sends in it, in turn. A group's
@@ -55,10 +64,10 @@ internal object DemoChats {
             people = listOf(PRIYA, SAM),
             groupName = "Trip to Madrid ✈️",
             lines = listOf(
-                Line(PRIYA, "I booked the flights! We land Thursday at 9 in the morning", 200),
+                Line(PRIYA, "I booked the flights! We land Thursday at 9 in the morning", 200, reactions = listOf(SAM to "🎉", null to "🎉")),
                 Line(SAM, "Amazing. I'll look for a place to stay near the center", 190),
                 Line(null, "So exciting! I'll take care of dinner on the first night.", 185, wrote = "¡Qué emoción! Yo me encargo de la cena la primera noche."),
-                Line(PRIYA, "Don't forget your passport this time 😅", 170),
+                Line(PRIYA, "Don't forget your passport this time 😅", 170, reactions = listOf(SAM to "😂")),
                 Line(SAM, "Haha true", 168),
             ),
             replies = listOf(

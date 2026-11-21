@@ -23,7 +23,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.horizontalDrag
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -143,7 +142,8 @@ fun MessageBubble(
     smart: SmartLinks,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
-    onReaction: (String) -> Unit,
+    /** Shows who reacted. */
+    onReactions: () -> Unit,
     onRetry: () -> Unit,
     onDownload: () -> Unit,
     onAttachment: (Attachment) -> Unit,
@@ -227,24 +227,7 @@ fun MessageBubble(
                         BubbleBody(item, target, downloading, smart, onDownload, onAttachment, onLongPress, onLink, search)
                     }
                     if (item.reactions.isNotEmpty()) {
-                        Row(
-                            Modifier.offset(y = (-6).dp).padding(horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            item.reactions.forEach { r ->
-                                // A plain Box: a clickable Surface would grow to the 48dp touch minimum.
-                                Box(
-                                    Modifier
-                                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                                        .clip(CircleShape)
-                                        .background(if (r.mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .clickable { onReaction(r.emoji) }
-                                        .padding(horizontal = 6.dp, vertical = 1.dp),
-                                ) {
-                                    Text(if (r.count > 1) "${r.emoji} ${r.count}" else r.emoji, fontSize = 13.sp)
-                                }
-                            }
-                        }
+                        ReactionChips(item.reactions, onClick = onReactions, modifier = Modifier.offset(y = (-6).dp).padding(horizontal = 8.dp))
                     }
                     if (item.codeChip && item.code != null) {
                         AssistChip(

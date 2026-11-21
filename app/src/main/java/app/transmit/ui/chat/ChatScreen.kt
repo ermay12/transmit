@@ -208,7 +208,7 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
                                     smart = vm.smart,
                                     onTap = { vm.toggleOriginal(item) },
                                     onLongPress = { vm.sheet.value = Sheet.Actions(item) },
-                                    onReaction = { vm.react(item, it) },
+                                    onReactions = { vm.sheet.value = Sheet.WhoReacted(item.key) },
                                     onRetry = { vm.retry(item.message) },
                                     onDownload = { vm.download(item.message) },
                                     onAttachment = { a ->
@@ -314,6 +314,12 @@ fun ChatScreen(vm: ChatViewModel, onBack: () -> Unit, onPair: () -> Unit, onPlan
             onCopyCode = { SmartActions.copyCode(context, it) },
         )
         is Sheet.Emoji -> EmojiSheet(onDismiss = { vm.sheet.value = null }, onPick = { vm.react(s.item, it) })
+        is Sheet.WhoReacted -> {
+            // The live row, so reactions that change while it's open show; it closes when none are left.
+            val item = items.firstOrNull { it.key == s.key }?.takeIf { it.reactions.isNotEmpty() }
+            if (item == null) LaunchedEffect(Unit) { vm.sheet.value = null }
+            else WhoReactedSheet(item, people, onRemove = { vm.react(item, it) }, onDismiss = { vm.sheet.value = null })
+        }
         is Sheet.Details -> DetailsSheet(s.item, people, recipients, vm.simLabel(s.item.message.subId), aiDetails, onDismiss = { vm.sheet.value = null })
         is Sheet.Explain -> ExplainSheet(s, aiDetails, onDismiss = { vm.sheet.value = null }, onRefresh = vm::refreshExplanation)
         Sheet.ChatInfo -> {

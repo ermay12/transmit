@@ -2,6 +2,7 @@ package app.transmit.messaging
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.room.InvalidationTracker
 import app.transmit.data.db.AppDatabase
 import app.transmit.data.db.GmConversationEntity
@@ -11,6 +12,7 @@ import app.transmit.gm.GmBridge
 import app.transmit.gm.GmMapping
 import app.transmit.notify.ConversationShortcuts
 import app.transmit.gm.proto.MediaContent
+import app.transmit.gm.proto.ReactionData
 import app.transmit.gm.proto.ConversationStatus
 import app.transmit.gm.proto.ConversationType
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import app.transmit.gm.proto.Conversation as GmConversation
 import app.transmit.gm.proto.Message as GmMessage
 
@@ -177,7 +180,6 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
 
     private fun toMessage(row: GmMessageEntity, conv: GmConversation?): Message? {
         val m = runCatching { GmMessage.parseFrom(row.proto) }.getOrNull() ?: return null
-        val selfIds = GmMapping.selfIds(conv)
         val recipients = conv?.let(GmMapping::recipients).orEmpty()
         val outgoing = row.outgoing
         val sender = if (outgoing) null else {
@@ -186,10 +188,8 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
                 ?: recipients.singleOrNull()
                 ?: m.participantID
         }
-        val reactions = m.reactionsList.mapNotNull { r ->
-            val emoji = r.data.unicode.ifEmpty { GmMapping.emoji(r.data.type) }
-            if (emoji.isEmpty() || r.participantIDsCount == 0) null
-            else NativeReaction(emoji, r.participantIDsCount, r.participantIDsList.any { it in selfIds })
+        val reactions = m.reactionsList.mapNotNull { entry ->
+            GmMapping.reaction(entry, conv)?.also { r -> if (r.photomoji != null) notePhotomoji(r.emoji, entry.data) }
         }
         val status = GmMapping.deliveryStatus(m)
         return Message(
@@ -234,7 +234,17 @@ class MessagingRepository(private val context: Context, private val db: AppDatab
             .appendQueryParameter("v", media.mediaID.ifEmpty { media.thumbnailMediaID }.hashCode().toUInt().toString(36))
             .build()
 
+    /**
+     * Logs where a photomoji's picture is (scheme and host only) the first time it's seen. The protocol's photomoji
+     * fields aren't documented, and the Play build's logcat is the one way to see what a phone sends.
+     */
+    private fun notePhotomoji(key: String, data: ReactionData) {
+        if (loggedPhotomoji.add(key)) Log.i(TAG, "Photomoji ${GmMapping.photomojiSource(data)}")
+    }
+
     private companion object {
+        const val TAG = "Messaging"
         const val REACTION_WINDOW = 60
+        val loggedPhotomoji: MutableSet<String> = ConcurrentHashMap.newKeySet()
     }
 }

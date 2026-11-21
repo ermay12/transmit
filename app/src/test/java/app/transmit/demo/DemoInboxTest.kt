@@ -1,6 +1,7 @@
 package app.transmit.demo
 
 import app.transmit.messaging.DeliveryStatus
+import app.transmit.messaging.Reaction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -27,6 +28,23 @@ class DemoInboxTest {
         assertTrue(groups.single().groupName!!.isNotBlank())
         // Each chat has a message of the user's, written in Spanish, to show what sent messages look like.
         assertEquals(chats.map { it.threadId }.toSet(), inbox.written().map { it.first }.toSet())
+    }
+
+    /** The sample group shows who reacted, and the user's reaction joins, switches and goes as in Google Messages. */
+    @Test
+    fun reactingInTheGroupKeepsEveryoneElses() = runTest {
+        val inbox = DemoInbox(backgroundScope)
+        val group = DemoChats.chats.single { it.groupName != null }.threadId
+        val key = inbox.messages(group, 100).first { it.body.startsWith("I booked the flights") }.key
+        suspend fun react(emoji: String) = inbox.react(inbox.message(key)!!, emoji)
+        val sams = Reaction("🎉", 1, mine = false, others = listOf(DemoChats.SAM))
+        assertEquals(listOf(sams.copy(count = 2, mine = true)), inbox.message(key)!!.reactions)
+        react("❤️")
+        assertEquals(listOf(sams, Reaction("❤️", 1, mine = true)), inbox.message(key)!!.reactions)
+        react("❤️")
+        assertEquals(listOf(sams), inbox.message(key)!!.reactions)
+        react("🎉")
+        assertEquals(listOf(sams.copy(count = 2, mine = true)), inbox.message(key)!!.reactions)
     }
 
     @Test

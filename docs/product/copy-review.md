@@ -421,3 +421,18 @@ New in beta8 (docs/product/chat-extras.md, section 1); needs review. The chat's 
 | Chat: top bar, the switch's long-press tooltip and TalkBack label (new in beta8) | `chat_auto_translate` | Auto-translate |
 | Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_on` | On |
 | Chat: top bar, the switch's state for TalkBack (new in beta8) | `chat_auto_translate_off` | Off |
+
+## beta10: who reacted
+
+**Needs review (beta10, 2026-11-20):** six new strings for the sheet that shows who reacted to a message (see
+`chat-fixes-beta10.md`). Tapping a reaction under a bubble now opens it, in every chat, as in Google Messages.
+Reacting and changing a reaction stay in the long-press sheet. TalkBack reads a photomoji as "Photomoji".
+
+| Screen | String resource | English text |
+| --- | --- | --- |
+| Chat: the who-reacted sheet's title | `reactions_title` | Reactions |
+| Chat: who-reacted sheet, the user's own row | `reactions_you` | You |
+| Chat: who-reacted sheet, under the user's own row | `reactions_tap_to_remove` | Tap to remove |
+| Chat: who-reacted sheet, a person the phone counts but doesn't list in the chat (someone who left the group) | `reactions_someone` | Someone |
+| Chat: a reaction under a bubble, what tapping it does (accessibility) | `reactions_see_who` | See who reacted |
+| Chat: a photomoji reaction (accessibility) | `reactions_photomoji` | Photomoji |

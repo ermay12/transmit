@@ -40,6 +40,7 @@ import app.transmit.messaging.DeliveryStatus
 import app.transmit.messaging.Message
 import app.transmit.messaging.OutgoingAttachment
 import app.transmit.messaging.PhoneNumbers
+import app.transmit.messaging.Reaction
 import app.transmit.messaging.Reactions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -127,8 +128,6 @@ data class ComposeUi(
     }
 }
 
-data class ReactionUi(val emoji: String, val count: Int, val mine: Boolean)
-
 /** A message a reply quotes, as its own bubble shows it. */
 data class Quote(
     val key: String,
@@ -177,7 +176,7 @@ fun MessageUi.toQuote() = Quote(
 
 data class MessageUi(
     val message: Message,
-    val reactions: List<ReactionUi>,
+    val reactions: List<Reaction>,
     val translation: TranslationEntity?,
     val showOriginal: Boolean,
     val firstInRun: Boolean,
@@ -277,6 +276,8 @@ internal fun bubbleSide(on: Boolean, flips: Flips, key: String, translation: Tra
 sealed interface Sheet {
     data class Actions(val item: MessageUi) : Sheet
     data class Emoji(val item: MessageUi) : Sheet
+    /** Who reacted to the message with this key. */
+    data class WhoReacted(val key: String) : Sheet
     data class Details(val item: MessageUi) : Sheet
     data class Explain(
         val original: String,
@@ -594,21 +595,14 @@ class ChatViewModel(
         expected: Set<String>,
     ): List<MessageUi> {
         val asc = desc.asReversed()
-        val reactions = HashMap<String, LinkedHashMap<String, MutableSet<String>>>()
+        val tapbacks = Reactions.Tally()
         val visible = ArrayList<Message>(asc.size)
         for (m in asc) {
             val r = if (m.attachments.isEmpty()) Reactions.parse(m.body) else null
             if (r != null) {
                 val target = Reactions.target(r, visible.asReversed())
                 if (target != null) {
-                    val reactor = if (m.outgoing) ME else m.sender?.let(PhoneNumbers::matchKey) ?: "?"
-                    val map = reactions.getOrPut(target.key) { LinkedHashMap() }
-                    if (r.removed) {
-                        map[r.emoji]?.remove(reactor)
-                    } else {
-                        map.values.forEach { it.remove(reactor) }
-                        map.getOrPut(r.emoji) { LinkedHashSet() }.add(reactor)
-                    }
+                    tapbacks.add(r, from = m, to = target)
                     continue
                 }
             }
@@ -645,12 +639,7 @@ class ChatViewModel(
             val side = bubbleSide(views.on, views.flips, m.key, t, waiting)
             MessageUi(
                 message = m,
-                reactions = m.reactions.map { ReactionUi(it.emoji, it.count, it.mine) }.let { native ->
-                    // Google Messages tracks reactions itself; tapback texts it didn't recognize add to those.
-                    native + reactions[m.key].orEmpty().filterValues { it.isNotEmpty() }
-                        .filterKeys { e -> native.none { it.emoji == e } }
-                        .map { (emoji, who) -> ReactionUi(emoji, who.size, ME in who) }
-                },
+                reactions = tapbacks.on(m),
                 translation = t,
                 showOriginal = side.showOriginal,
                 firstInRun = prev == null || !grouped(prev, m),
@@ -1154,7 +1143,6 @@ class ChatViewModel(
     private companion object {
         const val PAGE = 150
         const val FIRST_SCREEN = 30
-        const val ME = "me"
         const val RUN_GAP = 5 * 60_000L
         const val CODE_CHIP_MS = 60 * 60_000L
         /** How long to page back for a tapped quote's original before giving up. */
