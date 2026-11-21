@@ -31,7 +31,9 @@ under "beta10".
   custom-emoji data whose two addresses are both local to the phone: `file://` paths, or
   `content://com.google.android.libraries.compose.core.data.content`, Google Messages' `InternalFileProvider`. Other
   apps can't read either one: one is Google Messages' private storage, the other a provider that isn't exported. So
-  Transmit shows the picture icon, and that is the expected result, not a failed load.
+  Transmit shows the picture icon, and that is the expected result, not a failed load. A third source, seen on the
+  same phone later that day: both addresses as `content://mms` (`image/png`), the system MMS store, which only the
+  default SMS app (or an app holding READ_SMS) can read. Transmit holds neither, so the icon shows there too.
 - `MessagingRepository` logs each photomoji's source once per run (tag `Messaging`: type, and the scheme and host of
   each address, never the address itself). The phone's main log buffer is only 256 KB and rolls over within minutes,
   so capture it live: `adb logcat -v time 'Messaging:I' 'Reactions:V' '*:S'`, then restart the app and open the chat.
