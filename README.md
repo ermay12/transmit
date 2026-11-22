@@ -1,54 +1,104 @@
-# Transmit
+<p align="center">
+  <img src="docs/launch/store-assets/feature-graphic-1024x500.png" alt="Transmit: practice a language in your everyday texts. Your friends just see normal messages." width="820">
+</p>
 
-An Android texting app for language learners. Transmit links to Google Messages on your phone, like Messages for Web: messages from friends arrive translated into the language you're practicing, and you can reply in that language while friends receive your native language. Translation and tutoring start with a free week, then a monthly subscription through Google Play; or use your own AI API key.
+<h1 align="center">Transmit: Learn by Texting</h1>
 
-## Features
+<p align="center">
+  <b>Practice any language while texting your friends.</b><br>
+  An Android app that works with Google Messages. Free week, then a monthly plan or your own AI key.
+</p>
 
-- **Your Google Messages chats:** SMS, MMS and RCS conversations, including RCS groups and business chats, with photos and media, native reactions, replies (swipe a message to the right, or long-press it; in RCS chats, since SMS can't carry a reply), read receipts (sent, delivered and read, like Google Messages, in the chat and the inbox), notifications, search, pin, mute, and swipe to archive. Google Messages stays your phone's SMS app.
-- **Translated inbox:** incoming messages are translated in the background as they arrive. Until the translation is ready, the text is hidden, so you don't read it in your native language first. Tap any bubble to switch between the original and the translation.
-- **Write in either language:**
-  - Write in your practice language: Transmit prepares the native-language version your friend receives.
-  - Write in your native language: Transmit shows how to say it in your practice language.
-  - **Check my translation:** grades your attempt, suggests corrections and shows a diff.
-- **Explain:** gives a phrase-by-phrase breakdown of any translation, with notes on grammar, idioms and slang.
-- **Pinyin and romaji:** for Chinese and Japanese, choose how messages show: characters only (tap a message to add its pinyin or romaji, tap again for the original), characters with the romanization underneath, or romanization only. Whatever you choose, the box you write in shows its romanization as you type. In romanization-only mode you can write in pinyin (tone numbers like `dui4` work) or romaji, and corrections stay in it. Otherwise, pinyin or romaji you type is corrected into characters. In a mode with characters, messages you sent in pinyin or romaji are rewritten in characters, matched to what you wrote, with your romanization kept underneath: the newest ones (as many as Translate on open covers) when a chat opens or you switch modes, and older ones when you tap them. The AI provides readings that fit the context (银行 → yínháng); pinyin typed with tone numbers gets tone marks on the device.
-- **Per-chat settings:** language, auto-translate, and (with your own key) a monthly budget.
-- **Automatic translation:** chats with contacts and with unknown numbers are both translated automatically by default; either can be turned off in Settings → Translation. Verification codes never are.
-- **Budgets and usage tracking (your own key):** default budgets are $10 a month overall, $10 per contact and $2 per unknown number. The free week and the plans have an allowance instead, shown without dollar amounts.
-- **Verification codes:** a notification with a one-time code gets a "Copy 482913" button that copies the code, marks the chat read and dismisses the notification. In the chat, the code is bold and tappable, and the newest code (under an hour old) has a Copy code chip. Messages with codes appear at once and are never auto-translated.
-- **Share from any app:** your recent chats, groups included, appear in Android's share sheet, so one tap opens the chat with the photo, video or text ready to send. Choosing Transmit itself opens Send to: recent chats first, then contacts, with one search over both (or type a number, or start a new group). Backing out returns you to the app you were sharing from.
-- **Smart links:** addresses open in Google Maps; dates and times ("Friday at 7", "Nov 28 from 6-9pm", "mañana a las 3", "金曜日の夜7時") open a prefilled calendar event with the message as its title and any address in the message as its location; phone numbers and email addresses are tappable too. These are found on the device, in both the original and the translation, after the message appears, so they never delay it.
-- **AI access:** the free week and the plans run on Transmit's own key, with nothing to set up. With your own key (Settings → Advanced), choose Anthropic, OpenAI, Google Gemini, OpenRouter, or any OpenAI-compatible endpoint; translation and tutoring can each use their own model. API keys are encrypted with an Android Keystore key and never leave the device except in requests to the AI provider.
-- **Privacy:** prompts never contain contact names, your name or phone numbers: the people in a chat are "Me" and "Them" (or "Person 1", "Person 2" and so on in groups). See the [privacy policy](https://transmit.ermay12.workers.dev/privacy).
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.ermay12.transmit"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80"></a>
+</p>
 
-Transmit uses the same unofficial protocol as Messages for Web (a Kotlin port of [mautrix-gmessages](https://github.com/mautrix/gmessages)' libgm), so Google can change it at any time. Google Messages allows one web session at a time: pairing Transmit signs out Messages for Web elsewhere, and the reverse.
+Transmit turns your everyday texting into language practice.
 
-## Build and install
+Learning a new language takes lots of natural input and supervised output practice, and finding chances to practice chatting is a major obstacle to fluency. With Transmit, every text you send and receive is practice.
 
-Every push to `main` builds a signed release APK with GitHub Actions and publishes it on the repository's Releases page.
+**How it works:** your friends' SMS and RCS texts are automatically translated into the language you're learning. You reply in that language, and Transmit gives you feedback on your grammar and word choice. When you send, your message is translated back into your native language. Your friends just see normal texts, and they don't need to install anything.
 
-To build locally you need JDK 17 or later and the Android SDK (compile SDK 36). The app runs on Android 12 (API 31) or later.
+## Screenshots
+
+<p align="center">
+  <img src="docs/launch/store-assets/screenshots/captioned/01-you-vs-them.png" alt="You text in Spanish. They see English." width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/02-inbox.png" alt="Your real texts, SMS and RCS" width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/03-original.png" alt="Read every text in Spanish" width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/04-reply.png" alt="Reply in Spanish" width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/05-check.png" alt="Get corrected before you hit send" width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/06-explain.png" alt="Understand the grammar, idioms and slang" width="200">
+  <img src="docs/launch/store-assets/screenshots/captioned/07-per-chat.png" alt="Spanish with Kyle, Japanese with Rachel" width="200">
+</p>
+
+## What you can do
+
+- **Read every chat in your practice language.** New messages are translated as they arrive and stay hidden until they are, so you never read them in your own language first. Tap a message to see what your friend actually wrote.
+- **Write in either language.** Write in your practice language and Transmit prepares the version your friend gets. Not sure how to say something? Write it in your own language and Transmit shows you how.
+- **Check my translation.** Get your attempt graded before you send, with corrections, a more natural version and what changed.
+- **Explain.** A phrase-by-phrase breakdown of any message, with notes on grammar, idioms and slang.
+- **Chinese and Japanese.** Show pinyin or romaji under the characters, or on their own, and type in pinyin or romaji if you like.
+- **A language per chat.** Practice Spanish with one friend and Japanese with another.
+- **Your chats, as they are.** SMS, MMS and RCS, group chats, photos and videos, reactions, replies, read receipts, search, pin, mute and archive.
+- **Little things.** Copy a verification code straight from the notification (codes are never sent for translation), share photos from any app to a recent chat, and tap addresses, dates, phone numbers and email addresses to open them in the right app.
+
+## Free week and plans
+
+- **Free week:** 7 days of translation and tutoring. No card needed, and it doesn't turn into a paid subscription.
+- **Plans:** Transmit, or Transmit Plus with twice the AI, billed monthly through Google Play until you cancel.
+- **Your own key:** prefer your own AI provider? Use an API key from Anthropic, OpenAI, Google Gemini, OpenRouter or any OpenAI-compatible service, and pay them directly (Settings → Advanced).
+- Without a plan or key, Transmit still works for texting, with translation off.
+
+## What you need
+
+- An Android phone with **Google Messages** as its texting app. Transmit runs on Android 12 or later, on that phone or on another device.
+- Transmit connects to Google Messages the same way Messages for Web does. Google Messages allows one web session at a time, so connecting Transmit signs out Messages for Web elsewhere, and the reverse.
+- An internet connection for translation and the tutor.
+
+Want to look around first? On the "Connect your messages" step of setup, long-press the heading to open a demo with sample chats.
+
+## Privacy
+
+Your messages never reach Transmit's server. To translate, the message and a few earlier messages from the same chat are sent to an AI service: with the free week or a plan, OpenRouter, limited to hosts with zero-data-retention policies; with your own key, the provider you chose. The AI never sees contact names, your name or phone numbers: people in a chat are "Me" and "Them". No ads, no analytics. Details are in the [privacy policy](https://transmit.ermay12.workers.dev/privacy).
+
+## Good to know
+
+- AI translations can be wrong. Check anything important with the person you're texting.
+- Transmit is an independent app. It isn't made, endorsed or supported by Google. It uses the same unofficial connection as Messages for Web, so a change on Google's side can stop it working until Transmit is updated.
+- Google Messages is a trademark of Google LLC.
+
+## Install
+
+- **[Google Play](https://play.google.com/store/apps/details?id=com.ermay12.transmit)** (recommended): updates automatically, and the only way to get the free week and plans.
+- **APK from [Releases](https://github.com/ermay12/transmit/releases/latest)**, for phones without Google Play. It works with your own AI key only, and it can't update a Play install or be updated by one, since the two are signed differently. To switch, uninstall first.
+
+Found a bug or have an idea? [Open an issue](https://github.com/ermay12/transmit/issues).
+
+---
+
+## For developers
+
+Transmit is a Kotlin app with Jetpack Compose. Its Google Messages layer is a Kotlin port of libgm from [mautrix-gmessages](https://github.com/mautrix/gmessages). Subscriptions and the free week go through a small Cloudflare Worker in [`backend/`](backend/README.md), which checks Google Play and issues per-user OpenRouter keys. Messages never pass through it.
+
+### Build
+
+You need JDK 17 or later and the Android SDK (compile SDK 36).
 
 ```sh
 ./gradlew :app:assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Release builds are signed with the debug key, so they install directly for personal use. GitHub Actions signs with the same key (the `DEBUG_KEYSTORE_BASE64` secret), so its APKs and local builds install over each other. The version code is the number of commits, so each newer build installs as an update.
-
-The package name is `com.ermay12.transmit`, the Google Play listing's. To build an app bundle for Google Play, point the build at the upload key: `TRANSMIT_UPLOAD_KEYSTORE` (a PKCS12 keystore with the alias `upload`) and `TRANSMIT_UPLOAD_PASSWORD`, then run `./gradlew :app:bundleRelease`. The bundle is in `app/build/outputs/bundle/release/`. Google Play re-signs it with the app signing key, so Play installs and sideloaded builds can't update each other.
-
-On first launch, onboarding asks for your languages and level, pairs with Google Messages (by signing in with the phone's Google account, or by QR code), and turns on translation: start the free week (Play installs only), or use your own AI key. You can skip either step and come back to it from the inbox or Settings.
-
-To try Transmit without pairing (Play's reviewers do this), long-press the "Connect your messages" heading in onboarding. That opens a demo with sample chats in Spanish, labelled Demo, where translation and the tutor work as usual; Exit demo returns to onboarding and leaves nothing behind.
-
-Unit tests:
-
 ```sh
-./gradlew :app:testDebugUnitTest
+./gradlew :app:testDebugUnitTest   # unit tests
 ```
 
-## Project layout
+- **Signing:** release builds are signed with your debug key, so they install directly. To build a bundle for Google Play, set `TRANSMIT_UPLOAD_KEYSTORE` (a PKCS12 keystore with the alias `upload`) and `TRANSMIT_UPLOAD_PASSWORD`, then run `./gradlew :app:bundleRelease`.
+- **Versions:** the version code is the number of commits, so each newer build installs as an update.
+- **Releases:** every push to `main` runs the unit tests and builds a release APK with GitHub Actions ([`release.yml`](.github/workflows/release.yml)). When `versionName` changes, it publishes the APK as a new release, signed with the key in the `DEBUG_KEYSTORE_BASE64` secret.
+- **Own-key mode only:** a build that isn't installed from Google Play can't start the free week or subscribe.
+
+### Project layout
 
 ```
 app/src/main/java/app/transmit/
@@ -61,9 +111,11 @@ app/src/main/java/app/transmit/
   smart/       on-device detection of verification codes, dates, addresses, phones and emails
   demo/        the demo's sample chats, kept in memory
   ui/          Jetpack Compose screens: home, chat, new chat, pairing, settings, plans, onboarding
+backend/       the Cloudflare Worker: free week, Play subscriptions, managed keys, privacy and terms pages
+docs/          product notes and launch material (store listing, privacy policy, data safety)
 ```
 
-Google Messages on the phone is the source of truth for messages. Transmit's Room database (schemas in `app/schemas/`) caches its conversations and messages (`gm_*` tables) and holds translations, drafts, per-chat settings and the usage ledger. Dependencies are wired by hand in `AppContainer`.
+Google Messages on the phone is the source of truth for messages. Transmit's Room database (schemas in `app/schemas/`) caches its conversations and messages (`gm_*` tables) and holds translations, drafts, per-chat settings and the usage ledger. Dependencies are wired by hand in `AppContainer`. API keys are encrypted with an Android Keystore key.
 
 ## License
 

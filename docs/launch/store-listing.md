@@ -53,13 +53,27 @@ Options considered before the decision:
 
 ## Full description (4,000 characters max)
 
+**Submitted (developer, 2026-11-22):** the description that went to Play with the production submission. It replaces the draft below, which is kept for its fact checks and wording.
+
+```text
+Transmit turns your everyday texting into language practice.
+
+Learning a new language requires lots of natural input and supervised output practice.  Finding opportunities to practice chatting is a major obstacle to fluency.
+
+This is no longer a problem with Transmit.
+
+How it works:
+Your friends' SMS/RCS text messages are automatically translated into the language you're learning. You respond in the language you're learning, with the app giving you feedback on your grammar and word choice. When you send your message, it gets translated back into your native language. Your friends never know that they're helping you learn a new language.
+```
+
+### Earlier draft
+
 This draft is 3,464 characters (checked by script on 2026-11-19; the bullets are "•"). Paste it as plain text.
 
 Before pasting:
 
 - Make sure the claims still match the build.
 - Optionally, add the privacy policy URL after "Details are in the privacy policy." Play also shows the URL on the listing.
-- The GitHub link at the end only works once the repo is public (`launch-checklist.md`, step 8).
 
 ```text
 Transmit turns your everyday texts into language practice.
@@ -125,7 +139,7 @@ Decided by the developer on 2026-11-19: Transmit is published from the existing 
 - **Developer name:** the existing account's developer name, the one LinguaRead is published under (unchanged). It mustn't suggest a tie to Google (Impersonation policy).
 - **Email (required, shown publicly):** ermay12@gmail.com. It's also the privacy policy's contact for data deletion requests.
 - **Address (shown publicly for traders):** the developer's legal name and postal address (as in `privacy-policy.md`). It comes from the developer account, not from this listing, and shows on every app of the account, LinguaRead included.
-- **Website (optional):** the privacy policy page, or https://github.com/ermay12/transmit once it's public.
+- **Website (optional):** the privacy policy page, or https://github.com/ermay12/transmit (public since 2026-11-22).
 - **Phone (shown publicly for traders):** chosen by the developer, 2026-11-20. It's set on the developer account and shows on every app of the account.
 - **Privacy policy URL:** required. See `launch-checklist.md`, step 3.
 - **Terms of service URL:** https://transmit.ermay12.workers.dev/terms (live since 2026-11-20, from `terms-of-service.md`). It isn't a store listing field: it's the terms link the trader form asks for, per app (`launch-checklist.md`, step 1). Review it before you submit.

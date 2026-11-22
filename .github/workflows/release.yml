@@ -1,4 +1,5 @@
-# Builds a signed release APK on every push to main and publishes it as a GitHub release.
+# On every push to main: runs the unit tests and builds a signed release APK. When versionName is new
+# (no tag v<versionName> yet), publishes the APK as a GitHub release.
 name: Release
 
 on:
@@ -74,22 +75,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           out=app/build/outputs/apk/release
-          code=$(jq -r '.elements[0].versionCode' "$out/output-metadata.json")
           name=$(jq -r '.elements[0].versionName' "$out/output-metadata.json")
-          tag="v$name-$code"
-          apk="transmit-$name-$code.apk"
+          tag="v$name"
+          # One release per version: pushes that don't change versionName only build and test.
+          if gh release view "$tag" > /dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "Release $tag already exists. Bump versionName to publish a new one."
+            exit 0
+          fi
+          apk="transmit-$name.apk"
           cp "$out/app-release.apk" "$apk"
 
-          # Notes: the commits since the previous release.
-          prev=$(gh release list --limit 1 --exclude-drafts --json tagName --jq '.[0].tagName // empty')
-          if [ -n "$prev" ] && [ "$prev" != "$tag" ] && git rev-parse -q --verify "refs/tags/$prev" > /dev/null; then
-            git log --format='- %s' "$prev..HEAD" > notes.md
-          else
-            git log --format='- %s' -n 20 > notes.md
-          fi
+          # Notes: the commits since the previous release, then how this APK differs from Google Play's.
+          prev=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // empty')
+          {
+            echo "## Changes"
+            echo
+            if [ -n "$prev" ] && git rev-parse -q --verify "refs/tags/$prev" > /dev/null; then
+              git log --no-merges --format='- %s' "$prev..HEAD"
+            else
+              git log --no-merges --format='- %s' -n 20
+            fi
+            echo
+            cat .github/release-footer.md
+          } > notes.md
 
-          if gh release view "$tag" > /dev/null 2>&1; then
-            gh release upload "$tag" "$apk" --clobber
-          else
-            gh release create "$tag" "$apk" --target "$GITHUB_SHA" --title "Transmit $name ($code)" --notes-file notes.md
-          fi
+          gh release create "$tag" "$apk" --target "$GITHUB_SHA" --title "Transmit $name" --notes-file notes.md --latest

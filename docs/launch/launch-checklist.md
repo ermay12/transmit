@@ -131,12 +131,12 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 
 ## 7. Merge `play-launch` into `main` (you approve)
 
-- [ ] Merge only after the internal test passes. **Every push to `main` runs `.github/workflows/release.yml`.** It runs the unit tests, builds an APK signed with the shared debug key, and publishes a GitHub release `v<versionName>-<versionCode>`.
+- [x] Merged on 2026-11-22, with the developer's OK, after the repo went public. **Every push to `main` runs `.github/workflows/release.yml`.** It runs the unit tests and builds an APK signed with the shared debug key. Since 2026-11-22 it publishes a GitHub release `v<versionName>` only when `versionName` is new, so bump it to publish; the 0.3.0 releases are marked pre-release.
   - That APK can't start the free week or subscribe (not Play-recognized). It works with your own key only, and can't update a Play install, or the reverse.
-  - Decide whether you still want these public APK releases once the repo is public.
-- [ ] Tag the commit of each Play release (for example `play-1.0.0-<versionCode>`). The source of every build you distribute is then easy to point to, as the AGPL requires.
+  - Decided 2026-11-22: keep them, one per version, with notes that point most people to Google Play (`.github/release-footer.md`).
+- [x] Tag the commit of each Play release (for example `play-1.0.0-<versionCode>`). The source of every build you distribute is then easy to point to, as the AGPL requires. Started 2026-11-22: `play-1.0.0-beta18-181` is fd65efc, the beta18 bundle submitted for production. Tag each later Play upload the same way.
 
-## 8. Make the repo public (needs your explicit OK)
+## 8. Make the repo public (done 2026-11-22)
 
 Do this before anyone outside your own accounts gets a build: before the closed test.
 
@@ -145,12 +145,12 @@ Do this before anyone outside your own accounts gets a build: before the closed 
 
 Before flipping:
 
-- [ ] Re-run a secret scan over commits since 2026-11-18. The last clean scan was 2c13272. Look at `backend/`, `docs/` and the workflow.
-- [ ] Remember that the full history becomes public, with your personal email as the commit author (you said that's fine), along with every existing GitHub release and its APK.
-- [ ] Check the docs you'd be publishing: `docs/product/*` (internal notes) and `docs/launch/*` (this folder).
+- [x] Re-run a secret scan over commits since 2026-11-18 (2026-11-22, every commit on every branch: none found). The last clean scan was 2c13272. Look at `backend/`, `docs/` and the workflow.
+- [x] Remember that the full history becomes public, with your personal email as the commit author (you said that's fine), along with every existing GitHub release and its APK.
+- [x] Check the docs you'd be publishing (2026-11-22: a tester's name, device serials, home paths, and the phone number and address outside the policy pages were redacted in a new commit; older commits still have them): `docs/product/*` (internal notes) and `docs/launch/*` (this folder).
   - They hold nothing secret, but they do show the Worker URL, the GCP project number and the OpenRouter workspace ID.
   - None of those are credentials. Remove or rewrite anything you'd rather not publish.
-- [ ] GitHub → Settings → General → Danger zone → Change visibility → Public.
+- [x] GitHub → Settings → General → Danger zone → Change visibility → Public (the developer, 2026-11-22).
 
 ## 9. Closed test: 14 days, at least 12 testers (you)
 

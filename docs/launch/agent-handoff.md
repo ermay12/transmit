@@ -11,7 +11,7 @@ For an agent picking up the launch work. Updated 2026-11-21.
 
 ## Where things stand
 
-- Branch `play-launch`, not pushed. **Never push without asking**: every push to `main` publishes a GitHub release (`.github/workflows/release.yml`).
+- The repo is **public** since 2026-11-22, and `play-launch` was merged into `main` that day. **Never push without asking.** Every push to `main` runs `.github/workflows/release.yml` (tests and an APK build); a push with a new `versionName` also publishes a public GitHub release `v<versionName>`.
 - beta16 (versionCode 173) is on Play's internal testing track. The developer's Pixel has it installed from Play, paired with Google Messages (data cleared and paired again on Nov 21). The repo is already at beta17 (174), a version bump built when Play seemed stuck, then not needed. Upload versionCode 174 or higher next.
 - On that Pixel, Google Messages' own "Incoming messages" notifications are switched off, so Transmit is its only alert for texts. Checked Nov 21 after switching it off at 20:46 with the developer's OK: the earlier switch-off hadn't stuck. Check with `dumpsys notification`: `mId='bugle_default_channel'` should have `mImportance=0`.
 - versionCode is the commit count, so every commit raises it.
@@ -37,7 +37,7 @@ These are the developer's standing rules. Don't relax them without asking.
 - **Pairing:** never pair or unpair, and never change the default SMS app. Clearing Transmit's data for a fresh-install test was allowed once; the developer paired again afterwards.
 - **Secrets:** they live in `~/.config/transmit/`. Never print them. Type a key into the phone by sourcing the file inside a subshell.
 - **OpenRouter:** only touch keys named `transmit-*`.
-- **The repo:** ask before making it public.
+- **The repo is public:** never commit people's names, phone numbers, device serials, home-directory paths, message text, keys, or screenshots and recordings of real chats.
 - **Recordings:** screenshots and videos must not show real chats. Use the reviewer demo (long-press "Connect your messages" on onboarding step 2), or have the developer check them before they leave the machine.
 
 ## Testing techniques that worked
