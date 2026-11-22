@@ -13,7 +13,7 @@ For an agent picking up the launch work. Updated 2026-11-21.
 
 - Branch `play-launch`, not pushed. **Never push without asking**: every push to `main` publishes a GitHub release (`.github/workflows/release.yml`).
 - beta15 (versionCode 166) is on Play's internal testing track. The developer's Pixel has it installed from Play, paired with Google Messages.
-- On that Pixel, Google Messages' own "Incoming messages" notifications are switched off (the double-notifications tip), so Transmit is its only alert for texts.
+- On that Pixel, Google Messages' own "Incoming messages" notifications are switched off, so Transmit is its only alert for texts. Checked Nov 21 after switching it off at 20:46 with the developer's OK: the earlier switch-off hadn't stuck. Check with `dumpsys notification`: `mId='bugle_default_channel'` should have `mImportance=0`.
 - versionCode is the commit count, so every commit raises it.
 
 ## Building and installing
@@ -67,7 +67,7 @@ These are the developer's standing rules. Don't relax them without asking.
 
 ## The next three tasks
 
-1. **Fix and retest the double-notifications tip** (checklist step 2.15). The developer found it buggy on Nov 21. Get the specifics from them first, reproduce on the Pixel, fix, and retest the full flow listed in 2.15. The code is in `app/src/main/java/app/transmit/ui/GoogleMessagesAlerts.kt`. It's shown from `HomeScreen.kt` and `SettingsScreen.kt`, and triggered from `Notifier.kt` (`messageAlerted`).
+1. **Retest the double-notifications tip** (checklist step 2.15). The flash is fixed in code, and Android 17's Settings can crash when Incoming messages is switched off; the findings are in 2.15. Retest the full flow there on the Pixel once the fixed build is on Play. The code is in `app/src/main/java/app/transmit/ui/GoogleMessagesAlerts.kt`. It's shown from `HomeScreen.kt` and `SettingsScreen.kt`, and triggered from `Notifier.kt` (`messageAlerted`).
 2. **Make the store listing graphics** (`store-listing.md`):
    - 2 to 8 phone screenshots, taken in the reviewer demo so no real chats show;
    - the 512 px icon;
