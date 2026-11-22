@@ -152,11 +152,13 @@ object Reactions {
 
     fun isEmoji(s: String): Boolean {
         if (s.isEmpty() || s.length > 16) return false
-        if (s.any { it.isLetterOrDigit() && it.code < 0x2000 }) return false
+        // Any letter or digit makes it text, in every script: Japanese, Chinese or Korean with an emoji isn't
+        // emoji-only. Letterlike Symbols are the exception, for ℹ️ (U+2139), which Unicode files as a letter.
+        if (s.any { it.isLetterOrDigit() && it.code !in 0x2100..0x214F }) return false
         return s.codePoints().anyMatch { cp ->
             val type = Character.getType(cp)
             type == Character.OTHER_SYMBOL.toInt() || type == Character.SURROGATE.toInt() ||
-                cp in 0x2600..0x27BF || cp in 0x1F000..0x1FAFF || cp == 0x203C || cp == 0x2049 || cp == 0x2753 || cp == 0x2757
+                cp in 0x2600..0x27BF || cp in 0x1F000..0x1FAFF || cp == 0x203C || cp == 0x2049 || cp == 0x2139 || cp == 0x2753 || cp == 0x2757
         }
     }
 }

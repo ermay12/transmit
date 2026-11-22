@@ -24,6 +24,19 @@ class ReactionsTest {
     }
 
     @Test
+    fun emojiOnlyMeansNoLettersInAnyScript() {
+        assertTrue(Reactions.isEmoji("😂"))
+        assertTrue(Reactions.isEmoji("❤️🔥"))
+        assertTrue(Reactions.isEmoji("👍🏽"))
+        assertTrue(Reactions.isEmoji("ℹ️"))
+        assertFalse(Reactions.isEmoji("ok 👍"))
+        assertFalse(Reactions.isEmoji("住所送るね📍"))
+        assertFalse(Reactions.isEmoji("好的👌"))
+        assertFalse(Reactions.isEmoji("좋아요 😊"))
+        assertFalse(Reactions.isEmoji("ｏｋ👍"))
+    }
+
+    @Test
     fun ignoresOrdinaryMessages() {
         assertNull(Reactions.parse("Loved the movie, thanks!"))
         assertNull(Reactions.parse("I went to “the place”"))
