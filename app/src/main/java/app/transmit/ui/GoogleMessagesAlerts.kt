@@ -50,13 +50,22 @@ object GoogleMessagesAlerts {
     const val CHANNEL = "bugle_default_channel"
     /** Settings closes at once on a channel the app doesn't have; a return this soon means it did. */
     const val BOUNCE_MS = 1_500L
+    /** How long Home stays on screen before the tip shows: longer than opening a chat over it takes. */
+    const val SETTLE_MS = 1_000L
 
     fun installed(context: Context) =
         runCatching { context.packageManager.getPackageInfo(PACKAGE, 0) }.isSuccess
 
-    /** Home offers the tip once: after Transmit first alerted to a text, while its alerts are on, outside the demo. */
-    fun offerTip(messageAlerted: Boolean, tipSeen: Boolean, alertsOn: Boolean, paired: Boolean, demo: Boolean, installed: Boolean) =
-        messageAlerted && !tipSeen && alertsOn && paired && !demo && installed
+    /**
+     * Home offers the tip once: after Transmit first alerted to a text, while its alerts are on, outside the demo.
+     * It waits for a visit to Home that began after that alert ([alertedBeforeVisit]) and has lasted [SETTLE_MS]
+     * ([settled]). Otherwise it would flash up and vanish: opening a chat from a notification draws Home first, and a
+     * text that alerts while Home is open is about to be tapped. Each time, it came back on Back.
+     */
+    fun offerTip(
+        alertedBeforeVisit: Boolean, settled: Boolean, tipSeen: Boolean,
+        alertsOn: Boolean, paired: Boolean, demo: Boolean, installed: Boolean,
+    ) = alertedBeforeVisit && settled && !tipSeen && alertsOn && paired && !demo && installed
 
     /** The "Incoming messages" switch. */
     fun openChannel(context: Context) = open(

@@ -72,6 +72,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -95,7 +96,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.transmit.ai.usd
 import app.transmit.ui.Permissions
@@ -124,6 +127,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -176,6 +183,22 @@ fun HomeScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     val openGoogleMessagesAlerts = rememberOpenGoogleMessagesAlerts()
     val googleMessagesInstalled = remember { GoogleMessagesAlerts.installed(context) }
+    // Each visit to Home: whether Transmit had alerted to a text when it began, and whether it has lasted long
+    // enough to show the double-notifications tip (see GoogleMessagesAlerts.offerTip). This screen is resumed only
+    // while it's the one on show, not while a chat opens over it.
+    var alertedBeforeVisit by remember { mutableStateOf(false) }
+    var visitSettled by remember { mutableStateOf(false) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.currentStateFlow.collectLatest { state ->
+            visitSettled = false
+            if (state.isAtLeast(Lifecycle.State.RESUMED)) {
+                alertedBeforeVisit = vm.settings.filterNotNull().first().messageAlerted
+                delay(GoogleMessagesAlerts.SETTLE_MS)
+                visitSettled = true
+            }
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -332,9 +355,11 @@ fun HomeScreen(
         )
     }
 
-    // Transmit has just alerted to a text, and Google Messages most likely did too: once, how to stop the second one.
+    // Transmit has alerted to a text, and Google Messages most likely did too: once, how to stop the second one.
+    // Not during a selection, nor over another dialog.
     settings?.let { s ->
-        if (selection.isEmpty() && GoogleMessagesAlerts.offerTip(s.messageAlerted, s.doubleAlertsTipSeen, alertsOn, paired, demo, googleMessagesInstalled)) {
+        val free = selection.isEmpty() && trial !is TrialUi.Failed && !confirmDelete
+        if (free && GoogleMessagesAlerts.offerTip(alertedBeforeVisit, visitSettled, s.doubleAlertsTipSeen, alertsOn, paired, demo, googleMessagesInstalled)) {
             DoubleAlertsSheet(onOpen = openGoogleMessagesAlerts, onDismiss = vm::doubleAlertsTipSeen)
         }
     }
