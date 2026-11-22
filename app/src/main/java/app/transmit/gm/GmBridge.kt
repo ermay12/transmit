@@ -149,6 +149,11 @@ class GmBridge(
 
     // ---- lifecycle -------------------------------------------------------------------------------
 
+    /** The device's default network came up: a connection waiting to retry after an outage retries now. */
+    fun networkAvailable() {
+        client?.networkAvailable()
+    }
+
     /** Connects if paired and not connected yet. Safe to call repeatedly. */
     fun start() {
         scope.launch {

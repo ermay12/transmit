@@ -246,6 +246,27 @@ class PhoneNotRespondingException : GmException("Your phone isn't responding. Ch
 class GooglePairing internal constructor(val emoji: String, internal val session: GaiaPairingSession)
 
 /**
+ * The long poll's wait before retrying, cut short when the device's network comes back: after an outage of a few
+ * minutes the wait is up to a minute, and texts that came meanwhile would alert that much later.
+ */
+internal class RetryWait {
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /** The network is back: the wait in progress ends now, or else the next one. */
+    fun wake() {
+        wake.trySend(Unit)
+    }
+
+    /** Connected again: a wake from before (the network callback's first report, say) is stale. */
+    fun reset() {
+        wake.tryReceive()
+    }
+
+    /** Waits [ms], or until [wake]. True if woken. */
+    suspend fun await(ms: Long): Boolean = withTimeoutOrNull(ms) { wake.receive() } != null
+}
+
+/**
  * A Google Messages for Web client: Kotlin port of mautrix-gmessages' libgm. The phone stays the
  * messaging device; this talks to it through Google's relay, with payloads end-to-end encrypted
  * using keys exchanged in the pairing QR code.
@@ -266,6 +287,7 @@ class GmClient(
     private val pollHttp = http.newBuilder().readTimeout(70, TimeUnit.SECONDS).callTimeout(30, TimeUnit.MINUTES).build()
 
     @Volatile private var sessionId = UUID.randomUUID().toString()
+    private val retryWait = RetryWait()
     private val waiters = ConcurrentHashMap<String, CompletableDeferred<IncomingRpc>>()
     private val pendingAcks = LinkedHashSet<String>()
     private val skipCount = AtomicInteger(0)
@@ -298,6 +320,9 @@ class GmClient(
     fun reconnect() {
         if (auth.isPaired) startPolling(loggedIn = true)
     }
+
+    /** The device's default network came up: a long poll waiting to retry tries now. */
+    fun networkAvailable() = retryWait.wake()
 
     fun disconnect() {
         pollJob?.cancel()
@@ -560,6 +585,7 @@ class GmClient(
                     updateCookies(resp)
                     if (!resp.isSuccessful) throw GmHttpException(resp.code, parseError(resp))
                     pollConnected.complete(Unit)
+                    retryWait.reset()
                     if (failures > 0) {
                         failures = 0
                         if (loggedIn) onEvent(GmEvent.ConnectionRestored)
@@ -587,7 +613,7 @@ class GmClient(
                 if (loggedIn) onEvent(GmEvent.ConnectionTrouble(e))
                 val wait = minOf((failures + 1) * 5_000L, 60_000L)
                 Log.w(TAG, "Long poll failed; retrying in ${wait / 1000}s", e)
-                delay(wait)
+                if (retryWait.await(wait)) Log.i(TAG, "Network is back; retrying now")
             }
         }
     }

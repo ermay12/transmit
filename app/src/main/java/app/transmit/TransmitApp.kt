@@ -2,6 +2,8 @@ package app.transmit
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import androidx.datastore.core.DataStore
@@ -143,6 +145,12 @@ class AppContainer(val context: Context) {
     }
 
     init {
+        // Back online after an outage, reconnect now rather than when the retry's wait runs out.
+        context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = bridge.networkAvailable()
+            },
+        )
         access.listener = object : AccessListener {
             override fun onEndedInBackground(reason: EndReason) = notifier.notifyAccessEnded(reason, purchases.available)
             override fun onInUseElsewhereInBackground() = notifier.notifyInUseElsewhere()
