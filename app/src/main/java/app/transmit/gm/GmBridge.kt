@@ -122,8 +122,8 @@ class GmBridge(
     private val missed = Collections.synchronizedMap(LinkedHashMap<String, Long>())
 
     /**
-     * The newest cached message (ms) from before the connection went: a message the sync finds that's newer is one
-     * Transmit missed. Null right after pairing, when everything the sync finds is history.
+     * The newest cached message (ms) from before the connection went: a message the sync finds or the phone replays
+     * that's newer is one Transmit missed. Null right after pairing, when everything the phone sends is history.
      */
     @Volatile private var missedAfter: Long? = null
     private var catchUpJob: Job? = null
@@ -422,8 +422,9 @@ class GmBridge(
         if (existing == null && !outgoing) {
             if (!isOld) {
                 onIncoming(threadId, listOf(Message.key(msg.messageID)))
-            } else if (!read) {
-                // Came while Transmit couldn't hear: notified once the sync has what the phone read meanwhile.
+            } else if (!read && missedAfter.let { it != null && msg.timestamp / 1000 > it }) {
+                // Came while Transmit couldn't hear: notified once the sync has what the phone read meanwhile. Not
+                // right after pairing, nor older than the cache, when it's history (unread history the phone replays).
                 missed[msg.messageID] = threadId
                 catchUp()
             }

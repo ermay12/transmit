@@ -229,6 +229,36 @@ class GmBridgeReadSyncTest {
     }
 
     @Test
+    fun textsReplayedRightAfterPairingDontAlert() = runTest {
+        // Nothing was cached before this connection: a fresh pairing, where everything the phone sends is history.
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        // Today's unread texts, replayed. The first one's conversation is fetched and cached, unread.
+        bridge.handle(received("m1", now - 30_000, isOld = true))
+        bridge.handle(conversation(unread = true, lastMs = now - 20_000, latestId = "m2"))
+        bridge.handle(received("m2", now - 20_000, isOld = true))
+
+        catchUp()
+        // The conversation's next notification still shows m2, but pairing doesn't alert to it.
+        assertEquals(listOf("m2"), stacked())
+        assertEquals(emptyList<List<String>>(), alerts)
+    }
+
+    @Test
+    fun aReplayOlderThanTheCacheDoesntAlert() = runTest {
+        val bridge = bridge()
+        val now = System.currentTimeMillis()
+        bridge.handle(conversation(unread = true, lastMs = now - 10_000, latestId = "m2"))
+        bridge.handle(received("m2", now - 10_000))
+        bridge.handle(GmEvent.ConnectionRestored)
+        // An earlier text of the unread conversation that was never cached: history, not something missed offline.
+        bridge.handle(received("m1", now - 30_000, isOld = true))
+
+        catchUp()
+        assertEquals(listOf(listOf("gm2")), alerts)
+    }
+
+    @Test
     fun aReplayOfAMessageAlreadyCachedDoesntAlertAgain() = runTest {
         val bridge = bridge()
         val now = System.currentTimeMillis()
