@@ -22,7 +22,7 @@ android {
         targetSdk = 36
         // Counts up with every commit, so each build installs over the last, whether built locally or by GitHub Actions.
         versionCode = commitCount
-        versionName = "1.0.0-beta17"
+        versionName = "1.0.0-beta18"
     }
 
     signingConfigs {
