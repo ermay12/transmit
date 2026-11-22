@@ -1,13 +1,13 @@
-import subprocess, sys, textwrap
+import os, subprocess, sys, textwrap
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 sys.path.insert(0, sys.argv[1])
 from privacy import private
 D = sys.argv[1]; OUT = sys.argv[2]
 FW, FH, FPS = 1920, 1080, 30
-F = "/Users/ermay12/Library/Android/sdk/platforms/android-26/data/fonts/Roboto-"
+F = os.path.join(os.environ["ANDROID_HOME"], "platforms/android-26/data/fonts/Roboto-")
 def font(w, s): return ImageFont.truetype(F + w + ".ttf", s)
 BLUE = (63, 81, 232); INK = (24, 27, 38); GREY = (96, 102, 120); BG = (244, 245, 250)
-ICON = Image.open("/Users/ermay12/Documents/transmit/docs/launch/store-assets/icon-512.png").convert("RGBA")
+ICON = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../store-assets/icon-512.png")).convert("RGBA")
 
 def wrap(d, text, f, width):
     lines = []

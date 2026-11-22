@@ -1,5 +1,6 @@
-import subprocess, time, json, re, sys, xml.etree.ElementTree as ET
-ADB = ["/Users/ermay12/Library/Android/sdk/platform-tools/adb", "-s", "59041JEBF03350"]
+import os, subprocess, time, json, re, sys, xml.etree.ElementTree as ET
+# adb from ANDROID_HOME; set ANDROID_SERIAL to pick the phone.
+ADB = [os.path.join(os.environ["ANDROID_HOME"], "platform-tools", "adb")]
 LOG = {"events": {}, "rects": {}}
 def sh(cmd, check=False):
     return subprocess.run(ADB + ["shell", cmd], capture_output=True, text=True).stdout

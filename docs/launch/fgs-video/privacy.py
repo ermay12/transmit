@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw, ImageFilter
 STATUS = ("rect", (0, 0, 1080, 128))
 ICON = ("circle", (412, 2026, 86))
 HEADSUP = ("rrect", (42, 184, 1038, 478, 60))
-# Melodee's photo is blurred again; Transmit's small badge on it stays sharp.
+# The sender's photo is blurred again; Transmit's small badge on it stays sharp.
 def face(cy): return [("blur", (137, cy, 60)), ("circle", (167, cy + 32, 24))]
 RULES = {
  "phone": [(0, 2.10, [STATUS, ICON]), (2.10, 3.05, [STATUS]), (3.05, 16.85, [("rect", (0, 0, 1080, 292))]),
