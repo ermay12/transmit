@@ -150,6 +150,7 @@ Before flipping:
 
 - If your account predates that, Play Console won't show the requirement and you can skip to step 10.
 - Check the app's Dashboard.
+- **Not required for this account** (the developer, Nov 21): it predates the rule, so a closed test is optional. Its use is the first full review before production. License testers get the same 5-minute test renewals on any track, so moving off internal testing doesn't affect subscription tests.
 
 - [ ] Create a **Closed testing** track. Add testers through a Google Group or an email list, and send them the opt-in link.
 - [ ] Recruit more than 12 (aim for 15–20). Anyone who opts out before 14 consecutive days doesn't count. Testers need an Android phone with Google Messages.
