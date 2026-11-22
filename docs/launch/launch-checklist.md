@@ -26,8 +26,8 @@ Items marked **(you)** need your decision or your account. Items marked **(code)
   - **Review it before you submit the trader form (you).** It's a plain-language draft, not legal advice. Look hardest at the free week (§4), subscriptions and refunds (§5), the promise to cancel renewals if the service stops (§12), and the disclaimer and liability cap (§13, §14). A lawyer's read is worth it before production.
 - [x] **Target audience:** 18+ (`docs/product/release-1.0.md`, Play compliance; `content-rating-and-declarations.md` §2).
 - [x] **Retention period** for the Worker's subscription rows: 90 days after the subscription ends or is refunded (`docs/product/release-1.0.md`, Play compliance). Built and deployed on 2026-11-19 (step 2.9).
-- [ ] **Deletion turnaround:** the draft promises 30 days.
-- [x] **App name:** the Play title is **"Transmit: Learn by Texting"** (2026-11-19). The in-app name stays "Transmit" (`app_name`). Still worth doing before production: the trademark and Play search for existing "Transmit" apps and marks (`store-listing.md`), which isn't recorded as done.
+- [x] **Deletion turnaround:** 30 days, as the privacy policy promises (developer, 2026-11-22).
+- [x] **App name:** the Play title is **"Transmit: Learn by Texting"** (2026-11-19). The in-app name stays "Transmit" (`app_name`). The trademark and Play search was done on 2026-11-22: fine to launch, with Panic's TRANSMIT (file transfer) the one mark to know about (`store-listing.md`).
 - [x] **Short description:** "Practice any language while texting your friends" (48 characters, 2026-11-20; `store-listing.md`).
 - [x] **App copy:** everything in `docs/product/copy-review.md` was approved by the developer on 2026-11-19.
 - [x] **Sender names in AI context:** replaced with neutral labels (`docs/product/release-1.0.md`). `data-safety.md` and the privacy policy assume that app change (step 2.5).
@@ -83,14 +83,14 @@ Either way:
 
 ## 4. Account and service checks (you)
 
-- [ ] **OpenRouter** (account and the Transmit Customers workspace):
+- [x] **OpenRouter** (account and the Transmit Customers workspace):
   - [x] Input & Output Logging is **off**, and "OpenRouter use of inputs/outputs" is **off**. Confirmed by the developer on 2026-11-19. The privacy policy says so (section 3).
   - The workspace guardrail still enforces ZDR on every model group, with safety retention off and only Gemma 4 31B allowed.
-  - Decide on the $100/day workspace budget.
-  - Recommended: swap the account-wide management key for a workspace-scoped one (`backend/README.md`, Secrets).
+  - The $100/day workspace budget stays (developer, 2026-11-22).
+  - The account-wide management key stays: the developer uses OpenRouter only for Transmit, so a workspace-scoped key adds nothing (2026-11-22).
 - [x] **Back up the Worker's `DATA_SECRET`** (done 2026-11-19). Without it, every hashed record is useless (`backend/README.md`).
 - [ ] **Payments profile** linked and verified. The subscriptions are active, so it probably is; confirm in Play Console → Setup → Payments profile.
-- [ ] **Trader declaration** submitted (step 1). Give `https://transmit.ermay12.workers.dev/terms` as Transmit's terms link.
+- [x] **Trader declaration** submitted (developer, by 2026-11-22). Give `https://transmit.ermay12.workers.dev/terms` as Transmit's terms link.
 
 ## 5. Play Console: App content and store listing (you)
 
@@ -104,7 +104,7 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 - [x] Data safety (`data-safety.md`). Keep it consistent with the privacy policy. Done by the developer (2026-11-21).
 - [x] Financial features: "My app doesn't provide any financial features." Done by the developer (2026-11-21).
 - [x] Health (if shown), Government, News: no. Done by the developer (2026-11-21).
-- [ ] Foreground service declaration: remote messaging, with a video (§7). Record it during the internal test. Required: Google's page says apps targeting Android 14+ "need to declare any foreground service types that you use in a new declaration on the App content page", and remote messaging is one of the listed types. The developer hadn't seen the form on App content as of 2026-11-21. **Video made (Nov 21):** `~/Downloads/transmit-fgs-remote-messaging.mp4`, 47 s, captioned, private content blurred (`fgs-video/README.md`). Still to do: upload it to YouTube as Unlisted (or to Drive, anyone with the link), paste the link into the form with the §7 description, impact and use case, and submit.
+- [x] Foreground service declaration: done by the developer (2026-11-22). Remote messaging, with a video (§7). Record it during the internal test. Required: Google's page says apps targeting Android 14+ "need to declare any foreground service types that you use in a new declaration on the App content page", and remote messaging is one of the listed types. The developer hadn't seen the form on App content as of 2026-11-21. **Video made (Nov 21):** `~/Downloads/transmit-fgs-remote-messaging.mp4`, 47 s, captioned, private content blurred (`fgs-video/README.md`). Still to do: upload it to YouTube as Unlisted (or to Drive, anyone with the link), paste the link into the form with the §7 description, impact and use case, and submit.
 - [x] Store listing (`store-listing.md`): name, short and full description, the 512 px icon, the 1024 × 500 feature graphic, 2–8 phone screenshots, category Communication, tags, contact email. Updated by the developer on 2026-11-21 with the graphics remade that day (51e1580, `store-assets/README.md`).
 - [ ] Countries and regions. Match the 174 regions the subscriptions are on, or start smaller.
 

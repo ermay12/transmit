@@ -282,7 +282,8 @@ the first listed (no migration). On 2026-11-20 (version `43eccc92`): the
 - **Rate limits are per network.** Someone with many addresses can still use up
   the Play Integrity quota (Google then returns errors, so trials fail with
   `upstream_error`). If that happens, add sign-in or ask Google for more quota.
-- **A workspace-scoped OpenRouter management key** has not replaced the account-wide one yet.
+- **The management key is account-wide**, not scoped to the Transmit Customers workspace. That's
+  deliberate (2026-11-22): the OpenRouter account is used only for Transmit.
 - **The DEFERRED switch is built from Google's documented shapes, not a real
   purchase.** On a device (test renewals every 5 minutes, so about 10 minutes
   end to end), confirm: the new token's two line items and that its

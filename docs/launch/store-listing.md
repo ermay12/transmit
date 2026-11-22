@@ -26,7 +26,15 @@ Draft text for Play Console → Grow users → Store presence → **Main store l
 
 **Decision (developer, 2026-11-19):** the Play title is **Transmit: Learn by Texting**. The in-app name stays "Transmit" (`app_name`); a different store name is fine.
 
-A naming risk to check yourself: Panic Inc. sells a well-known file-transfer app called Transmit. Their old US registrations for TRANSMIT appear cancelled in third-party trademark databases, but that isn't legal advice, and common-law rights can remain. The title is chosen, but this search isn't recorded as done: search USPTO TSDR (and EUIPO if you sell in the EU), and look for apps called "Transmit" on Play, before the production release.
+Naming risk, checked 2026-11-22 (an informal search, not legal advice; the trademark databases block automated reads, so statuses come from search summaries and may be out of date):
+
+- **Panic, Inc. (the Mac file-transfer app Transmit)** filed a new US application for TRANSMIT on 2025-12-23 (serial 99564000, class 9: downloadable software for sending, receiving and managing files over networks, use claimed since 1999). It was last seen pending. Their earlier registrations (75660073, 77381192, 86417544) were cancelled for missing Section 8 filings, but 27 years of use gives them common-law rights anyway. This is the one that matters: same word, same class. Their goods (file transfer, Apple platforms) differ from ours (language-learning texting, Android), and the Play title adds "Learn by Texting".
+- **Transmit Security Ltd.** (identity and authentication): TRANSMIT SECURITY, serial 98453764, pending in classes 9 and 42. A different field.
+- Dead: TRANSMIT NETWORK (87810758, abandoned 2019) and Transmit International's TRANSMIT for jewellery (87380246, apparently cancelled 2024).
+- Google Play (US search for "transmit"): "Engage By Transmit" (Kloud 7, 50+ downloads) and "Transmit Notifications" (ThinApp, 10+). No language, translation or texting app called Transmit.
+- Not checked: EUIPO and the UK register.
+
+Outcome: fine to launch under this name. Registering TRANSMIT alone for software would likely be refused over Panic's earlier application, so don't file for it. If Panic ever objects, rename the app (the applicationId can stay). For certainty, a trademark attorney can run a clearance search.
 
 ## Short description (80 characters max)
 
