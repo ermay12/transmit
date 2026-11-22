@@ -12,7 +12,7 @@ For an agent picking up the launch work. Updated 2026-11-21.
 ## Where things stand
 
 - Branch `play-launch`, not pushed. **Never push without asking**: every push to `main` publishes a GitHub release (`.github/workflows/release.yml`).
-- beta15 (versionCode 166) is on Play's internal testing track. The developer's Pixel has it installed from Play, paired with Google Messages.
+- beta16 (versionCode 173) is on Play's internal testing track. The developer's Pixel has it installed from Play, paired with Google Messages (data cleared and paired again on Nov 21). The repo is already at beta17 (174), a version bump built when Play seemed stuck, then not needed. Upload versionCode 174 or higher next.
 - On that Pixel, Google Messages' own "Incoming messages" notifications are switched off, so Transmit is its only alert for texts. Checked Nov 21 after switching it off at 20:46 with the developer's OK: the earlier switch-off hadn't stuck. Check with `dumpsys notification`: `mId='bugle_default_channel'` should have `mImportance=0`.
 - versionCode is the commit count, so every commit raises it.
 
@@ -65,14 +65,13 @@ These are the developer's standing rules. Don't relax them without asking.
   - To install, lift the storage threshold first: `settings put global sys_storage_threshold_max_bytes 209715200`, install, then delete the setting.
   - Never kill a mock server by its port, which also kills the emulator.
 
-## The next three tasks
+## The next two tasks
 
-1. **Retest the double-notifications tip** (checklist step 2.15). The flash is fixed in code, and Android 17's Settings can crash when Incoming messages is switched off; the findings are in 2.15. Retest the full flow there on the Pixel once the fixed build is on Play. The code is in `app/src/main/java/app/transmit/ui/GoogleMessagesAlerts.kt`. It's shown from `HomeScreen.kt` and `SettingsScreen.kt`, and triggered from `Notifier.kt` (`messageAlerted`).
-2. **Make the store listing graphics** (`store-listing.md`):
+1. **Make the store listing graphics** (`store-listing.md`):
    - 2 to 8 phone screenshots, taken in the reviewer demo so no real chats show;
    - the 512 px icon;
    - the 1024 × 500 feature graphic.
    They block the first closed-testing release.
-3. **Record the foreground service declaration video** (`content-rating-and-declarations.md` §7: remote messaging). Play's review needs it. It has to show the connection running and a message arriving, so plan it with the developer to keep real chats out of the frame.
+2. **Record the foreground service declaration video** (`content-rating-and-declarations.md` §7: remote messaging). Play's review needs it. It has to show the connection running and a message arriving, so plan it with the developer to keep real chats out of the frame.
 
 After those: the Play Console forms (the developer's), the remaining tests in the release doc, and beta15's pre-launch report in Play Console.
