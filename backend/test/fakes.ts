@@ -79,6 +79,19 @@ export class FakeWorld {
   /** Calls per client the fake rate-limit bindings allow (no time window; a test is one window). */
   rateLimits: Record<"TRIAL_RATE_LIMIT" | "SUBSCRIPTION_RATE_LIMIT", number> = { TRIAL_RATE_LIMIT: 1000, SUBSCRIPTION_RATE_LIMIT: 1000 };
   rateCounts = new Map<string, number>();
+  /** OpenRouter's account credits (GET /credits). */
+  credits = { total: 100, usage: 10 };
+  /** OpenRouter's zero-data-retention endpoints (GET /endpoints/zdr): model and status (0 = up). */
+  zdr: { model: string; status: number }[] = [
+    { model: "google/gemma-4-31b-it", status: 0 },
+    { model: "google/gemma-4-31b-it", status: -2 },
+    { model: "other/model", status: 0 },
+  ];
+  /** Make OpenRouter's /credits and /endpoints/zdr fail with 503. */
+  failOpenRouterReads = false;
+  /** Emails sent through Resend. */
+  emails: { from: string; to: string[]; subject: string; text: string }[] = [];
+  failEmails = false;
   private seq = 0;
   private publicKey?: CryptoKey;
 
@@ -137,6 +150,12 @@ export class FakeWorld {
     if (url.hostname.endsWith("googleapis.com")) {
       if (auth !== `Bearer ${GOOGLE_TOKEN}`) return res(401, { error: { message: "bad token" } });
       return this.google(req.method, url, body);
+    }
+    if (url.hostname === "api.resend.com" && url.pathname === "/emails" && req.method === "POST") {
+      if (auth !== "Bearer test-resend-key") return res(401, { message: "API key is invalid" });
+      if (this.failEmails) return res(500, { message: "internal_server_error" });
+      this.emails.push(body as FakeWorld["emails"][number]);
+      return res(200, { id: `email-${this.emails.length}` });
     }
     if (url.hostname === "openrouter.ai") {
       if (auth !== "Bearer test-management-key") return res(401, { error: { message: "bad management key" } });
@@ -210,6 +229,24 @@ export class FakeWorld {
       expires_at: k.expires_at,
       workspace_id: k.workspace_id,
     });
+    if ((path === "/credits" || path === "/endpoints/zdr") && method === "GET" && this.failOpenRouterReads) {
+      return res(503, { error: { message: "Service Unavailable" } });
+    }
+    if (path === "/credits" && method === "GET") return res(200, { data: { total_credits: this.credits.total, total_usage: this.credits.usage } });
+    if (path === "/endpoints/zdr" && method === "GET") {
+      // Shaped like the real list: "name" first, "model_id", nested "pricing", then "status" further on.
+      const data = this.zdr.map((e, i) => ({
+        name: `Host${i} | ${e.model}`,
+        model_id: e.model,
+        model_name: e.model,
+        pricing: { prompt: "0.0000001", completion: "0.0000002" },
+        provider_name: `Host${i}`,
+        status: e.status,
+        uptime_last_30m: e.status === 0 ? 100 : 50,
+        safety_retention: false,
+      }));
+      return res(200, { data });
+    }
     if (path === "/keys" && method === "POST") {
       if (this.failCreates > 0) {
         this.failCreates--;
@@ -399,6 +436,11 @@ export async function call(
   });
   const response = await handleRequest(request, await world.env(opts.env), world.deps());
   return { status: response.status, body: (await response.json()) as Record<string, unknown>, headers: response.headers };
+}
+
+export async function alerts(world: FakeWorld, envOverrides: Partial<Env> = {}) {
+  const { handleAlerts } = await import("../src/index");
+  return handleAlerts(await world.env(envOverrides), world.deps());
 }
 
 export async function cron(world: FakeWorld, envOverrides: Partial<Env> = {}) {

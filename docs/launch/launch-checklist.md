@@ -177,9 +177,10 @@ Before flipping:
 
 ## 11. After launch
 
+- [x] **Email alerts** (2026-11-22, Worker version `1860c6b7`): an hourly job emails ermay12@gmail.com through Resend about low OpenRouter credits, high daily spend, the model losing its zero-data-retention hosts, the free-week cap, Play Integrity use, unacknowledged purchases, a stopped job and backend errors. A GitHub Actions watchdog (`.github/workflows/watchdog.yml`) checks from outside that the Worker and both jobs run. Details: `backend/README.md`, "Alerts".
+- [ ] Turn on Play Console's own email notifications (Settings → Notifications) for Android vitals and policy, and check that GitHub emails failed Actions runs (GitHub → Settings → Notifications → Actions).
 - [ ] Watch:
-  - the Worker's Observability tab (`trial_capacity_reached`, `exceededCpu`, `upstream_error`);
-  - OpenRouter workspace spending against its budget;
+  - `exceededCpu` in the Worker's Metrics (the alerts don't cover CPU limits);
   - Play vitals, reviews and the subscription numbers.
 - [ ] Handle data deletion requests as the privacy policy promises: find the row by order ID, delete it, and delete the key.
 - [ ] Keep `data-safety.md` and the privacy policy in step with the code. Update them when anything sent off the device changes.

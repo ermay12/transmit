@@ -19,11 +19,19 @@ export interface Env {
   INTEGRITY_MAX_AGE_SECONDS: string | number;
   CRON_SUBREQUEST_BUDGET: string | number;
   VOIDED_CHECK_INTERVAL_HOURS: string | number;
+  // alerts (src/alerts.ts)
+  ALERT_EMAIL?: string;
+  ALERT_MIN_CREDITS_USD: string | number;
+  ALERT_DAILY_SPEND_USD: string | number;
+  ALERT_INTEGRITY_CHECKS: string | number;
+  ALERT_MODEL: string;
 
   // secrets
   OPENROUTER_MANAGEMENT_KEY: string;
   GOOGLE_SERVICE_ACCOUNT_JSON: string;
   DATA_SECRET: string;
+  /** Resend API key for alert emails; without it, alerts are only logged. */
+  RESEND_API_KEY?: string;
 }
 
 export interface Config {
@@ -77,6 +85,31 @@ export function loadConfig(env: Env): Config {
     integrityMaxAgeMs: num("INTEGRITY_MAX_AGE_SECONDS", env.INTEGRITY_MAX_AGE_SECONDS, { min: 1, max: 86_400 }) * 1000,
     cronSubrequestBudget: num("CRON_SUBREQUEST_BUDGET", env.CRON_SUBREQUEST_BUDGET, { min: 10, max: 1000 }),
     voidedCheckIntervalMs: num("VOIDED_CHECK_INTERVAL_HOURS", env.VOIDED_CHECK_INTERVAL_HOURS, { min: 1, max: 24 * 7 }) * 3_600_000,
+  };
+}
+
+export interface AlertConfig {
+  /** Where alerts go; with Resend's test sender, it must be the Resend account's own address. */
+  email: string | null;
+  resendKey: string | null;
+  /** Alert when OpenRouter's balance is below this. */
+  minCreditsUsd: number;
+  /** Alert when OpenRouter's spend since the UTC day began is above this. */
+  dailySpendUsd: number;
+  /** Alert when /v1/trial calls today (each can cost a Play Integrity check) reach this. */
+  integrityChecks: number;
+  /** The model the Transmit Customers workspace allows, checked for a working zero-data-retention host. */
+  model: string;
+}
+
+export function loadAlertConfig(env: Env): AlertConfig {
+  return {
+    email: env.ALERT_EMAIL?.trim() || null,
+    resendKey: env.RESEND_API_KEY?.trim() || null,
+    minCreditsUsd: num("ALERT_MIN_CREDITS_USD", env.ALERT_MIN_CREDITS_USD, { max: 100_000 }),
+    dailySpendUsd: num("ALERT_DAILY_SPEND_USD", env.ALERT_DAILY_SPEND_USD, { max: 100_000 }),
+    integrityChecks: num("ALERT_INTEGRITY_CHECKS", env.ALERT_INTEGRITY_CHECKS, { min: 1, max: 10_000_000 }),
+    model: str("ALERT_MODEL", env.ALERT_MODEL),
   };
 }
 

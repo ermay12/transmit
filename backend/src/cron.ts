@@ -12,6 +12,7 @@
 // It also clears stale locks and the per-network trial counts of past days, and
 // shares a fresh Google token with the request isolates (shared-token.ts).
 
+import { eventStatement, JOB_RUN_ROW } from "./alerts";
 import type { Ctx } from "./context";
 import { decrypt, keyedHash } from "./crypto";
 import { putSubscription, type SubscriptionRow, utcDay } from "./db";
@@ -71,6 +72,14 @@ export interface CronReport {
   trialKeysDeleted: number;
   subscriptionsDeleted: number;
   errors: number;
+  /** The latest failed step, for the alert job. */
+  lastError?: string;
+}
+
+function fail(report: CronReport, event: string, err: unknown): void {
+  report.errors++;
+  report.lastError = `${event}: ${String(err)}`.slice(0, 300);
+  log(event, { error: String(err) });
 }
 
 const DAY = 86_400_000;
@@ -135,34 +144,29 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
     };
     await adoptSharedToken(ctx, reads.state.get(SHARED_TOKEN_ROW));
   } catch (err) {
-    report.errors++;
-    log("cron_read_failed", { error: String(err) });
+    fail(report, "cron_read_failed", err);
   }
 
   if (reads) {
     try {
       await scanVoided(ctx, budget, now, reads.state.get("voided"), writes, report, touched);
     } catch (err) {
-      report.errors++;
-      log("cron_voided_failed", { error: String(err) });
+      fail(report, "cron_voided_failed", err);
     }
     try {
       await recheckDue(ctx, budget, now, reads.due, writes, report, touched);
     } catch (err) {
-      report.errors++;
-      log("cron_recheck_failed", { error: String(err) });
+      fail(report, "cron_recheck_failed", err);
     }
     try {
       await deleteExpiredTrialKeys(ctx, budget, now, reads.trials, writes, report);
     } catch (err) {
-      report.errors++;
-      log("cron_trials_failed", { error: String(err) });
+      fail(report, "cron_trials_failed", err);
     }
     try {
       await purgeEndedSubscriptions(ctx, budget, reads.ended, writes, report, touched);
     } catch (err) {
-      report.errors++;
-      log("cron_purge_failed", { error: String(err) });
+      fail(report, "cron_purge_failed", err);
     }
   }
 
@@ -170,6 +174,9 @@ export async function runScheduled(ctx: Ctx, budget: Budget): Promise<CronReport
   writes.push(ctx.db.prepare("DELETE FROM locks WHERE until < ?1").bind(now));
   // The daily trial limit only reads today's counts; earlier days go at the first run after UTC midnight.
   writes.push(ctx.db.prepare("DELETE FROM trial_calls WHERE day < ?1").bind(utcDay(now)));
+  // For the alert job: when this job last finished, and a run with failed steps.
+  writes.push(ctx.db.prepare("INSERT INTO job_state (name, value) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET value = excluded.value").bind(JOB_RUN_ROW, String(now)));
+  if (report.errors) writes.push(eventStatement(ctx.db, "job_error", report.lastError ?? "", now));
   budget.spend();
   await ctx.db.batch(writes);
   report.subrequests = budget.used;
@@ -315,8 +322,7 @@ async function recheckDue(
       report.outcomes.push(outcome);
     } catch (err) {
       // Push it back an hour so one broken row can't use up every run.
-      report.errors++;
-      log("cron_recheck_row_failed", { error: String(err) });
+      fail(report, "cron_recheck_row_failed", err);
       writes.push(putSubscription(ctx.db, { ...row, next_check_at: now + 3_600_000, updated_at: now }, row.updated_at));
     }
   }

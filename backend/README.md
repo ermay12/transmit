@@ -16,6 +16,7 @@ service at [`/terms`](https://transmit.ermay12.workers.dev/terms).
 | `src/trial.ts` | `POST /v1/trial`: Play Integrity check, one trial per ANDROID_ID, daily cap |
 | `src/subscription.ts` | `POST /v1/subscription` and the per-purchase re-check, including plan changes (upgrade, DEFERRED switch to Transmit) |
 | `src/cron.ts` | Job every 10 minutes: refunds, renewals and lapses, expired trial keys, retention (ended subscriptions, past days' network counts) |
+| `src/alerts.ts` | Hourly alert job: emails the developer through Resend (see [Alerts](#alerts)) |
 | `src/google.ts`, `src/openrouter.ts` | API clients |
 | `src/shared-token.ts` | Shares the Google access token between isolates through D1 |
 | `src/ratelimit.ts` | Per-network call limits (Workers Rate Limiting binding), keyed by a daily keyed hash of the network |
@@ -41,6 +42,8 @@ How long:
 | `trial_calls` | Until the first job run after UTC midnight |
 | `trial_days` | For good (daily totals, nothing per device) |
 | `locks`, `job_state` | Leases expire in 30 s; job state is overwritten |
+| `alert_events` | Error counts per hour, for a day |
+| `alerts_sent` | Until the alert clears (error alerts: a day after their last email) |
 
 ## Privacy: IP addresses and logs
 
@@ -113,6 +116,11 @@ and run `npm run deploy`.
 | `CRON_SUBREQUEST_BUDGET` | `10` | Fetches + D1 calls per job run. Set by CPU (about 0.5 ms each), not by the Free plan's 50 |
 | `VOIDED_CHECK_INTERVAL_HOURS` | `24` | How often the job scans voided purchases |
 | `PACKAGE_NAME`, `OPENROUTER_WORKSPACE_ID`, `KEY_NAME_PREFIX` | | App package, the "Transmit Customers" workspace, key name prefix (`transmit`) |
+| `ALERT_EMAIL` | `ermay12@gmail.com` | Where alerts go. Resend's test sender only delivers to the Resend account's own address |
+| `ALERT_MIN_CREDITS_USD` | `25` | Alert when the OpenRouter balance is below this |
+| `ALERT_DAILY_SPEND_USD` | `70` | Alert when OpenRouter spend since the day's first check (UTC) is above this |
+| `ALERT_INTEGRITY_CHECKS` | `7000` | Alert when today's `/v1/trial` calls reach this (Google allows 10,000 Integrity checks a day) |
+| `ALERT_MODEL` | `google/gemma-4-31b-it` | The model the workspace allows; the alert job checks it has a working zero-data-retention host |
 
 The per-minute limits are the `ratelimits` bindings in `wrangler.jsonc`:
 `TRIAL_RATE_LIMIT` (10 calls a minute per network) and `SUBSCRIPTION_RATE_LIMIT`
@@ -128,6 +136,7 @@ cd backend
 set -a; . ~/.config/transmit/cloudflare.env; set +a
 ( set -a; . ~/.config/transmit/openrouter.env; set +a; printf '%s' "$OPENROUTER_MANAGEMENT_KEY" | npx wrangler secret put OPENROUTER_MANAGEMENT_KEY )
 ( set -a; . ~/.config/transmit/worker.env; set +a; printf '%s' "$TRANSMIT_DATA_SECRET" | npx wrangler secret put DATA_SECRET )
+( set -a; . ~/.config/transmit/resend.env; set +a; printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY )
 python3 -c 'import json,os,sys; sys.stdout.write(json.dumps(json.load(open(os.path.expanduser("~/.config/transmit/play-service-account.json")))))' \
   | npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
 ```
@@ -136,6 +145,7 @@ python3 -c 'import json,os,sys; sys.stdout.write(json.dumps(json.load(open(os.pa
 | --- | --- |
 | `OPENROUTER_MANAGEMENT_KEY` | `openrouter.env`. Swap in a key scoped to the Transmit Customers workspace when you make one, then run the first command again |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | `play-service-account.json` (`transmit-backend@transmit-515111`) |
+| `RESEND_API_KEY` | `resend.env`: a Resend key with sending access, on the account of `ALERT_EMAIL`. Without it, alerts are only logged (`alert_not_sent`) |
 | `DATA_SECRET` | `worker.env`, generated at first deploy. **Back it up.** Without it the stored hashes and tokens are useless: every device could start a new trial and the job could no longer re-check purchases. Don't rotate it |
 
 ## Deploy
@@ -153,7 +163,49 @@ npx wrangler deploy
 ```
 
 Check it: `curl https://transmit.ermay12.workers.dev/v1/health`, and open
-`https://transmit.ermay12.workers.dev/privacy` and `/terms`.
+`https://transmit.ermay12.workers.dev/privacy` and `/terms`. `/v1/health/jobs`
+should return 200 within an hour (the alert job runs at minute 7).
+
+## Alerts
+
+An hourly job (`src/alerts.ts`, cron `7 * * * *`) emails `ALERT_EMAIL` through
+[Resend](https://resend.com), from Resend's test sender `onboarding@resend.dev`,
+so no domain is needed. Live since 2026-11-22. It sends one email per run at
+most, with every problem that's new, still happening, or resolved, and the
+status (balance, today's spend, free weeks, model hosts). The first run with
+working email sends "Transmit alerts are on".
+
+| Alert | Fires when | Why it matters |
+| --- | --- | --- |
+| OpenRouter credits are low | Balance under `ALERT_MIN_CREDITS_USD` | At $0, the free week and both plans stop translating |
+| AI spend is high today | Spend since the day's first check (UTC) over `ALERT_DAILY_SPEND_USD` (the whole account) | Abuse, or costs heading for the workspace's daily budget |
+| The app's AI model has no working host | No zero-data-retention host for `ALERT_MODEL` with status 0 | The workspace's guardrail only allows those hosts |
+| The alert job can't read OpenRouter | `/credits` or `/endpoints/zdr` fails 2 runs in a row | The checks above aren't running |
+| Today's free weeks are used up | Less than one trial's allowance left under `TRIAL_DAILY_BUDGET_USD` | New free weeks are refused until midnight UTC |
+| Play Integrity checks are near Google's daily limit | Today's `/v1/trial` calls reach `ALERT_INTEGRITY_CHECKS` | Past 10,000, new free weeks fail |
+| Purchases aren't being acknowledged | An entitled purchase unacknowledged after a day | Google refunds it after 3 days |
+| The scheduled job has stopped | The main job last finished over 30 minutes ago | Renewals, refunds and expired keys wait |
+| The backend has internal errors | Any `internal_error` | A bug |
+| Calls to Google Play or OpenRouter are failing | 5 `upstream_error`s in one hour | Free weeks and purchases can't be checked |
+| The scheduled job is hitting errors | 2 main-job runs with failed steps in one hour | See `cron_*_failed` in the logs |
+
+- **Repeats:** a lasting problem is emailed again every 24 hours, and once
+  more when it clears. Error alerts go out at most every 6 hours, counting
+  everything since the last one, and don't send "resolved".
+- **Errors are counted** in `alert_events` as they happen (`recordEvent()` in
+  the request error path; the main job adds one per run with failed steps to its
+  write batch). The alert job reads each complete hour once.
+- **If an email can't be sent** (Resend down, or the secret missing), nothing
+  is marked, and the next run sends it.
+- **Cost:** one D1 read, two OpenRouter reads (the ZDR list is over 1 MB, so it's
+  scanned as text, about 1 ms of CPU), at most one email, one D1 write.
+- **From outside:** `.github/workflows/watchdog.yml` calls `GET /v1/health/jobs`
+  every hour at minute 37. It returns 503 when the main job hasn't finished in
+  30 minutes or the alert job in 150, and the failed run is emailed by GitHub.
+  That covers the Worker being down and the alert job's own trigger stopping.
+  GitHub turns schedules off in public repos after 60 days without activity.
+- **Privacy:** alert emails hold counts and error messages, as the logs do: no
+  keys, tokens, device IDs or IP addresses.
 
 ## Tests
 
@@ -196,6 +248,7 @@ If `npm install` fails with "Cannot read properties of null (reading
   on a cold isolate (up to 19 ms). Every call succeeded. If Metrics shows
   CPU-limit errors (`exceededCpu`, error 1102), lower `CRON_SUBREQUEST_BUDGET` (job) or
   move to the paid plan ($5/month, 30 s of CPU).
+- **Alerts:** see [Alerts](#alerts).
 - **Keys** are named `transmit-trial-<id>` and `transmit-sub-<id>` and live in
   the Transmit Customers workspace. The Worker only touches keys it created.
 - **Trial abuse:** watch `trial_capacity_reached` lines; if the cap fills every

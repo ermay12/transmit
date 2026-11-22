@@ -1,6 +1,7 @@
 // Transmit backend: trial keys, Play subscription keys, and the job that keeps
 // them in step with Google Play. See API.md for the contract with the app.
 
+import { ALERT_CRON, JOB_RUN_ROW, recordEvent, runAlerts, type AlertReport } from "./alerts";
 import { type Env, loadConfig } from "./config";
 import { makeCtx, defaultDeps, type Deps } from "./context";
 import { Budget, runScheduled, type CronReport } from "./cron";
@@ -23,10 +24,15 @@ export async function handleRequest(request: Request, env: Env, deps: Deps): Pro
     return head ? new Response(null, response) : response;
   } catch (err) {
     if (err instanceof ApiError) {
-      if (err.code === "upstream_error") log("upstream_error", { path: pathname, message: err.message });
+      if (err.code === "upstream_error") {
+        log("upstream_error", { path: pathname, message: err.message });
+        await recordEvent(env.DB, "upstream_error", `${pathname}: ${err.message}`, deps.now());
+      }
       return errorResponse(err);
     }
-    log("internal_error", { path: pathname, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
+    const error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    log("internal_error", { path: pathname, error });
+    await recordEvent(env.DB, "internal_error", `${pathname}: ${error}`, deps.now());
     return errorResponse(new ApiError("internal_error", "Something went wrong on our side."));
   }
 }
@@ -45,6 +51,8 @@ const ROUTES: Record<string, Record<string, Handler>> = {
   "/privacy": { GET: async () => html(PRIVACY_HTML) },
   "/terms": { GET: async () => html(TERMS_HTML) },
   "/v1/health": { GET: async () => json({ ok: true }) },
+  // For the outside watchdog (.github/workflows/watchdog.yml): 503 when a scheduled job hasn't run lately.
+  "/v1/health/jobs": { GET: async (_req, env, deps) => jobsHealth(env, deps.now()) },
   "/v1/trial": {
     POST: async (req, env, deps) => {
       const net = await network(req, env, deps);
@@ -60,6 +68,24 @@ const ROUTES: Record<string, Record<string, Handler>> = {
   },
 };
 
+/** The main job runs every 10 minutes and the alert job hourly; older than these, something is wrong. */
+const JOB_MAX_AGE_MS = 30 * 60_000;
+const ALERTS_MAX_AGE_MS = 150 * 60_000;
+
+async function jobsHealth(env: Env, now: number): Promise<Response> {
+  const rows = await env.DB.prepare("SELECT name, value FROM job_state WHERE name IN (?1, 'alerts')").bind(JOB_RUN_ROW).all<{ name: string; value: string }>();
+  const values = new Map(rows.results.map((r) => [r.name, r.value]));
+  const job = values.has(JOB_RUN_ROW) ? Number(values.get(JOB_RUN_ROW)) : undefined;
+  const alerts = values.has("alerts") ? (JSON.parse(values.get("alerts")!) as { lastRun?: number }).lastRun : undefined;
+  const minutes = (t: number | undefined) => (t === undefined ? null : Math.round((now - t) / 60_000));
+  const ok = job !== undefined && now - job <= JOB_MAX_AGE_MS && alerts !== undefined && now - alerts <= ALERTS_MAX_AGE_MS;
+  return json({ ok, jobMinutesAgo: minutes(job), alertsMinutesAgo: minutes(alerts) }, ok ? 200 : 503);
+}
+
+export async function handleAlerts(env: Env, deps: Deps): Promise<AlertReport> {
+  return runAlerts(env, deps);
+}
+
 export async function handleScheduled(env: Env, deps: Deps): Promise<CronReport> {
   const budget = new Budget(loadConfig(env).cronSubrequestBudget);
   const ctx = await makeCtx(env, { ...deps, fetch: budget.wrap(deps.fetch) });
@@ -70,7 +96,8 @@ export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleRequest(request, env, defaultDeps());
   },
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await handleScheduled(env, defaultDeps());
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (controller.cron === ALERT_CRON) await handleAlerts(env, defaultDeps());
+    else await handleScheduled(env, defaultDeps());
   },
 } satisfies ExportedHandler<Env>;

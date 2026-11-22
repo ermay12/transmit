@@ -1,0 +1,26 @@
+# Checks from outside Cloudflare that the backend answers and that its scheduled jobs are running:
+# the main job (every 10 minutes) and the alert job (hourly, src/alerts.ts). The alert job emails
+# about everything else, but it can't report the Worker itself being down or its own trigger stopping.
+# A failed run here is emailed by GitHub (Settings → Notifications → Actions: failed workflows).
+#
+# The response holds only how many minutes ago each job ran. GitHub turns off schedules in public repos
+# after 60 days without activity; re-enable it on the Actions tab if that happens.
+name: Watchdog
+
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Backend and its scheduled jobs
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            --retry 3 --retry-delay 30 --retry-all-errors \
+            https://transmit.ermay12.workers.dev/v1/health/jobs

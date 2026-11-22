@@ -16,6 +16,7 @@ export default defineConfig(async () => {
             DATA_SECRET: "test-data-secret-0123456789abcdef0123456789abcdef",
             OPENROUTER_MANAGEMENT_KEY: "test-management-key",
             GOOGLE_SERVICE_ACCOUNT_JSON: "{}",
+            RESEND_API_KEY: "test-resend-key",
           },
         },
       }),
