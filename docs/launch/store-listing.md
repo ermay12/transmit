@@ -132,26 +132,26 @@ Decided by the developer on 2026-11-19: Transmit is published from the existing 
 
 ## Graphics
 
-Made on 2026-11-20 and kept in [`store-assets/`](store-assets/README.md), which lists every file with its size and what to review.
+Remade on 2026-11-21 and kept in [`store-assets/`](store-assets/README.md), which lists every file and what to review. The whole set makes two points: Transmit works in your real SMS and RCS chats, and the people you text just see normal messages in their usual language. Captions name the languages ("Spanish", "English") rather than "practice language" or "native language", which read as jargon.
 
 - **App icon:** [`store-assets/icon-512.png`](store-assets/icon-512.png), 512 × 512 32-bit PNG, rendered from the adaptive launcher icon (`ic_launcher_foreground` on `ic_bg`) as a full square; Play adds the mask and shadow. It must have no badges or "new" dots (the Metadata policy bans a "new message dot indicator when there are no new messages"). It mustn't look like the Google Messages icon (no blue speech bubble): the icon is two speech bubbles on blue, so this is on the review list in the README.
-- **Feature graphic:** [`store-assets/feature-graphic-1024x500.png`](store-assets/feature-graphic-1024x500.png), 1024 × 500 PNG without alpha: the icon, the name "Transmit", the line "Practice any language while texting your friends" (the short description, since 2026-11-20), and chat bubbles in Spanish and English at the edges. The icon, name and line are in the middle, so a crop of the edges loses only the bubbles. No Google marks, no "free", no prices.
-- **Phone screenshots:** seven, 1080 × 1920 PNGs, in [`store-assets/screenshots/captioned/`](store-assets/screenshots/captioned/) (captions on the brand colour; upload these) and [`store-assets/screenshots/raw/`](store-assets/screenshots/raw/). They come from the reviewer demo's sample chats on the emulator, with made-up names and no numbers or photos. Since the 2026-11-20 retake, every translation, romanization, correction and explanation in them is real output of the managed model (`google/gemma-4-31b-it`, effort Auto), not text written for the shots.
+- **Feature graphic:** [`store-assets/feature-graphic-1024x500.png`](store-assets/feature-graphic-1024x500.png), 1024 × 500 PNG without alpha: the icon, "Transmit", "Practice a language in your everyday texts" and "Your friends just see normal messages" in the middle; "You see" (Spanish) and "They see" (English) bubbles at the edges, which a crop can lose. No Google marks, no "free", no prices.
+- **Phone screenshots:** seven, 1080 × 1920 PNGs, in [`store-assets/screenshots/captioned/`](store-assets/screenshots/captioned/) (upload these, in order) and [`store-assets/screenshots/raw/`](store-assets/screenshots/raw/). They come from the reviewer demo's sample chats on the emulator, with made-up names, and every translation, romanization, correction and explanation is real output of the managed model. `store-assets/make.py` re-renders them after a caption change.
 
 ## Screenshot captions
 
-| # | Screen to capture | Caption | Characters |
+| # | Screen | Caption | Subline |
 | --- | --- | --- | --- |
-| 1 | A chat with translated incoming bubbles | Messages from friends, in the language you're practicing | 56 |
-| 2 | The same chat with one bubble flipped to the original | Tap any message to see the original | 35 |
-| 3 | The composer with both language boxes filled | Reply in your practice language. They get it in yours. | 54 |
-| 4 | The Check my translation sheet with a diff | Check my translation: corrections and a natural version | 55 |
-| 5 | The Explain sheet | Explain: grammar, idioms and slang, phrase by phrase | 52 |
-| 6 | A Chinese or Japanese chat with pinyin or romaji under the characters | Pinyin and romaji, the way you like to read | 43 |
-| 7 | The inbox (Home), with made-up contacts and a few chats | Practice in the chats you already have | 38 |
-| 8 | Onboarding step 3, or the Plans screen | Start with a free week. No card needed. | 39 |
+| 1 | What you see (Kyle's chat in Spanish) above what Kyle sees (the same texts in English, in a generic messaging screen) | You text in Spanish. They see English. | Kyle gets ordinary texts. No app needed. |
+| 2 | The inbox | Your real texts, SMS and RCS | Same number, same chats. Your friends don't install anything. |
+| 3 | A message tapped to show the original | Read every text in Spanish | Stuck? Tap to see what they actually wrote. |
+| 4 | The composer: Spanish typed, the English prepared | Reply in Spanish | See the English Kyle will get before you send. |
+| 5 | Check my translation | Get corrected before you hit send | Fixes your mistakes and says why. |
+| 6 | The Explain sheet | Understand the grammar, idioms and slang | Tap Explain on any message. |
+| 7 | Kyle's Spanish chat and Rachel's Japanese chat, with romaji | Spanish with Kyle, Japanese with Rachel | Pick a language for each chat. |
 
-- Caption 7 was "Works with Google Messages on your phone" (40), over onboarding step 2, until 2026-11-20. That screen was half empty, so product swapped it for the inbox and a caption that names no brand. Keep every screenshot free of Google's logo and the Messages icon.
-- Caption 8 is promotional. Play's price and promotion ban names the title, icon and developer name, not screenshots, but drop this one if a reviewer objects. **It was dropped from the 2026-11-20 set**, which uses captions 1 to 7.
-- Files: caption *n* is `store-assets/screenshots/captioned/0n-*.png`. Caption 6 is the light theme only (`06-romaji.png`); the dark version was dropped on 2026-11-20.
-- Screenshots of the Plans screen will show the prices of the account they were taken on.
+- The first three carry the message, since most people don't scroll further.
+- Shot 1's second screen is a mockup of the friend's phone, labelled "What Kyle sees". It must keep looking like neither Google Messages nor iMessage.
+- For a listing in another language, swap "English" for that country's language and re-render with `make.py`.
+- The free-week caption ("Start with a free week. No card needed.") stays out: it's promotional.
+- The full description still says "practice language" in a few places. Align it with these captions once they're settled.
