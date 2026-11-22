@@ -172,6 +172,7 @@ Before flipping:
 ## 10. Apply for production, then release (you)
 
 - [ ] Dashboard → **Apply for production**. Answer the three sections: about your closed test, about your app, and about your production readiness. "Review usually takes seven days or less."
+- [x] 1.0.0-beta18 (181) was approved for production on 2026-11-22. 1.0.0 (187, the same code relabelled) was uploaded to production the same day and is in review.
 - [ ] After approval, create the production release from the tested bundle. Use a **staged rollout** (for example 10–20%), and add release notes.
 - [ ] The production release goes through app review. App access (step 5) and Device and Network Abuse are the likely sticking points.
 
