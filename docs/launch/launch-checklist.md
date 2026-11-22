@@ -60,6 +60,7 @@ The closed track is reviewed against the same policies as production, so fix the
     - Passed on your Pixel (Nov 21, beta16 from Play, after clearing Transmit's data and pairing again). A recorder on the phone logged Transmit's windows about 7 times a second, without screenshots. A text arrived while Home was open: no tip. Tapping its notification opened the chat with no flash. Back to Home: the tip, once. Its button opened Incoming messages (already off), Back returned to Transmit with no tip, and Settings → Messages → Double notifications reopened it; Not now closed it. No crashes. A half-second second window that came when a later notification brought Transmit back was Android's splash screen (`APPLICATION_STARTING`), not the tip.
     - Not changed: it shows again after a reinstall even if the switch is already off (apps can't read another app's channels), and the Settings row shows while unpaired and in the demo.
 16. [ ] Set `versionName` to `1.0.0` for the production build.
+17. [x] **(code)** Japanese, Chinese or Korean text with an emoji (for example "住所送るね📍") showed as a big, bubble-less emoji with no romaji, because `Reactions.isEmoji` only counted letters below U+2000 as text. Found while retaking the store screenshots (Nov 21) and fixed in 67e41bf, with a test (351 tests pass). It isn't in a Play build yet: it ships with the next beta.
 
 ## 3. Host the privacy policy (you + code)
 
@@ -103,7 +104,7 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 - [ ] Financial features: "My app doesn't provide any financial features."
 - [ ] Health (if shown), Government, News: no.
 - [ ] Foreground service declaration: remote messaging, with a video (§7). Record it during the internal test.
-- [ ] Store listing (`store-listing.md`): name, short and full description, the 512 px icon, the 1024 × 500 feature graphic, 2–8 phone screenshots, category Communication, tags, contact email.
+- [x] Store listing (`store-listing.md`): name, short and full description, the 512 px icon, the 1024 × 500 feature graphic, 2–8 phone screenshots, category Communication, tags, contact email. Updated by the developer on 2026-11-21 with the graphics remade that day (51e1580, `store-assets/README.md`).
 - [ ] Countries and regions. Match the 174 regions the subscriptions are on, or start smaller.
 
 ## 6. Internal test (you + me)
