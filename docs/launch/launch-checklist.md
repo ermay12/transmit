@@ -98,12 +98,12 @@ You can do this alongside step 6. It must all be done before the closed-test rel
 - [x] Privacy policy URL (2026-11-20).
 - [x] App access (2026-11-20): the instructions, the review OpenRouter key (`transmit-review`, $3 limit, in the Transmit Customers workspace) — the key itself was created 2026-11-21; re-paste the text from `~/.config/transmit/app-access-text.txt`, which adds it, and the video link (`content-rating-and-declarations.md` §4).
 - [x] Ads: No. Advertising ID: No. (2026-11-20)
-- [ ] Content rating (IARC questionnaire, §1).
-- [ ] Target audience and content (§2).
-- [ ] Data safety (`data-safety.md`). Keep it consistent with the privacy policy.
-- [ ] Financial features: "My app doesn't provide any financial features."
-- [ ] Health (if shown), Government, News: no.
-- [ ] Foreground service declaration: remote messaging, with a video (§7). Record it during the internal test.
+- [x] Content rating (IARC questionnaire, §1). Done by the developer (2026-11-21).
+- [x] Target audience and content (§2). Done by the developer (2026-11-21).
+- [x] Data safety (`data-safety.md`). Keep it consistent with the privacy policy. Done by the developer (2026-11-21).
+- [x] Financial features: "My app doesn't provide any financial features." Done by the developer (2026-11-21).
+- [x] Health (if shown), Government, News: no. Done by the developer (2026-11-21).
+- [ ] Foreground service declaration: remote messaging, with a video (§7). Record it during the internal test. Required: Google's page says apps targeting Android 14+ "need to declare any foreground service types that you use in a new declaration on the App content page", and remote messaging is one of the listed types. The developer hadn't seen the form on App content as of 2026-11-21.
 - [x] Store listing (`store-listing.md`): name, short and full description, the 512 px icon, the 1024 × 500 feature graphic, 2–8 phone screenshots, category Communication, tags, contact email. Updated by the developer on 2026-11-21 with the graphics remade that day (51e1580, `store-assets/README.md`).
 - [ ] Countries and regions. Match the 174 regions the subscriptions are on, or start smaller.
 
