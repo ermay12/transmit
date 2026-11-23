@@ -2,8 +2,10 @@ package app.transmit.ai
 
 import app.transmit.data.Languages
 import app.transmit.data.Level
+import app.transmit.data.ModelSlot
 import app.transmit.data.Romanization
 import app.transmit.data.ScriptDisplay
+import app.transmit.data.StartingModels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,6 +90,30 @@ class PromptsTest {
         assertEquals(0.25, Pricing.builtIn(ProviderType.OPENAI, "gpt-5-mini-2025-08-07")!!.inputPerM, 1e-9)
         assertEquals(null, Pricing.builtIn(ProviderType.OPENROUTER, "anything"))
         assertEquals(0.000024, Price(4.0, 20.0).cost(1, 1), 1e-12)
+        // Newer models get their own price, not an older family's through the prefix match.
+        assertEquals(Price(8.0, 40.0), Pricing.builtIn(ProviderType.ANTHROPIC, "claude-fable-5-2"))
+        assertEquals(0.10, Pricing.builtIn(ProviderType.OPENAI, "gpt-6-luna")!!.inputPerM, 1e-9)
+        assertEquals(0.75, Pricing.builtIn(ProviderType.OPENAI, "gpt-5.4-mini-2026-03-17")!!.inputPerM, 1e-9)
+        assertEquals(0.25, Pricing.builtIn(ProviderType.GEMINI, "gemini-3.1-flash-lite")!!.inputPerM, 1e-9)
+        assertEquals(0.30, Pricing.builtIn(ProviderType.GEMINI, "models/gemini-3.5-flash-lite")!!.inputPerM, 1e-9)
+    }
+
+    @Test
+    fun everyStartingModelHasABuiltInPrice() {
+        for (p in listOf(ProviderType.ANTHROPIC, ProviderType.OPENAI, ProviderType.GEMINI)) {
+            for (slot in ModelSlot.entries) {
+                StartingModels.candidates(p, slot).forEach { assertTrue("$p $it", Pricing.builtIn(p, it) != null) }
+            }
+        }
+    }
+
+    @Test
+    fun startingModelFallsBackToOneTheKeyCanSee() {
+        val gemini = setOf("gemini-3.5-flash-lite", "gemini-3.6-flash")
+        assertEquals("gemini-3.5-flash-lite", StartingModels.pick(ProviderType.GEMINI, ModelSlot.TRANSLATE, gemini))
+        assertEquals("gemini-3.6-flash", StartingModels.pick(ProviderType.GEMINI, ModelSlot.TUTOR, gemini))
+        assertEquals(null, StartingModels.pick(ProviderType.OPENAI, ModelSlot.TRANSLATE, setOf("gpt-4o")))
+        assertEquals("claude-haiku-5-5", StartingModels.candidates(ProviderType.ANTHROPIC, ModelSlot.TRANSLATE).first())
     }
 
     @Test
@@ -97,6 +123,30 @@ class PromptsTest {
         assertTrue(!OpenAiCompatClient.isOpenAiChatModel("gpt-4o-realtime-preview"))
         assertTrue(!OpenAiCompatClient.isOpenAiChatModel("text-embedding-3-small"))
         assertEquals(listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH), OpenAiCompatClient.openAiEfforts("o3"))
+        // Responses-only and trusted-access models fail on chat completions.
+        assertTrue(!OpenAiCompatClient.isOpenAiChatModel("gpt-5-pro"))
+        assertTrue(!OpenAiCompatClient.isOpenAiChatModel("gpt-6.1-terra-pro"))
+        assertTrue(!OpenAiCompatClient.isOpenAiChatModel("gpt-6-cyber"))
+        assertTrue(OpenAiCompatClient.isOpenAiChatModel("gpt-6-luna"))
+        val all = listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+        assertEquals(listOf(Effort.NONE) + all, OpenAiCompatClient.openAiEfforts("gpt-6-luna"))
+        assertEquals(all, OpenAiCompatClient.openAiEfforts("gpt-6.2-sol"))
+    }
+
+    @Test
+    fun geminiThinkingLevels() {
+        val levels = listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH)
+        assertEquals(listOf(Effort.MINIMAL) + levels, GeminiClient.geminiEfforts("gemini-3.1-flash-lite"))
+        assertEquals(levels, GeminiClient.geminiEfforts("gemini-3.8-flash"))
+        assertEquals(levels, GeminiClient.geminiEfforts("gemini-3.1-pro-preview"))
+        assertEquals(levels, GeminiClient.geminiEfforts("gemini-4-hydrogen"))
+        assertEquals(listOf(Effort.NONE) + levels, GeminiClient.geminiEfforts("gemini-2.5-flash-lite"))
+        fun level(model: String, e: Effort) = GeminiClient.thinkingConfig(model, e)?.get("thinkingLevel")?.toString()?.trim('"')
+        assertEquals("minimal", level("gemini-3.1-flash-lite", Effort.MINIMAL))
+        assertEquals("medium", level("gemini-3.8-flash", Effort.MEDIUM))
+        assertEquals("high", level("gemini-4-hydrogen", Effort.XHIGH))
+        assertEquals(null, GeminiClient.thinkingConfig("gemini-3.8-flash", Effort.DEFAULT))
+        assertEquals("1024", GeminiClient.thinkingConfig("gemini-2.5-flash-lite", Effort.LOW)?.get("thinkingBudget")?.toString())
     }
 
     @Test

@@ -84,6 +84,28 @@ data class AppSettings(
     fun romanizesAutomatically(lang: Language): Boolean = scriptDisplay(lang).let { it != null && it != ScriptDisplay.CHARACTERS }
 }
 
+/**
+ * Starting models per provider and slot, best first; the user can pick any listed model. The first is the default.
+ * Translation runs on every message, so it starts on a fast, cheap model; the tutor on a stronger one.
+ */
+object StartingModels {
+    fun candidates(provider: ProviderType, slot: ModelSlot): List<String> = when (provider) {
+        ProviderType.ANTHROPIC ->
+            if (slot == ModelSlot.TRANSLATE) listOf("claude-haiku-5-5", "claude-sonnet-5-5") else listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5")
+        ProviderType.OPENAI ->
+            if (slot == ModelSlot.TRANSLATE) listOf("gpt-6-luna", "gpt-6.1-terra", "gpt-5.4-nano") else listOf("gpt-6.2-sol", "gpt-6.1-sol", "gpt-5.4")
+        ProviderType.GEMINI ->
+            if (slot == ModelSlot.TRANSLATE) listOf("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite")
+            else listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
+        ProviderType.OPENROUTER -> listOf("google/gemma-4-31b-it")
+        ProviderType.CUSTOM -> emptyList()
+    }
+
+    /** The first starting model among [available], if any. */
+    fun pick(provider: ProviderType, slot: ModelSlot, available: Set<String>): String? =
+        candidates(provider, slot).firstOrNull { it in available }
+}
+
 class SettingsRepository(private val context: Context) {
     private object K {
         val onboarded = booleanPreferencesKey("onboarded")
@@ -168,13 +190,19 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
-    /** Sensible starting models per provider; the user can pick any listed model. */
-    private fun defaultModel(provider: ProviderType, slot: ModelSlot): String? = when (provider) {
-        ProviderType.ANTHROPIC -> "claude-opus-5-5"
-        ProviderType.OPENAI -> if (slot == ModelSlot.TRANSLATE) "gpt-5-mini" else "gpt-5"
-        ProviderType.GEMINI -> if (slot == ModelSlot.TRANSLATE) "gemini-2.5-flash" else "gemini-2.5-pro"
-        ProviderType.OPENROUTER -> "google/gemma-4-31b-it"
-        ProviderType.CUSTOM -> null
+    private fun defaultModel(provider: ProviderType, slot: ModelSlot): String? = StartingModels.candidates(provider, slot).firstOrNull()
+
+    /**
+     * After a key is saved: for each slot the user hasn't picked a model for, if the key can't see the default (retired,
+     * or not offered to new accounts), the first starting model it can see. A model the user picked is never changed.
+     */
+    suspend fun pickStartingModels(provider: ProviderType, available: Set<String>) = edit { p ->
+        for (slot in ModelSlot.entries) {
+            if (p[K.model(provider, slot)] != null) continue
+            val default = defaultModel(provider, slot) ?: continue
+            if (default in available) continue
+            StartingModels.pick(provider, slot, available)?.let { p[K.model(provider, slot)] = it }
+        }
     }
 
     private suspend fun edit(block: (MutablePreferences) -> Unit) {

@@ -139,7 +139,7 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
             try {
                 val n = c.ai.testKey(p, trimmed)
                 c.ai.setApiKey(p, trimmed)
-                c.ai.listModels(p)
+                c.settings.pickStartingModels(p, c.ai.listModels(p).mapTo(HashSet()) { it.id })
                 keyCheck.value = KeyCheck.Ok(n)
                 onSaved()
             } catch (e: AiException) {

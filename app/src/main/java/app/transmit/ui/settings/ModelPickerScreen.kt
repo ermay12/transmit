@@ -55,6 +55,7 @@ import app.transmit.ai.Price
 import app.transmit.ai.Pricing
 import app.transmit.ai.usd
 import app.transmit.data.ModelSlot
+import app.transmit.ui.theme.LocalTransmitColors
 
 /** Typical tokens per call, used to show an intuitive per-message price. */
 private fun perCall(slot: ModelSlot) = if (slot == ModelSlot.TRANSLATE) 350L to 80L else 900L to 600L
@@ -101,6 +102,15 @@ fun ModelPickerScreen(vm: SettingsViewModel, slot: ModelSlot, onBack: () -> Unit
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+            // Unpriced calls count as $0, so budgets never stop them.
+            val selectedPrice = selected?.let { s.priceOverride(s.provider, it) ?: selectedInfo?.price ?: Pricing.builtIn(s.provider, it) }
+            if (selected != null && selectedPrice == null && !state.loading && state.models.isNotEmpty()) {
+                Text(
+                    "No price is known for this model, so what it spends doesn't count toward your budgets. Long-press it in the list to set its price.",
+                    color = LocalTransmitColors.current.warn, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             val q = query.trim().lowercase()
             val list = state.models.filter { q.isEmpty() || it.id.lowercase().contains(q) || it.name.lowercase().contains(q) }
             LazyColumn(Modifier.fillMaxSize()) {
@@ -169,6 +179,8 @@ private fun ModelRowItem(m: ModelInfo, price: Price?, selected: Boolean, slot: M
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        } else {
+            Text("No price", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }

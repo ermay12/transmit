@@ -174,9 +174,11 @@ class OpenAiCompatClient(
             return (if (canDisable) levels + Effort.NONE else levels - Effort.NONE).distinct().sorted()
         }
 
+        /** Not chat models, or not on the chat completions API ("-pro" is Responses-only; "cyber" needs trusted access). */
         private val excluded = listOf(
             "audio", "realtime", "transcribe", "tts", "image", "search", "embedding", "instruct",
             "dall-e", "whisper", "moderation", "codex", "computer-use", "deep-research", "babbage", "davinci",
+            "-pro", "cyber",
         )
 
         fun isOpenAiChatModel(id: String): Boolean {
@@ -189,6 +191,10 @@ class OpenAiCompatClient(
             val lower = id.lowercase()
             return when {
                 Regex("^o\\d").containsMatchIn(lower) -> listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH)
+                // Luna and Terra can turn reasoning off; Sol and Astra can't.
+                lower.startsWith("gpt-6") ->
+                    (if (lower.contains("luna") || lower.contains("terra")) listOf(Effort.NONE) else emptyList()) +
+                        listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
                 lower.startsWith("gpt-5") && lower.contains("chat") -> emptyList()
                 lower.startsWith("gpt-5.") -> listOf(Effort.NONE, Effort.LOW, Effort.MEDIUM, Effort.HIGH)
                 lower.startsWith("gpt-5") -> listOf(Effort.MINIMAL, Effort.LOW, Effort.MEDIUM, Effort.HIGH)
@@ -234,6 +240,16 @@ class GeminiClient(
     }
 
     override suspend fun complete(request: CompletionRequest): CompletionResult = withContext(Dispatchers.IO) {
+        try {
+            send(request)
+        } catch (e: AiException) {
+            // A thinking level the model doesn't take (levels are inferred from its name); fall back to its default.
+            if (e.kind != AiException.Kind.BAD_REQUEST || request.effort == Effort.DEFAULT) throw e
+            send(request.copy(effort = Effort.DEFAULT))
+        }
+    }
+
+    private fun send(request: CompletionRequest): CompletionResult {
         val body = buildJsonObject {
             putJsonObject("systemInstruction") {
                 putJsonArray("parts") { add(buildJsonObject { put("text", request.system) }) }
@@ -269,7 +285,7 @@ class GeminiClient(
             .mapNotNull { it["text"].str() }
             .joinToString("")
         val usage = root["usageMetadata"].obj()
-        CompletionResult(
+        return CompletionResult(
             text = text.trim(),
             inputTokens = usage?.get("promptTokenCount").long() ?: 0,
             outputTokens = (usage?.get("candidatesTokenCount").long() ?: 0) + (usage?.get("thoughtsTokenCount").long() ?: 0),
@@ -284,17 +300,26 @@ class GeminiClient(
                 listOf("embedding", "image", "tts", "live", "audio", "robotics", "computer-use", "aqa").none { lower.contains(it) }
         }
 
+        /** Gemini 3 and later take a thinking level; 2.x a thinking budget in tokens. */
+        private fun takesThinkingLevel(id: String) = Regex("^gemini-([3-9]|\\d{2,})").containsMatchIn(id)
+
         fun geminiEfforts(id: String): List<Effort> = when {
-            id.startsWith("gemini-3") -> listOf(Effort.LOW, Effort.HIGH)
+            takesThinkingLevel(id) -> {
+                // "Minimal" is near-off thinking, the fastest. Pro, 3.8 Flash and Gemini 4 don't take it.
+                val minimal = id.startsWith("gemini-3") && !id.startsWith("gemini-3.8") && !id.contains("pro")
+                (if (minimal) listOf(Effort.MINIMAL) else emptyList()) + listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH)
+            }
             id.contains("pro") -> listOf(Effort.LOW, Effort.MEDIUM, Effort.HIGH)
             else -> listOf(Effort.NONE, Effort.LOW, Effort.MEDIUM, Effort.HIGH)
         }
 
         fun thinkingConfig(model: String, effort: Effort): JsonObject? {
             if (effort == Effort.DEFAULT) return null
-            if (model.startsWith("gemini-3")) {
+            if (takesThinkingLevel(model)) {
                 val level = when (effort) {
-                    Effort.NONE, Effort.MINIMAL, Effort.LOW -> "low"
+                    Effort.NONE, Effort.MINIMAL -> "minimal"
+                    Effort.LOW -> "low"
+                    Effort.MEDIUM -> "medium"
                     else -> "high"
                 }
                 return buildJsonObject { put("thinkingLevel", level) }

@@ -121,6 +121,6 @@ class AnthropicAiClient(apiKey: String, baseUrl: String? = null) : AiClient {
     }
 
     private companion object {
-        val SERVER_FALLBACK_MODELS = setOf("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
+        val SERVER_FALLBACK_MODELS = setOf("claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
     }
 }

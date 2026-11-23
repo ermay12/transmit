@@ -130,8 +130,11 @@ class AiService(
     }.getOrDefault(emptyList())
 
     private companion object {
-        /** Bump when cached [ModelInfo] fields change meaning (2: OpenRouter efforts from reasoning metadata). */
-        const val CACHE_VERSION = 2
+        /**
+         * Bump when cached [ModelInfo] fields change meaning (2: OpenRouter efforts from reasoning metadata; 3: Gemini 3
+         * thinking levels, GPT-6 efforts, and OpenAI's Responses-only models left out).
+         */
+        const val CACHE_VERSION = 3
         const val OPENROUTER_URL = "https://openrouter.ai/api/v1"
     }
 }

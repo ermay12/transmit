@@ -133,6 +133,19 @@ class ProviderClientsTest {
     }
 
     @Test
+    fun geminiRetriesWithoutAThinkingLevelItRejects() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"code":400,"message":"Thinking level minimal is not supported","status":"INVALID_ARGUMENT"}}"""))
+        server.enqueue(json("""{"candidates":[{"content":{"parts":[{"text":"<m id=\"1\">Hi</m>"}]},"finishReason":"STOP"}]}"""))
+        val client = GeminiClient("k", OkHttpClient(), server.url("/v1beta").toString())
+        val r = client.complete(CompletionRequest("gemini-3.1-flash-lite", "s", "p", 64, Effort.MINIMAL))
+        assertEquals("<m id=\"1\">Hi</m>", r.text)
+        val first = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject["generationConfig"]!!.jsonObject
+        assertEquals("minimal", first["thinkingConfig"]!!.jsonObject["thinkingLevel"]!!.jsonPrimitive.content)
+        val second = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject["generationConfig"]!!.jsonObject
+        assertNull(second["thinkingConfig"])
+    }
+
+    @Test
     fun geminiSafetyBlockIsARefusal() = runBlocking {
         server.enqueue(json("""{"promptFeedback":{"blockReason":"SAFETY"}}"""))
         try {
