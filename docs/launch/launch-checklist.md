@@ -180,6 +180,7 @@ Before flipping:
 
 - [ ] Dashboard → **Apply for production**. Answer the three sections: about your closed test, about your app, and about your production readiness. "Review usually takes seven days or less."
 - [x] 1.0.0-beta18 (181) was approved for production on 2026-11-22. 1.0.0 (187, the same code relabelled) was uploaded to production the same day and is in review.
+- [x] 1.0.1 (191) is 1.0.0 plus the own-key fixes (step 2.19), built for upload on 2026-11-22 and tagged `play-1.0.1-191`.
 - [ ] After approval, create the production release from the tested bundle. Use a **staged rollout** (for example 10–20%), and add release notes.
 - [ ] The production release goes through app review. App access (step 5) and Device and Network Abuse are the likely sticking points.
 
