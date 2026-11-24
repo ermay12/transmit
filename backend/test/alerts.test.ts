@@ -151,7 +151,8 @@ describe("alert job", () => {
     world.now += 13 * HOUR;
     const r = await alerts(world);
     expect(r.firing).toEqual(["unacknowledged"]);
-    expect(world.emails[0]!.text).toContain("1 active purchase is still unacknowledged after a day.");
+    // The last email: the first run sent the customer news about the purchase.
+    expect(world.emails.at(-1)!.text).toContain("1 active purchase is still unacknowledged after a day.");
   });
 
   it("counts failing calls to Google or OpenRouter, and emails a burst at most every 6 hours", async () => {

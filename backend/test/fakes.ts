@@ -304,6 +304,8 @@ export class FakeWorld {
       replacementMode?: string | null;
       autoRenew?: boolean;
       basePlanId?: string;
+      /** A license tester's purchase (Google's testPurchase). */
+      test?: boolean;
     } = {},
   ): SubscriptionPurchaseV2 {
     const mode = o.linked ? (o.replacementMode === undefined ? "CHARGE_FULL_PRICE" : o.replacementMode) : null;
@@ -322,6 +324,7 @@ export class FakeWorld {
       subscriptionState: o.state ?? "SUBSCRIPTION_STATE_ACTIVE",
       acknowledgementState: o.acknowledged ? "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED" : "ACKNOWLEDGEMENT_STATE_PENDING",
       ...(o.linked ? { linkedPurchaseToken: o.linked } : {}),
+      ...(o.test ? { testPurchase: {} } : {}),
     };
     this.purchases.set(token, p);
     return p;

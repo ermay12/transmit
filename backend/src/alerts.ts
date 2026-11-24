@@ -13,9 +13,15 @@
 // A new problem is emailed at once, one that lasts again every 24 hours, and a cleared one once, as
 // resolved. Error alerts go out at most every 6 hours, with everything counted since the last one.
 // Emails carry counts and error messages only: no keys, tokens, device IDs or IP addresses.
+//
+// Each run also sends customer news, in an email of its own, when something happened: free weeks
+// started, converted or ended, and new subscribers, plan changes, renewals, cancellations, payment
+// problems, refunds and endings (customers.ts). With the problems email, at most 48 emails a day,
+// inside Resend's free 100.
 
 import { type AlertConfig, type Env, loadAlertConfig, loadConfig } from "./config";
 import type { Deps } from "./context";
+import { customerNews, customerReads, TRIAL_LAG_MS } from "./customers";
 import { utcDay } from "./db";
 import { log } from "./http";
 
@@ -95,6 +101,8 @@ interface AlertState {
   usageAtDayStart?: number;
   /** Runs in a row that couldn't read OpenRouter. */
   openrouterFailures?: number;
+  /** Free weeks started, converted or ended up to this time were in a customer email (customers.ts). */
+  customersThrough?: number;
 }
 
 interface Problem {
@@ -116,6 +124,8 @@ export interface AlertReport {
   firing: string[];
   emailed: boolean;
   subject?: string;
+  /** The customer news email: its event lines (0: none to send), and whether it went out. */
+  customers: { lines: number; emailed: boolean; subject?: string };
 }
 
 /** Zero-data-retention hosts OpenRouter lists for `model`, and how many are up (status 0). */
@@ -184,8 +194,10 @@ export async function runAlerts(env: Env, deps: Deps): Promise<AlertReport> {
   const db = env.DB;
   const day = utcDay(now);
   const thisHour = hourOf(now);
+  // Customer news covers free weeks up to here, from the last customer email (customersThrough).
+  const customersTo = now - TRIAL_LAG_MS;
 
-  const [stateRows, sentRows, eventRows, unackedRows, trialRows, callRows] = await db.batch([
+  const [stateRows, sentRows, eventRows, unackedRows, trialRows, callRows, ...customerRows] = await db.batch([
     db.prepare("SELECT name, value FROM job_state WHERE name IN (?1, ?2)").bind(STATE_ROW, JOB_RUN_ROW),
     db.prepare("SELECT kind, first_at, sent_at FROM alerts_sent"),
     db.prepare("SELECT hour, kind, count, detail FROM alert_events WHERE hour >= ?1 AND hour < ?2 ORDER BY hour").bind(thisHour - DAY, thisHour),
@@ -197,6 +209,7 @@ export async function runAlerts(env: Env, deps: Deps): Promise<AlertReport> {
       .bind(now, now - UNACKED_AFTER_MS),
     db.prepare("SELECT granted_usd, trials FROM trial_days WHERE day = ?1").bind(day),
     db.prepare("SELECT COALESCE(SUM(calls), 0) AS n FROM trial_calls WHERE day = ?1").bind(day),
+    ...customerReads(db, now, customersTo),
   ]);
   const rows = new Map((stateRows!.results as { name: string; value: string }[]).map((r) => [r.name, r.value]));
   const state: AlertState = rows.has(STATE_ROW) ? (JSON.parse(rows.get(STATE_ROW)!) as AlertState) : {};
@@ -328,7 +341,7 @@ export async function runAlerts(env: Env, deps: Deps): Promise<AlertReport> {
     jobRun !== undefined ? `main job last ran ${when(jobRun)}` : undefined,
   ].filter(Boolean).join("; ");
 
-  const report: AlertReport = { firing: [...firing], emailed: false };
+  const report: AlertReport = { firing: [...firing], emailed: false, customers: { lines: 0, emailed: false } };
   const writes: D1PreparedStatement[] = [
     db.prepare("DELETE FROM alert_events WHERE hour < ?1").bind(thisHour - DAY),
     ...expired.map((s) => db.prepare("DELETE FROM alerts_sent WHERE kind = ?1").bind(s.kind)),
@@ -365,10 +378,21 @@ export async function runAlerts(env: Env, deps: Deps): Promise<AlertReport> {
     }
     // Not sent: nothing is marked, so the same email goes out at the next run that can send.
   }
+
+  // Customer news, in its own email. Marked only once sent (or with nothing to send), like the alerts.
+  const customersFrom = Math.min(state.customersThrough ?? customersTo, customersTo);
+  const news = customerNews(db, customerRows, { now, from: customersFrom, to: customersTo, trialsToday: trialDay?.trials ?? 0 });
+  report.customers = { lines: news.lines, emailed: false, subject: news.subject };
+  if (news.lines) report.customers.emailed = await sendEmail(deps.fetch, cfg, news.subject!, news.text!);
+  if (!news.lines || report.customers.emailed) {
+    writes.push(...news.marks);
+    next.customersThrough = customersTo;
+  }
+
   writes.push(
     db.prepare("INSERT INTO job_state (name, value) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET value = excluded.value").bind(STATE_ROW, JSON.stringify(next)),
   );
   await db.batch(writes);
-  log("alerts_done", { firing: report.firing, emailed: report.emailed, subject: report.subject });
+  log("alerts_done", { firing: report.firing, emailed: report.emailed, subject: report.subject, customers: report.customers.lines || undefined });
   return report;
 }

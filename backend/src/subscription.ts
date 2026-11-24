@@ -57,6 +57,8 @@ export interface Purchase {
   pendingBasePlanId: string | null;
   /** How the current item replaced an item of an older purchase (itemReplacement.replacementMode), if it did. */
   replacementMode: string | null;
+  /** Google's testPurchase: bought by a license tester, with test renewals. */
+  test: boolean;
   /** Why Google ended the purchase (canceledStateContext). */
   endReason: "replacement" | "user" | "system" | "developer" | null;
 }
@@ -138,6 +140,7 @@ export function normalizePurchase(raw: SubscriptionPurchaseV2): Purchase {
     pendingProductId: deferredTo && autoRenewing ? deferredTo : null,
     pendingBasePlanId: deferredTo && autoRenewing ? (pendingItem?.offerDetails?.basePlanId ?? null) : null,
     replacementMode: item?.itemReplacement?.replacementMode ?? null,
+    test: raw.testPurchase !== undefined,
     endReason: ended?.replacementCancellation
       ? "replacement"
       : ended?.userInitiatedCancellation
@@ -490,6 +493,7 @@ async function sync(ctx: Ctx, lease: Lease, a: SyncArgs): Promise<Response> {
       pending_product_id: p.pendingProductId,
       pending_base_plan_id: p.pendingBasePlanId,
       ended_at: null, // entitled: not ended (see endedAt)
+      test_purchase: p.test ? 1 : 0,
     }),
   );
   await lease.finish(statements);
@@ -620,6 +624,7 @@ export async function recheck(ctx: Ctx, row: SubscriptionRow, purchaseToken: str
     next.auto_renewing = p.autoRenewing ? 1 : 0;
     next.pending_product_id = entitled ? p.pendingProductId : null;
     next.pending_base_plan_id = entitled ? p.pendingBasePlanId : null;
+    next.test_purchase = p.test ? 1 : 0;
   } else Object.assign(next, { auto_renewing: 0, pending_product_id: null, pending_base_plan_id: null });
   let outcome = "unchanged";
 

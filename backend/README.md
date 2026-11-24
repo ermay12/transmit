@@ -17,6 +17,7 @@ service at [`/terms`](https://transmit.ermay12.workers.dev/terms).
 | `src/subscription.ts` | `POST /v1/subscription` and the per-purchase re-check, including plan changes (upgrade, DEFERRED switch to Transmit) |
 | `src/cron.ts` | Job every 10 minutes: refunds, renewals and lapses, expired trial keys, retention (ended subscriptions, past days' network counts) |
 | `src/alerts.ts` | Hourly alert job: emails the developer through Resend (see [Alerts](#alerts)) |
+| `src/customers.ts` | The alert job's customer news email: free weeks and subscriptions (see [Customer emails](#customer-emails)) |
 | `src/google.ts`, `src/openrouter.ts` | API clients |
 | `src/shared-token.ts` | Shares the Google access token between isolates through D1 |
 | `src/ratelimit.ts` | Per-network call limits (Workers Rate Limiting binding), keyed by a daily keyed hash of the network |
@@ -198,7 +199,8 @@ working email sends "Transmit alerts are on".
 - **If an email can't be sent** (Resend down, or the secret missing), nothing
   is marked, and the next run sends it.
 - **Cost:** one D1 read, two OpenRouter reads (the ZDR list is over 1 MB, so it's
-  scanned as text, about 1 ms of CPU), at most one email, one D1 write.
+  scanned as text, about 1 ms of CPU), at most two emails (problems, and
+  [customer news](#customer-emails)), one D1 write.
 - **From outside:** `.github/workflows/watchdog.yml` calls `GET /v1/health/jobs`
   every hour at minute 37. It returns 503 when the main job hasn't finished in
   30 minutes or the alert job in 150, and the failed run is emailed by GitHub.
@@ -206,6 +208,46 @@ working email sends "Transmit alerts are on".
   GitHub turns schedules off in public repos after 60 days without activity.
 - **Privacy:** alert emails hold counts and error messages, as the logs do: no
   keys, tokens, device IDs or IP addresses.
+
+### Customer emails
+
+Each run of the alert job also emails what customers did since its last
+customer email, when anything happened (`src/customers.ts`, since 2026-11-23).
+The subject sums it up, for example `Transmit: 1 new subscriber, 2 free weeks
+started`, and each line has its time:
+
+| News | When the Worker learns it |
+| --- | --- |
+| A free week started; turned into a subscription; ended without one | At once; an ended one when the job deletes its key, after the 7 days |
+| New subscriber; returning subscriber; plan change (an upgrade) | When the app sends the new purchase |
+| Switch to Transmit scheduled, called off, and taking effect | When the app or the job next checks the purchase |
+| Renewal | When the app or the job checks after the period ends |
+| Auto-renew turned off or back on | When the app next checks (about once a day), or at the period's end |
+| Payment failed (grace period, on hold); fixed; paused | When the app or the job checks |
+| Refund (with or without the AI turned off); subscription ended | The job's daily refund scan, or the check at the period's end |
+
+- **How it finds them:** each purchase row keeps `notified`, what the last
+  email said about it (product, state, order, pending switch, refunded orders).
+  A row that differs is news; only the alert job writes the column. Free weeks
+  are found by their timestamps since the last email (`customersThrough` in the
+  `alerts` row of `job_state`), read 5 minutes late so a request still in flight
+  isn't missed. The trial and purchase code isn't involved, apart from storing
+  Google's `testPurchase` flag (`test_purchase`).
+- **Changes within an hour fold together:** auto-renew turned off and back on
+  between two runs shows nothing.
+- **Test purchases** (license testers) are marked `[test]`, counted apart in the
+  status line, and an email with only tests is titled `Transmit test purchases: …`.
+  Their 5-minute renewals show up as renewals. Rows from before 2026-11-23 get
+  the flag at their next check.
+- **Purchases from before these emails** (`notified = ''`, set by migration
+  0006) were recorded quietly at the first run, not reported.
+- **Not sent** (Resend down, or the secret missing): nothing is marked, and the
+  next run sends the same news. At most 100 purchases per run; more wait.
+- **Volume:** one customer email an hour at most, so with the problems email at
+  most 48 a day, under Resend's free 100 a day.
+- **Privacy:** plans, states and times only. No order numbers, keys, tokens or
+  device IDs. To find a purchase in Play Console (Order management), go by its
+  time.
 
 ## Tests
 

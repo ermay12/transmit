@@ -34,6 +34,10 @@ export interface SubscriptionRow {
   pending_base_plan_id: string | null;
   /** When the purchase first stopped giving AI for good or was refunded; derived by putSubscription(). */
   ended_at: number | null;
+  /** Google's testPurchase: a license tester's purchase (1), for the customer emails. */
+  test_purchase: number;
+  /** What the last customer email said about this purchase (customers.ts); only the alert job writes it. */
+  notified?: string | null;
   created_at: number;
   updated_at: number;
   checked_at: number;
@@ -73,9 +77,10 @@ export function putSubscription(db: D1Database, row: SubscriptionRow, expectedUp
   const cols = [
     "token_hash", "token_enc", "product_id", "base_plan_id", "state", "expiry_time", "auto_renewing", "order_id",
     "allowance_usd", "key_hash", "key_disabled", "limit_usd", "voided_orders", "acknowledged", "replaced_by",
-    "next_check_at", "created_at", "updated_at", "checked_at", "pending_product_id", "pending_base_plan_id", "ended_at",
+    "next_check_at", "created_at", "updated_at", "checked_at", "pending_product_id", "pending_base_plan_id", "ended_at", "test_purchase",
   ] as const;
-  const values = cols.map((c) => (c === "ended_at" ? endedAt(row) : row[c]));
+  // `notified` isn't here: the alert job owns it, and these writes leave it as it is.
+  const values = cols.map((c) => (c === "ended_at" ? endedAt(row) : c === "test_purchase" ? (row.test_purchase ?? 0) : row[c]));
   if (expectedUpdatedAt !== undefined) {
     const sets = cols.slice(1).map((c, i) => `${c} = ?${i + 2}`).join(", ");
     return db
