@@ -48,6 +48,8 @@ sealed interface BridgeState {
         val error: String? = null,
         val google: Boolean = false,
         val emoji: String? = null,
+        /** How many phones the Google account is on, once known. Above one, the request may have gone to the wrong phone. */
+        val phones: Int = 0,
     ) : BridgeState
     data object Connecting : BridgeState
     data class Connected(
@@ -97,6 +99,8 @@ class GmBridge(
     @Volatile private var client: GmClient? = null
     private val events = Channel<GmEvent>(Channel.UNLIMITED)
     private var pairingJob: Job? = null
+    /** Google-account pairing: phones already asked this time, so "a different phone" moves on to the next. */
+    @Volatile private var askedPhones: Set<String> = emptySet()
     @Volatile private var settings: Settings? = null
     private val lifecycle = Mutex()
 
@@ -228,10 +232,18 @@ class GmBridge(
     /**
      * Pairs through the Google account signed in with [cookies]: no second screen needed. The user
      * confirms by picking the emoji in [BridgeState.Pairing.emoji] in Google Messages on the phone.
+     *
+     * [differentPhone]: the account is on more than one phone and the request went to the wrong one.
+     * It's withdrawn from that phone and the next phone is asked.
      */
-    fun startGooglePairing(cookies: Map<String, String>) {
+    fun startGooglePairing(cookies: Map<String, String>, differentPhone: Boolean = false) {
+        val previous = client.takeIf { differentPhone && (_state.value as? BridgeState.Pairing)?.google == true }
+        if (!differentPhone) askedPhones = emptySet()
         pairingJob?.cancel()
+        if (previous != null) _state.value = BridgeState.Pairing(google = true)
         pairingJob = scope.launch {
+            // Clears the request off the wrong phone, so nobody confirms it there.
+            previous?.let { runCatching { it.cancelGooglePairing() } }
             lifecycle.withLock {
                 client?.close()
                 client = null
@@ -240,9 +252,14 @@ class GmBridge(
             val auth = GmAuth.fresh().also { it.cookies.putAll(cookies) }
             val c = newClient(auth)
             client = c
+            var phones = 0
             try {
-                val pairing = c.startGooglePairing()
-                _state.value = BridgeState.Pairing(google = true, emoji = pairing.emoji)
+                val pairing = c.startGooglePairing(secrets.get(LAST_PHONE_KEY), askedPhones) { id, count ->
+                    phones = count
+                    // Once every phone was asked, go round again.
+                    askedPhones = if (askedPhones.size + 1 >= count) setOf(id) else askedPhones + id
+                }
+                _state.value = BridgeState.Pairing(google = true, emoji = pairing.emoji, phones = phones)
                 c.finishGooglePairing(pairing)
                 clearWebSignIn()
             } catch (e: CancellationException) {
@@ -254,7 +271,7 @@ class GmBridge(
                 val reason = (e as? GmHttpException)?.takeIf { it.code == 401 || it.code == 403 }
                     ?.let { "Google didn't accept the sign-in. Sign in again." }
                     ?: e.message ?: "Pairing failed"
-                _state.value = BridgeState.Pairing(google = true, error = reason)
+                _state.value = BridgeState.Pairing(google = true, error = reason, phones = phones)
             }
         }
     }
@@ -328,7 +345,13 @@ class GmBridge(
     }
 
     private fun saveAuth(auth: GmAuth) {
-        if (auth.isPaired) secrets.put(AUTH_KEY, Base64.encodeToString(auth.toProto().toByteArray(), Base64.NO_WRAP))
+        if (!auth.isPaired) return
+        secrets.put(AUTH_KEY, Base64.encodeToString(auth.toProto().toByteArray(), Base64.NO_WRAP))
+        // Kept when the pairing ends, so pairing again asks this phone first: on an account two people share, the
+        // most recently seen phone may be the other one. pairingId is set once the phone confirmed, so a phone
+        // nobody accepted on is never remembered.
+        val phone = auth.destRegId?.takeIf { auth.pairingId != null } ?: return
+        if (secrets.get(LAST_PHONE_KEY) != phone) secrets.put(LAST_PHONE_KEY, phone)
     }
 
     // ---- events ----------------------------------------------------------------------------------
@@ -786,6 +809,7 @@ class GmBridge(
     companion object {
         private const val TAG = "GmBridge"
         private const val AUTH_KEY = "gm_auth"
+        private const val LAST_PHONE_KEY = "gm_last_phone"
         private const val QR_REFRESH_MS = 30_000L
         private const val QR_REFRESHES = 10
         private const val INITIAL_CONVERSATIONS = 100

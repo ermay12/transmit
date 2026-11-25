@@ -76,6 +76,8 @@
     <string name="pair_emoji_explained">Google Messages shows a pairing request with a few emoji. Pick this one to link Transmit.</string>
     <string name="pair_open_messages">Open Google Messages</string>
     <string name="pair_waiting">Waiting for you to confirm…</string>
+    <string name="pair_more_phones">This Google account is on more than one phone. If the request went to another phone, don\'t tap it there.</string>
+    <string name="pair_different_phone">Ask a different phone</string>
     <string name="pair_use_qr">Pair with a QR code instead</string>
     <string name="pair_use_qr_note">Needs a second screen to show the code on</string>
     <string name="pair_qr_intro">Show this code on another screen if you\'re using Transmit on the same phone as Google Messages.</string>

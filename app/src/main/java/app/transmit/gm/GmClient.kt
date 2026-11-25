@@ -425,24 +425,35 @@ class GmClient(
      * Pairs through the Google account whose cookies are in [GmAuth.cookies]: finds the phone, starts a
      * key exchange with it, and returns the emoji the user must pick on the phone. Then call
      * [finishGooglePairing].
+     *
+     * An account can be on several phones (a family sharing one, or an old phone), and Google doesn't
+     * say which is this one. [lastPhone], the phone an earlier pairing went to, is asked first if it's
+     * still there, then the most recently seen; [skipPhones] are phones the user said were the wrong
+     * one. [onPhone] gets the phone asked and how many the account is on.
      */
-    suspend fun startGooglePairing(): GooglePairing {
+    suspend fun startGooglePairing(
+        lastPhone: String? = null,
+        skipPhones: Set<String> = emptySet(),
+        onPhone: (id: String, count: Int) -> Unit = { _, _ -> },
+    ): GooglePairing {
         check(auth.cookies.containsKey("SAPISID")) { "Sign in to Google first" }
         val resp = signInGaia()
         updateToken(resp.tokenData)
         val device = resp.deviceData.deviceWrapper.device
         auth.browser = device
         auth.mobile = device.toBuilder().setSourceID(device.sourceID.lowercase()).build()
-        val lastSeen = resp.deviceData.unknownItems3List.associate { it.destOrSourceUUID to it.unknownTimestampMicroseconds }
-        val phones = resp.deviceData.unknownItems2List.filter { it.unknownInt4 == 1 }.sortedByDescending { lastSeen[it.destOrSourceUUID] ?: 0 }
-        val phone = phones.firstOrNull() ?: throw GmException(
+        val phones = gaiaPhones(resp, lastPhone)
+        if (phones.isEmpty()) throw GmException(
             "No phone is set up for Google account pairing. On your phone, open Google Messages, tap your profile picture, then Device pairing.",
         )
-        auth.destRegId = phone.destOrSourceUUID
+        val phone = phones.firstOrNull { it !in skipPhones } ?: phones.first()
+        if (phones.size > 1) Log.i(TAG, "Google account is on ${phones.size} phones; asking #${phones.indexOf(phone) + 1}")
+        onPhone(phone, phones.size)
+        auth.destRegId = phone
         // The phone's answers arrive over the long poll, so it must be listening before we ask.
         startPolling(loggedIn = false)
         withTimeoutOrNull(20_000) { pollConnected.await() } ?: throw GmException("Couldn't reach Google Messages")
-        val session = GaiaPairingSession(phone.destOrSourceUUID)
+        val session = GaiaPairingSession(phone)
         gaiaSession = session
         val init = session.prepare()
         val serverInit = try {
@@ -1278,6 +1289,13 @@ class GmClient(
         fun sapisidHash(sapisid: String, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
             val digest = MessageDigest.getInstance("SHA-1").digest("$nowSeconds $sapisid ${Gm.MESSAGES_ORIGIN}".toByteArray())
             return "SAPISIDHASH ${nowSeconds}_" + digest.joinToString("") { "%02x".format(it) }
+        }
+
+        /** The phones Google-account pairing can ask (their registration ids): [lastPhone] first, then most recently seen. */
+        fun gaiaPhones(resp: SignInGaiaResponse, lastPhone: String? = null): List<String> {
+            val lastSeen = resp.deviceData.unknownItems3List.associate { it.destOrSourceUUID to it.unknownTimestampMicroseconds }
+            return resp.deviceData.unknownItems2List.filter { it.unknownInt4 == 1 }.map { it.destOrSourceUUID }.distinct()
+                .sortedWith(compareByDescending<String> { it == lastPhone }.thenByDescending { lastSeen[it] ?: 0L })
         }
 
         fun withIds(conv: Conversation): Conversation =

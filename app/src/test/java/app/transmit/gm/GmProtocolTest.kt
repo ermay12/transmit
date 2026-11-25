@@ -334,6 +334,30 @@ class GmProtocolTest {
         assertEquals("🧬", GaiaPairingSession.emojiFor(auth2, 1))
     }
 
+    /** An account on several phones: only phones count (not this browser), newest first, each once. */
+    @Test
+    fun gaiaPhonesAreNewestFirst() {
+        fun item(id: String, kind: Int) = app.transmit.gm.proto.RPCGaiaData.UnknownContainer.Item2.Item1.newBuilder()
+            .setDestOrSourceUUID(id).setUnknownInt4(kind).build()
+        fun seen(id: String, micros: Long) = app.transmit.gm.proto.RPCGaiaData.UnknownContainer.Item4.newBuilder()
+            .setDestOrSourceUUID(id).setUnknownTimestampMicroseconds(micros).build()
+        val resp = app.transmit.gm.proto.SignInGaiaResponse.newBuilder().setDeviceData(
+            app.transmit.gm.proto.SignInGaiaResponse.DeviceData.newBuilder()
+                .addUnknownItems2(item("old", 1))
+                .addUnknownItems2(item("browser", 6))
+                .addUnknownItems2(item("new", 1))
+                .addUnknownItems2(item("new", 1))
+                .addUnknownItems2(item("unseen", 1))
+                .addUnknownItems3(seen("old", 1_000))
+                .addUnknownItems3(seen("new", 2_000))
+                .addUnknownItems3(seen("browser", 3_000)),
+        ).build()
+        assertEquals(listOf("new", "old", "unseen"), GmClient.gaiaPhones(resp))
+        // The phone paired last time comes first while it's still on the account.
+        assertEquals(listOf("old", "new", "unseen"), GmClient.gaiaPhones(resp, lastPhone = "old"))
+        assertEquals(listOf("new", "old", "unseen"), GmClient.gaiaPhones(resp, lastPhone = "gone"))
+    }
+
     @Test
     fun sapisidHashMatchesTheWebApp() {
         assertEquals("SAPISIDHASH 1700000000_4576fb2c630b144fd71b28f49511349a73a8ea95", GmClient.sapisidHash("abc", 1700000000))

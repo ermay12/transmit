@@ -124,6 +124,7 @@ fun PairingScreen(bridge: GmBridge, onDone: () -> Unit, onBack: () -> Unit) {
                     pairing = pairing?.takeIf { it.google },
                     onSignIn = { signingIn = true },
                     onRetry = { cookies?.let { started = true; bridge.startGooglePairing(it) } ?: run { signingIn = true } },
+                    onDifferentPhone = { cookies?.let { started = true; bridge.startGooglePairing(it, differentPhone = true) } ?: run { signingIn = true } },
                     onOtherAccount = {
                         bridge.cancelPairing()
                         GoogleSignInCookies.clear()
@@ -156,6 +157,7 @@ private fun GoogleStep(
     pairing: BridgeState.Pairing?,
     onSignIn: () -> Unit,
     onRetry: () -> Unit,
+    onDifferentPhone: () -> Unit,
     onOtherAccount: () -> Unit,
     onUseQr: () -> Unit,
 ) {
@@ -180,6 +182,7 @@ private fun GoogleStep(
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_try_again)) }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onOtherAccount, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pair_sign_in_again)) }
+            if (pairing.phones > 1) OtherPhones(onDifferentPhone)
         }
         pairing.emoji == null -> {
             Spacer(Modifier.height(48.dp))
@@ -211,6 +214,7 @@ private fun GoogleStep(
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.pair_waiting), style = MaterialTheme.typography.bodySmall, color = muted)
             }
+            if (pairing.phones > 1) OtherPhones(onDifferentPhone)
         }
     }
     if (pairing?.emoji == null || pairing.error != null) {
@@ -218,6 +222,17 @@ private fun GoogleStep(
         TextButton(onClick = onUseQr) { Text(stringResource(R.string.pair_use_qr)) }
         Text(stringResource(R.string.pair_use_qr_note), style = MaterialTheme.typography.bodySmall, color = muted)
     }
+}
+
+/** The account is on several phones and Google doesn't say which is this one, so the request may have gone elsewhere. */
+@Composable
+private fun OtherPhones(onDifferentPhone: () -> Unit) {
+    Spacer(Modifier.height(24.dp))
+    Text(
+        stringResource(R.string.pair_more_phones),
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+    )
+    TextButton(onClick = onDifferentPhone) { Text(stringResource(R.string.pair_different_phone)) }
 }
 
 @Composable
