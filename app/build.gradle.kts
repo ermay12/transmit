@@ -22,7 +22,7 @@ android {
         targetSdk = 36
         // Counts up with every commit, so each build installs over the last, whether built locally or by GitHub Actions.
         versionCode = commitCount
-        versionName = "1.0.1"
+        versionName = "1.0.2"
     }
 
     signingConfigs {
