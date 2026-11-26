@@ -3,6 +3,7 @@ package app.transmit.access
 import android.util.Log
 import app.transmit.ai.AiBlock
 import app.transmit.ai.AiException
+import app.transmit.analytics.Analytics
 import app.transmit.data.KeyVault
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -225,8 +226,16 @@ class AccessManager(
 
     // ---- getting access ------------------------------------------------------------------------
 
-    /** Null on success: the mode is TRIAL. */
-    suspend fun startTrial(): AccessError? = handle(activate = true) { backend.startTrial() }
+    /** Null on success: the mode is TRIAL. A new trial is the Google Ads conversion ([Analytics.trialStarted]). */
+    suspend fun startTrial(): AccessError? {
+        var grant: Grant? = null
+        val error = handle(activate = true) { backend.startTrial().also { grant = (it as? AccessResult.Granted)?.grant } }
+        when {
+            error != null -> Analytics.trialFailed(error.code.name)
+            grant?.restored == false -> Analytics.trialStarted()
+        }
+        return error
+    }
 
     /** For a purchase from Play Billing. Null on success: the mode is SUBSCRIBED. */
     suspend fun activatePurchase(purchase: PlayPurchase): AccessError? = refreshLock.withLock {

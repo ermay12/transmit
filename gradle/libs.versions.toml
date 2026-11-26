@@ -24,6 +24,9 @@ zxing = "3.5.3"
 webkit = "1.12.1"
 billing = "9.1.0"
 playIntegrity = "1.6.0"
+# 35.x is built with Kotlin 2.4 metadata, which Kotlin 2.1 can't read: upgrade Kotlin before moving past 34.x.
+firebaseBom = "34.19.0"
+googleServices = "4.6.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -61,6 +64,8 @@ androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "w
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 billing = { group = "com.android.billingclient", name = "billing", version.ref = "billing" }
 play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -68,3 +73,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

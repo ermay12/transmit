@@ -105,6 +105,8 @@ data class Grant(
     val purchaseToken: String? = null,
     /** The Worker's `allowanceRenewed`: this call credited a new Play order (a purchase, an upgrade, a renewal) and raised the key's limit. */
     val allowanceRenewed: Boolean = false,
+    /** The Worker's `restored` on `/v1/trial`: this device's running trial, re-issued after a reinstall, not a new one. */
+    val restored: Boolean = false,
 )
 
 sealed interface AccessResult {

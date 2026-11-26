@@ -113,7 +113,7 @@ What you need
 • An internet connection for translation and the tutor.
 
 Your privacy
-Your messages never reach Transmit's server. To translate, the message text and a few earlier messages from the same chat are sent to an AI service: with the free week or a plan, OpenRouter, limited to model hosts with zero-data-retention policies; with your own key, the provider you chose. No ads, no analytics. Details are in the privacy policy.
+Your messages never reach Transmit's server. To translate, the message text and a few earlier messages from the same chat are sent to an AI service: with the free week or a plan, OpenRouter, limited to model hosts with zero-data-retention policies; with your own key, the provider you chose. No ads. Details are in the privacy policy.
 
 Good to know
 • AI translations can be wrong. Check anything important with the person you're texting.

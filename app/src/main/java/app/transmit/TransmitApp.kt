@@ -24,6 +24,8 @@ import app.transmit.access.AccessListener
 import app.transmit.access.AccessManager
 import app.transmit.access.AccessStore
 import app.transmit.access.AccessWork
+import app.transmit.access.PlayAccessBackend
+import app.transmit.analytics.Analytics
 import app.transmit.access.EndReason
 import app.transmit.access.PlanRefresher
 import app.transmit.access.PurchaseQueue
@@ -194,6 +196,8 @@ class TransmitApp : Application(), Configuration.Provider, SingletonImageLoader.
 
     override fun onCreate() {
         super.onCreate()
+        // The setup funnel: only the Play copy counts it (a GitHub APK sends nothing), and debug builds for testing.
+        Analytics.start(this, enabled = BuildConfig.DEBUG || PlayAccessBackend.installedFromPlay(this))
         container = AppContainer(this)
         container.notifier.createChannels()
         container.shortcuts.start(container.scope)

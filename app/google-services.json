@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "36162671718",
+    "project_id": "transmit-515111",
+    "storage_bucket": "transmit-515111.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:36162671718:android:476a207fd89b37029b89a7",
+        "android_client_info": {
+          "package_name": "com.ermay12.transmit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyApZSPwj7vsIfntb0v_H--kdBTOJH7TKmY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

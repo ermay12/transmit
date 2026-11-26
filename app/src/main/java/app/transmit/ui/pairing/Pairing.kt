@@ -2,6 +2,7 @@ package app.transmit.ui.pairing
 
 import androidx.compose.ui.res.stringResource
 import app.transmit.R
+import app.transmit.analytics.Analytics
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -89,8 +90,18 @@ fun PairingScreen(bridge: GmBridge, onDone: () -> Unit, onBack: () -> Unit) {
     var started by remember { mutableStateOf(false) }
     var cookies by remember { mutableStateOf<Map<String, String>?>(null) }
     val pairing = state as? BridgeState.Pairing
+    var pairedCounted by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
-        if (started && (state is BridgeState.Connecting || state is BridgeState.Connected)) onDone()
+        if (started && (state is BridgeState.Connecting || state is BridgeState.Connected)) {
+            if (!pairedCounted) {
+                pairedCounted = true
+                Analytics.paired(if (mode == PairMode.QR) "qr" else "google")
+            }
+            onDone()
+        }
+    }
+    LaunchedEffect(pairing?.emoji) {
+        if (pairing?.google == true && pairing.emoji != null) Analytics.pairingEmojiShown()
     }
     DisposableEffect(Unit) {
         onDispose { bridge.cancelPairing() }
@@ -132,6 +143,7 @@ fun PairingScreen(bridge: GmBridge, onDone: () -> Unit, onBack: () -> Unit) {
                         signingIn = true
                     },
                     onUseQr = {
+                        Analytics.qrPairingOpened()
                         bridge.cancelPairing()
                         mode = PairMode.QR
                         started = true

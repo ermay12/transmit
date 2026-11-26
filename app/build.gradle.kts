@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.protobuf)
+    // Reads app/google-services.json (the Firebase project transmit-515111) for Analytics.
+    alias(libs.plugins.google.services)
 }
 
 /** Commits up to HEAD; 1 outside a git checkout. GitHub Actions needs a full clone (fetch-depth: 0) for this. */
@@ -135,6 +137,10 @@ dependencies {
     implementation(libs.billing)
     // The free trial's device check (a standard request whose requestHash binds ANDROID_ID).
     implementation(libs.play.integrity)
+    // The setup funnel and Google Ads conversions (app.transmit.analytics.Analytics). Collection is off in the manifest
+    // and turned on at startup only for copies installed from Play, and debug builds.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

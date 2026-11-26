@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.UserAgentMetadata
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import app.transmit.analytics.Analytics
 
 /** The cookies Google Messages for Web authenticates with, read from the in-app sign-in. */
 object GoogleSignInCookies {
@@ -76,6 +78,12 @@ fun GoogleSignIn(onSignedIn: (Map<String, String>) -> Unit, onBack: () -> Unit) 
     var loading by remember { mutableStateOf(true) }
     var done by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    // The page Google showed last, for the step people give up on (only its host and path are counted).
+    var lastUrl by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(Unit) {
+        Analytics.googleSignInOpened()
+        onDispose { if (!done) Analytics.googleSignInLeft(lastUrl) }
+    }
     BackHandler {
         val w = webView
         if (w != null && w.canGoBack()) w.goBack() else onBack()
@@ -100,6 +108,7 @@ fun GoogleSignIn(onSignedIn: (Map<String, String>) -> Unit, onBack: () -> Unit) 
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                                 loading = true
+                                lastUrl = url
                                 check(view, url)
                             }
 
@@ -117,6 +126,7 @@ fun GoogleSignIn(onSignedIn: (Map<String, String>) -> Unit, onBack: () -> Unit) 
                                     val cookies = GoogleSignInCookies.read()
                                     if (cookies != null && (cookies.containsKey("OSID") || triesLeft == 0)) {
                                         done = true
+                                        Analytics.googleSignInDone()
                                         signedIn(cookies)
                                     } else if (triesLeft > 0) {
                                         view.postDelayed({ attempt(triesLeft - 1) }, 500)

@@ -65,6 +65,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.transmit.access.AiAccess
+import app.transmit.analytics.Analytics
 import app.transmit.data.AppSettings
 import app.transmit.gm.BridgeState
 import app.transmit.ui.Permissions
@@ -93,7 +95,9 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
     // Set when the user leaves for the pairing screen, so coming back paired moves on.
     var pairingStarted by rememberSaveable { mutableStateOf(false) }
     val s = settings ?: return
-    fun finish() {
+    /** [ai]: how translation was set up, for [Analytics.onboardingFinished]. */
+    fun finish(ai: String) {
+        Analytics.onboardingFinished(ai)
         vm.setOnboarded()
         onDone()
     }
@@ -128,6 +132,7 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
                             vm, pairingStarted,
                             onPair = { pairingStarted = true; onPair() },
                             onNext = { pairingStarted = false; step = 2 },
+                            onLater = { Analytics.pairingSkipped(); pairingStarted = false; step = 2 },
                             onDemo = onDemo,
                         )
                         else -> TranslationStep(vm, onPlans, onFinish = ::finish)
@@ -136,7 +141,7 @@ fun OnboardingScreen(vm: SettingsViewModel, onPair: () -> Unit, onPlans: () -> U
             }
         }
         if (step == 0) {
-            Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.onboarding_continue)) }
+            Button(onClick = { Analytics.languagesChosen(); step = 1 }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(stringResource(R.string.onboarding_continue)) }
         }
     }
 }
@@ -200,7 +205,14 @@ private fun LanguageCard(label: String, flag: String, name: String, prominent: B
 }
 
 @Composable
-private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Boolean, onPair: () -> Unit, onNext: () -> Unit, onDemo: () -> Unit) {
+private fun ColumnScope.MessagesStep(
+    vm: SettingsViewModel,
+    pairingStarted: Boolean,
+    onPair: () -> Unit,
+    onNext: () -> Unit,
+    onLater: () -> Unit,
+    onDemo: () -> Unit,
+) {
     val context = LocalContext.current
     val bridge by vm.bridge.collectAsStateWithLifecycle()
     val paired = bridge is BridgeState.Connecting || bridge is BridgeState.Connected
@@ -240,17 +252,17 @@ private fun ColumnScope.MessagesStep(vm: SettingsViewModel, pairingStarted: Bool
             Text(stringResource(R.string.onboarding_connect), style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onNext, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.onboarding_later)) }
+        TextButton(onClick = onLater, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.onboarding_later)) }
     }
 }
 
 @Composable
-private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Unit, onFinish: () -> Unit) {
+private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Unit, onFinish: (ai: String) -> Unit) {
     val trial by vm.trial.state.collectAsStateWithLifecycle()
     val access by vm.access.collectAsStateWithLifecycle()
     var ownKey by remember { mutableStateOf(false) }
     // The free week started, or a plan was bought on the plans screen.
-    LaunchedEffect(access) { if (access?.isManaged == true) onFinish() }
+    LaunchedEffect(access) { access?.takeIf { it.isManaged }?.let { onFinish(if (it is AiAccess.Trial) "trial" else "plan") } }
     // Play Integrity takes a moment to get ready; start now so the free week starts quickly.
     LaunchedEffect(Unit) { if (vm.canBuy) vm.warmTrial() }
     Title(stringResource(R.string.turn_on_title), stringResource(R.string.onboarding_translation_body))
@@ -285,10 +297,10 @@ private fun ColumnScope.TranslationStep(vm: SettingsViewModel, onPlans: () -> Un
         TextButton(onClick = { ownKey = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.access_own_key)) }
     }
     TextButton(
-        onClick = { vm.turnOffAi(); onFinish() }, enabled = trial != TrialUi.Starting,
+        onClick = { vm.turnOffAi(); onFinish("none") }, enabled = trial != TrialUi.Starting,
         modifier = Modifier.align(Alignment.CenterHorizontally),
     ) { Text(stringResource(R.string.action_not_now)) }
-    if (ownKey) OwnKeyDialog(vm, onDismiss = { ownKey = false }, onDone = { ownKey = false; onFinish() })
+    if (ownKey) OwnKeyDialog(vm, onDismiss = { ownKey = false }, onDone = { ownKey = false; onFinish("own_key") })
 }
 
 @Composable

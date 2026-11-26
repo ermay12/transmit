@@ -138,7 +138,10 @@ class WorkerApi(private val http: OkHttpClient = defaultHttp(), baseUrl: String 
             val expiresAt = instant(b["expiresAt"].str()) ?: return null
             val allowance = b["allowanceUsd"].num() ?: return null
             val key = b["key"].str()?.takeIf { it.isNotBlank() } ?: return null
-            return Grant(Entitlement.Trial(expiresAt), key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance)
+            return Grant(
+                Entitlement.Trial(expiresAt), key, b["keyHash"].str(), allowance, b["remainingUsd"].num() ?: allowance,
+                restored = b["restored"].bool() ?: false,
+            )
         }
 
         /**

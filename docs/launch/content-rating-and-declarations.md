@@ -35,7 +35,7 @@ Expected result: the lowest age ratings (ESRB Everyone, PEGI 3 or similar), with
 
 ## 3. Ads
 
-**"No, my app does not contain ads."** There's no ad SDK in `gradle/libs.versions.toml`, and the merged manifest has no `com.google.android.gms.permission.AD_ID`. The plan upsells (Home banners, the Plans screen) are the app's own subscription prompts, not ads.
+**"No, my app does not contain ads."** There's no ad SDK in `gradle/libs.versions.toml`. Since 1.0.3, Firebase Analytics measures Transmit's own Google Ads campaigns, but the app shows no ads, and the manifest removes both Advertising ID permissions Firebase brings (`com.google.android.gms.permission.AD_ID` and `android.permission.ACCESS_ADSERVICES_AD_ID`). The plan upsells (Home banners, the Plans screen) are the app's own subscription prompts, not ads.
 
 **Advertising ID declaration:** "No, my app does not use advertising ID."
 

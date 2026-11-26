@@ -10,17 +10,21 @@ Facts were taken from the code on branch play-launch at 189aed3 (2026-11-18). Th
 retention) were re-checked on 2026-11-19 against the Worker after its privacy changes, and the AI context labels
 against the app change that replaces contact names with "Me", "Them" and "Person 1, 2, …". See
 docs/launch/data-safety.md for the code references behind each statement.
+Google Analytics (section 5, and the short version) was added on 2026-11-26 for app version 1.0.3, from branch
+analytics: app/src/main/java/app/transmit/analytics/Analytics.kt and the manifest's Firebase settings. Set the effective
+date to the day this version of the page goes live, before 1.0.3 reaches Play.
 -->
 
 # Transmit privacy policy
 
-**Effective date:** November 19, 2026
+**Effective date:** November 26, 2026
 
 Transmit is an Android app for language learners. It shows your Google Messages chats with AI translation and a tutor. It's made by Eric Maynard, an individual developer ("I", "me"). This policy explains what Transmit does with your data, in plain language. If anything is unclear, write to me at ermay12@gmail.com. The free week, the plans and the rules for using them are in the [terms of service](https://transmit.ermay12.workers.dev/terms).
 
 ## The short version
 
-- Transmit has no accounts, no ads, no analytics and no crash reporting. I don't sell your data or use it for advertising.
+- Transmit has no accounts, no ads and no crash reporting. I don't sell your data, and it's never used to show you ads.
+- The Google Play version counts the steps of setting it up (such as signing in, pairing and starting the free week) with Google Analytics, so I can see where people get stuck and which of my ads work. Those counts never include your messages, contacts, phone number, email address or Google account.
 - Your chats are stored on your phone. Transmit's server never receives your messages.
 - To translate or explain a message, Transmit sends its text, and a few earlier messages from the same chat, to an AI service:
   - With the free week or a Transmit plan, that's OpenRouter. Transmit's OpenRouter account only allows model hosts that have a zero-data-retention policy.
@@ -146,10 +150,26 @@ The server deletes this record, and the subscription's AI key, 90 days after the
 - Cloudflare also counts the server's requests, errors and processing time, in totals that don't include IP addresses.
 - When I'm fixing a problem, I can watch requests live, including their IP address. That live view isn't stored.
 
-## 5. Google Play
+## 5. Google Play and Google Analytics
 
 - **Payments:** Google Play handles subscription payments under [Google's Privacy Policy](https://policies.google.com/privacy). I don't receive your card or payment details. Google Play tells me about orders, refunds and subscription states, and shows me order details in its developer console.
 - **Play Integrity:** when you start the free week, Google Play checks the app and the device. Google handles that data under the Google Play Terms of Service.
+
+### Google Analytics
+
+From version 1.0.3, the copy of Transmit from Google Play uses Google Analytics for Firebase, a Google service, to count how people set the app up. I use it to see where new users get stuck, and to measure Transmit's own ads on Google Ads (how many installs, free weeks and subscriptions they lead to). Copies from GitHub never use it.
+
+**What is counted:**
+
+- setup steps: choosing your languages, opening Google's sign-in page, signing in, seeing the emoji to confirm, pairing (by Google sign-in or QR code), starting the free week or the reason it couldn't start, and finishing setup;
+- if you leave Google's sign-in page, the step you left it on, as a word such as "password", and that page's address without the part that can include your email address;
+- Google Analytics' own events: opening the app for the first time, sessions and time in the app, app updates and uninstalls, and Google Play purchases (the plan and its price, never your payment details).
+
+With these, Google receives an ID that Google Analytics creates for this installation of Transmit, your phone's model, its Android version, the app version and its language. Google derives an approximate location (such as your country or city) from your masked IP address.
+
+**What is never counted:** your messages, contacts or contact names, phone numbers, email address or Google account. Transmit doesn't collect your phone's Advertising ID or Android ID for Google Analytics. Ad personalization and remarketing are turned off, so this data isn't used to show you ads.
+
+Google Analytics keeps this data for 14 months, then deletes it. Google handles it under [Google's Privacy Policy](https://policies.google.com/privacy), and [how Google uses information from apps that use its services](https://policies.google.com/technologies/partner-sites) explains more.
 
 ## 6. How long data is kept
 
@@ -165,6 +185,7 @@ The server deletes this record, and the subscription's AI key, 90 days after the
 | Free-week call counts per network (keyed hash) | Transmit's server | Until the day ends (midnight UTC) |
 | Per-minute call counts per network (keyed hash) | Cloudflare's rate limiter | The current minute |
 | The server's log lines (no IP addresses or identifiers) | Cloudflare | 3 days |
+| Setup steps and app events (Google Play version) | Google Analytics | 14 months |
 
 ## 7. Your choices and rights
 
@@ -176,7 +197,7 @@ The server deletes this record, and the subscription's AI key, 90 days after the
 - **Delete data on Transmit's server.** Subscription records are deleted automatically 90 days after the subscription ends or is refunded. To have yours deleted sooner, email ermay12@gmail.com with your Google Play order number (it starts with "GPA." and is in your Google Play receipt). I'll delete your subscription record and its AI key within 30 days. If the subscription is still active, the app will set it up again the next time it checks, so cancel it in Google Play first if you want it gone for good.
   - Free-week records can't be matched to you, because they only hold a keyed hash of an identifier on your phone. I keep them to prevent abuse of the free week.
 
-If you are in the European Economic Area, the United Kingdom or another region with similar laws, you can also ask to access or correct your data, object to how it's used, or complain to your local data protection authority. I handle the data above to provide the app you asked for (translation, the free week, your subscription), and for my legitimate interest in preventing abuse and keeping the service secure.
+If you are in the European Economic Area, the United Kingdom or another region with similar laws, you can also ask to access or correct your data, object to how it's used, or complain to your local data protection authority. I handle the data above to provide the app you asked for (translation, the free week, your subscription), and for my legitimate interests in preventing abuse, keeping the service secure, and improving setup and measuring my ads (section 5).
 
 ## 8. Children
 
@@ -188,7 +209,7 @@ Every connection Transmit makes uses HTTPS. On your phone, secrets are encrypted
 
 ## 10. Where data is processed
 
-I'm based in the United States. Cloudflare, OpenRouter and the model hosts it uses, and Google may process the data described here in the United States and in other countries.
+I'm based in the United States. Cloudflare, OpenRouter and the model hosts it uses, and Google (including Google Analytics) may process the data described here in the United States and in other countries.
 
 ## 11. Open source
 
