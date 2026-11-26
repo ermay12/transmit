@@ -182,6 +182,7 @@ Before flipping:
 - [x] 1.0.0-beta18 (181) was approved for production on 2026-11-22. 1.0.0 (187, the same code relabelled) was uploaded to production the same day and is in review.
 - [x] 1.0.1 (191) is 1.0.0 plus the own-key fixes (step 2.19), built for upload on 2026-11-22 and tagged `play-1.0.1-191`.
 - [x] 1.0.2 (194) is 1.0.1 plus Google-account pairing on accounts with more than one phone (e5066f1): "Ask a different phone", and pairing again asks the phone paired last time first. Built for upload on 2026-11-25 and tagged `play-1.0.2-194`. Not yet tried on an account with two phones.
+- [x] 1.0.3 (197) is 1.0.2 plus Google Analytics for Firebase: the setup funnel and the `trial_started` Google Ads conversion (aab2f3e). Built for upload on 2026-11-26 and tagged `play-1.0.3-197`. Before it goes out: the privacy policy with section 5's Google Analytics part is deployed, and the Data safety form and store listing are updated (`data-safety.md`, `store-listing.md`). Release notes must mention the change (privacy policy section 12).
 - [ ] After approval, create the production release from the tested bundle. Use a **staged rollout** (for example 10–20%), and add release notes.
 - [ ] The production release goes through app review. App access (step 5) and Device and Network Abuse are the likely sticking points.
 
