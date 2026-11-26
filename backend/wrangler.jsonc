@@ -44,9 +44,11 @@
     // Key names are <prefix>-trial-<id> and <prefix>-sub-<id>.
     "KEY_NAME_PREFIX": "transmit",
     // Free trial: total AI allowance (USD), length, and the cap on new trial allowance per UTC day.
+    // The daily cap is off (2026-11-25): 100000 is the most config.ts accepts. Spend is capped by the
+    // Transmit Customers workspace's daily budget on OpenRouter instead.
     "TRIAL_ALLOWANCE_USD": "0.50",
     "TRIAL_DAYS": "7",
-    "TRIAL_DAILY_BUDGET_USD": "30",
+    "TRIAL_DAILY_BUDGET_USD": "100000",
     // /v1/trial calls one IPv4 address or IPv6 /64 may make per UTC day (each can cost a Play Integrity check;
     // Google allows 10,000 a day).
     "TRIAL_CALLS_PER_IP_PER_DAY": "30",

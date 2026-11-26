@@ -32,7 +32,7 @@ describe("alert job", () => {
     const mail = world.emails[0]!;
     expect(mail).toMatchObject({ from: "Transmit alerts <onboarding@resend.dev>", to: ["ermay12@gmail.com"] });
     expect(mail.text).toContain("Alerts are on.");
-    expect(mail.text).toContain("Status now: OpenRouter balance $90.00; spend today $0.00; free weeks today 0 ($0.00 of $30.00)");
+    expect(mail.text).toContain("Status now: OpenRouter balance $90.00; spend today $0.00; free weeks today 0 ($0.00 of $100000.00)");
     expect(mail.text).toContain("google/gemma-4-31b-it hosts up: 1 of 2");
     // Two OpenRouter reads and one email.
     expect(world.calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(["GET /api/v1/credits", "GET /api/v1/endpoints/zdr", "POST /emails"]);
@@ -132,7 +132,8 @@ describe("alert job", () => {
       env.DB.prepare("INSERT INTO trial_calls (day, ip_hash, calls) VALUES ('2026-11-18', 'a', 4000), ('2026-11-18', 'b', 3000), ('2026-11-17', 'c', 9000)"),
     ]);
     world.now += HOUR;
-    const r = await alerts(world);
+    // The deployed cap is off (100000), so this test sets its own.
+    const r = await alerts(world, { TRIAL_DAILY_BUDGET_USD: "30" });
     expect(r.firing.sort()).toEqual(["integrity_high", "trial_cap"]);
     expect(r.subject).toBe("Transmit: Today's free weeks are used up (+1 more)");
     const text = world.emails[0]!.text;

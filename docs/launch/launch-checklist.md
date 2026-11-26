@@ -195,4 +195,4 @@ Before flipping:
   - Play vitals, reviews and the subscription numbers.
 - [ ] Handle data deletion requests as the privacy policy promises: find the row by order ID, delete it, and delete the key.
 - [ ] Keep `data-safety.md` and the privacy policy in step with the code. Update them when anything sent off the device changes.
-- [ ] Before you widen the rollout to 100%, re-check the trial daily budget (`TRIAL_DAILY_BUDGET_USD`, $30) against real abuse.
+- [x] Trial daily budget (`TRIAL_DAILY_BUDGET_USD`): turned off on 2026-11-25 (set to the maximum, 100000; Worker version `8c7216d6`), before the Google Ads campaign. Real trial use is about a penny a day per user. Spend is capped by the Transmit Customers workspace's $100/day budget on OpenRouter, which also stops paying subscribers' keys if it's reached, so watch the $70 spend alert.

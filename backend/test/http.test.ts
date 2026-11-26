@@ -100,7 +100,7 @@ describe("config", () => {
     expect(c).toMatchObject({
       trialAllowanceUsd: 0.5,
       trialDurationMs: 7 * 86_400_000,
-      trialDailyBudgetUsd: 30,
+      trialDailyBudgetUsd: 100_000,
       planAllowances: { transmit_monthly: 4.5, transmit_plus: 9 },
       cronSubrequestBudget: 10,
     });

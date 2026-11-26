@@ -110,7 +110,7 @@ and run `npm run deploy`.
 | --- | --- | --- |
 | `TRIAL_ALLOWANCE_USD` | `0.50` | AI allowance of one trial |
 | `TRIAL_DAYS` | `7` | Trial length (the key's `expires_at`) |
-| `TRIAL_DAILY_BUDGET_USD` | `30` | New trial allowance per UTC day (60 trials) |
+| `TRIAL_DAILY_BUDGET_USD` | `100000` | New trial allowance per UTC day. Off since 2026-11-25 (100000 is the maximum); the OpenRouter workspace's daily budget caps spend instead |
 | `TRIAL_CALLS_PER_IP_PER_DAY` | `30` | `/v1/trial` calls per network per UTC day (protects the 10,000 Play Integrity checks a day) |
 | `PLAN_ALLOWANCES_USD` | `{"transmit_monthly": 4.50, "transmit_plus": 9.00}` | Allowance per billing period, keyed by `productId` or `productId/basePlanId` |
 | `INTEGRITY_MAX_AGE_SECONDS` | `600` | Oldest Integrity token accepted |
